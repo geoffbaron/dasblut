@@ -469,7 +469,11 @@ export class Renderer {
       arcCol = 0x6fcf6f;
     }
     if (frac > 0.001) {
-      g.arc(cx, cy, 18, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2).stroke({ width: 4, color: arcCol, alpha: 0.95 });
+      // moveTo the arc's start first: without it PixiJS connects the previous path
+      // point to the arc start with a stray line (the "strange line" near the flag).
+      const a0 = -Math.PI / 2;
+      g.moveTo(cx + Math.cos(a0) * 18, cy + Math.sin(a0) * 18);
+      g.arc(cx, cy, 18, a0, a0 + frac * Math.PI * 2).stroke({ width: 4, color: arcCol, alpha: 0.95 });
     }
 
     // Flag — large enough to read over rooftops.

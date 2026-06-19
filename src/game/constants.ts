@@ -48,7 +48,7 @@ export const SMOKE_RELOAD = 2.2;    // seconds between smoke rounds (faster than
 
 export const OBJECTIVE_RADIUS = 7; // cells; the capture zone
 export const OBJECTIVE_CAPTURE_TIME = 6; // seconds of uncontested presence to flip it
-export const OBJECTIVE_HOLD_TO_WIN = 35; // seconds the attacker must hold it to win
+export const OBJECTIVE_HOLD_TO_WIN = 60; // seconds the attacker must hold it to win
 export const BATTLE_TIME_S = 360; // the attacker must take the objective before this expires
 export const AI_INTERVAL = 1.5; // seconds between enemy command re-evaluations
 

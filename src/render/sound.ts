@@ -57,12 +57,9 @@ const SCREAMS = [
 ];
 // A separate scream for US deaths so the two sides sound distinct.
 const SCREAM_US = "HMNMisc-A_male_soldier_screa-Elevenlabs.mp3";
-// Tank engine — three driving recordings; one is picked per tank for variety and
-// looped continuously while that tank is on the move.
+// Tank engine — looped continuously while a tank is on the move.
 const TANK_DRIVE = [
   "VEHMil-tank_driving-Elevenlabs.mp3",
-  "VEHMil-heavy_tank_driving_f-Elevenlabs.mp3",
-  "VEHMil-heavy_battle_tank_dr-Elevenlabs.mp3",
 ];
 // Distant battlefield atmosphere — planes, far-off small-arms, general battle din.
 // Played at low volume on a slow random timer so the field never feels empty.
@@ -102,8 +99,9 @@ const SFX_DEFS: Record<SfxId, { files: string[]; vol: number }> = {
 // Maximum audible sounds per frame to avoid an audio avalanche during heavy combat.
 const MAX_PER_FRAME = 10;
 // Priority sounds (deaths/screams) get their own reserved budget so the constant
-// chatter of gunfire can never starve them — being able to hear men fall matters.
-const MAX_PRIORITY_PER_FRAME = 4;
+// chatter of gunfire can never starve them — being able to hear men fall (and which
+// side fell) matters. Generous because simultaneous deaths are rare.
+const MAX_PRIORITY_PER_FRAME = 8;
 // Distance in cells beyond which audio is inaudible.
 const FADE_CELLS = 35;
 

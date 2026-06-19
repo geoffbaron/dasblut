@@ -52,15 +52,16 @@
       #objective .obj-us { color: #7fa8e8; } #objective .obj-axis { color: #e0796f; }
       #objective .obj-hold { color: #8fcf6f; } #objective .obj-contested { color: #f0c040; }
       #banner {
-        position: fixed; inset: 0; z-index: 20; display: none;
-        align-items: center; justify-content: center; pointer-events: none;
+        position: fixed; top: 132px; left: 50%; transform: translateX(-50%);
+        z-index: 20; display: none; pointer-events: none;
       }
       #banner .card {
-        padding: 22px 40px; border-radius: 10px; text-align: center;
-        background: rgba(20,19,15,0.9); border: 1px solid #4a463c;
+        padding: 8px 20px; border-radius: 8px; text-align: center;
+        background: rgba(20,19,15,0.82); border: 1px solid #4a463c;
+        display: flex; align-items: baseline; gap: 12px; white-space: nowrap;
       }
-      #banner .big { font-size: 34px; font-weight: 700; letter-spacing: 2px; }
-      #banner .sub { margin-top: 6px; color: #9a9484; font-size: 13px; }
+      #banner .big { font-size: 17px; font-weight: 700; letter-spacing: 1.5px; }
+      #banner .sub { color: #9a9484; font-size: 12px; }
       #orders {
         position: fixed; bottom: 44px; left: 50%; transform: translateX(-50%); z-index: 10;
         display: none; gap: 6px; padding: 7px; border-radius: 8px;

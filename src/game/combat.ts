@@ -45,7 +45,7 @@ export function resolveFire(world: World, dt: number): void {
             s.ammo--;
             s.firedTimer = 0.6;
             sound.play(s.weapon as SfxId, s.x, s.y);
-            world.effects.push({ kind: "ap", x0: s.x, y0: s.y, x1: veh.x, y1: veh.y, ttl: 0.12 });
+            bazookaEffect(world, s.x, s.y, veh.x, veh.y);
             let hit = w.accuracy * (1 - 0.3 * (d / w.rangeCells)) * (veh.path ? 0.75 : 1);
             hit *= 1 - s.suppression * 0.6;
             hit *= 0.7 + 0.3 * s.training;
@@ -166,13 +166,14 @@ function mortarShot(world: World, s: Soldier): void {
   }
 }
 
-const GRENADE_RANGE = 5; // cells (~10 m) — throwing distance
+const GRENADE_RANGE = 6; // cells (~12 m) — throwing distance
 const GRENADE_RADIUS = 1.8; // blast radius in cells
-const GRENADE_COOLDOWN = 6; // seconds between throws per man
+const GRENADE_COOLDOWN = 3.5; // seconds between throws per man
+const GRENADE_POINT_BLANK = 3.5; // within this, lob one even at an exposed enemy
 
-// Look for a nearby enemy hunkered in cover and, if one's in range and visible,
-// lob a grenade at him. Grenades ignore cover (that's their job) and crack the
-// building they land in.
+// Look for a nearby visible enemy and, if he's in cover (where rifle fire is wasted)
+// or simply close enough, lob a grenade at him. Grenades ignore cover (that's their
+// job) and crack the building they land in.
 function tryThrowGrenade(world: World, s: Soldier): void {
   if (s.grenades <= 0 || s.grenadeCD > 0) return;
   if (s.suppression > 0.6) return; // too pinned to pop up and throw
@@ -186,7 +187,8 @@ function tryThrowGrenade(world: World, s: Soldier): void {
     const tc = world.grid.inBounds(Math.floor(e.x), Math.floor(e.y))
       ? TERRAIN[world.grid.get(Math.floor(e.x), Math.floor(e.y))].cover
       : 0;
-    if (tc < 0.35) continue; // only bother if he's actually in cover
+    // Grenade a man in any real cover, or anyone who's right on top of us.
+    if (tc < 0.2 && d > GRENADE_POINT_BLANK) continue;
     if (!hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), Math.floor(e.x), Math.floor(e.y))) continue;
     target = e;
     bestD = d;
@@ -260,6 +262,26 @@ function fireShot(world: World, s: Soldier, target: Soldier, dist: number): void
     else if (r < lethal) woundSoldier(world, target);
     else addSuppression(target, 0.3); // a graze / near-miss hammers morale
   }
+}
+
+// A bazooka/Panzerfaust rocket: muzzle flash and a back-blast plume behind the
+// firer, a bright rocket streak downrange, then a fiery burst at the target so the
+// shot reads clearly even when it bounces off armor.
+function bazookaEffect(world: World, sx: number, sy: number, tx: number, ty: number): void {
+  const ang = Math.atan2(ty - sy, tx - sx);
+  // Back-blast: smoke kicked out behind the launcher.
+  const bx = sx - Math.cos(ang) * 1.2;
+  const by = sy - Math.sin(ang) * 1.2;
+  world.effects.push({ kind: "flash", x0: sx, y0: sy, x1: sx, y1: sy, ttl: 0.1 });
+  world.effects.push({ kind: "smoke", x0: bx, y0: by, x1: 0, y1: 0, ttl: 0.9, maxTtl: 0.9 });
+  // Rocket streak in flight.
+  world.effects.push({ kind: "ap", x0: sx, y0: sy, x1: tx, y1: ty, ttl: 0.14 });
+  // Impact burst.
+  world.effects.push({ kind: "flash", x0: tx, y0: ty, x1: tx, y1: ty, ttl: 0.1 });
+  world.effects.push({ kind: "fire", x0: tx, y0: ty, x1: tx, y1: ty, ttl: 0.4 });
+  world.effects.push({ kind: "hit", x0: tx, y0: ty, x1: tx, y1: ty, ttl: 0.3 });
+  world.effects.push({ kind: "smoke", x0: tx, y0: ty, x1: 0, y1: 0, ttl: 1.1, maxTtl: 1.1 });
+  sound.play("explosion", tx, ty);
 }
 
 // Some rounds spit off the ground/cover where a tracer lands: a quick bright spark

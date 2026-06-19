@@ -299,7 +299,7 @@ export class World {
         fireCD: Math.random() * 0.5,
         firedTimer: 0,
         // Riflemen and SMG men carry grenades; specialists (LMG/AT/mortar) don't.
-        grenades: weapon === "rifle" || weapon === "smg" ? 3 : 0,
+        grenades: weapon === "rifle" || weapon === "smg" ? 5 : 0,
         grenadeCD: 0,
         suppression: 0,
         morale: 0.6 + training * 0.3,

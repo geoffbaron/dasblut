@@ -39,7 +39,7 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
   // Light mortar: indirect HE. Lobs over walls and hedges onto a designated patch,
   // heavy on suppression with a real casualty radius. Slow, finite bombs, and blind
   // up close — it needs the player to call the shot.
-  mortar:      { id: "mortar",      name: "Mortar",      rangeCells: 70, rof: 0.5,  accuracy: 0.5, suppression: 0.5, lethality: 0.6, ammo: 20, tracerRate: 0, indirect: true, minRangeCells: 8, blastCells: 3 },
+  mortar:      { id: "mortar",      name: "Mortar",      rangeCells: 70, rof: 0.2,  accuracy: 0.5, suppression: 0.5, lethality: 0.6, ammo: 20, tracerRate: 0, indirect: true, minRangeCells: 8, blastCells: 3 },
 };
 
 export function isAntiTank(id: WeaponId): boolean {

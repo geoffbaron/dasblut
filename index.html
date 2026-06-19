@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DasBlut — Phase 0</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: #14130f; overflow: hidden; }
+      body {
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        color: #d8d2c2;
+      }
+      #app { position: fixed; inset: 0; }
+      #hud {
+        position: fixed; top: 12px; left: 12px; z-index: 10;
+        display: flex; gap: 10px; align-items: center;
+        padding: 8px 12px; border: 1px solid #3a3730; border-radius: 6px;
+        background: rgba(20, 19, 15, 0.82); backdrop-filter: blur(4px);
+        font-size: 13px; user-select: none;
+      }
+      #hud button {
+        font: inherit; color: #d8d2c2; background: #2a2820;
+        border: 1px solid #4a463c; border-radius: 4px; padding: 4px 10px;
+        cursor: pointer;
+      }
+      #hud button:hover { background: #34322a; }
+      #hud .pill { padding: 2px 8px; border-radius: 10px; background: #2a2820; }
+      #hint {
+        position: fixed; bottom: 12px; left: 12px; z-index: 10;
+        padding: 6px 10px; border-radius: 6px; font-size: 12px;
+        background: rgba(20, 19, 15, 0.7); color: #9a9484;
+      }
+      #status {
+        position: fixed; top: 12px; right: 12px; z-index: 10;
+        padding: 8px 12px; border: 1px solid #3a3730; border-radius: 6px;
+        background: rgba(20, 19, 15, 0.82); font-size: 12px; min-width: 150px;
+      }
+      #status .name { color: #e8e2d2; font-weight: 600; }
+      #status .dim { color: #8a8474; }
+      #status .row { margin-top: 4px; display: flex; gap: 6px; flex-wrap: wrap; }
+      #status .tag { padding: 1px 6px; border-radius: 8px; font-size: 11px; background: #2a2820; }
+      .s-steady { color: #8fbf6f; } .s-shaken { color: #f0c040; }
+      .s-pinned { color: #e07a2a; } .s-panicked { color: #e0533a; } .s-routing { color: #ff5a3a; }
+      #objective {
+        position: fixed; top: 62px; left: 50%; transform: translateX(-50%); z-index: 10;
+        padding: 6px 14px; border: 1px solid #3a3730; border-radius: 6px;
+        background: rgba(20, 19, 15, 0.82); font-size: 12px; text-align: center; min-width: 220px;
+      }
+      #objective .obj-title { color: #e8e2d2; font-weight: 600; letter-spacing: 1px; }
+      #objective .obj-us { color: #7fa8e8; } #objective .obj-axis { color: #e0796f; }
+      #objective .obj-hold { color: #8fcf6f; } #objective .obj-contested { color: #f0c040; }
+      #banner {
+        position: fixed; inset: 0; z-index: 20; display: none;
+        align-items: center; justify-content: center; pointer-events: none;
+      }
+      #banner .card {
+        padding: 22px 40px; border-radius: 10px; text-align: center;
+        background: rgba(20,19,15,0.9); border: 1px solid #4a463c;
+      }
+      #banner .big { font-size: 34px; font-weight: 700; letter-spacing: 2px; }
+      #banner .sub { margin-top: 6px; color: #9a9484; font-size: 13px; }
+      #orders {
+        position: fixed; bottom: 44px; left: 50%; transform: translateX(-50%); z-index: 10;
+        display: none; gap: 6px; padding: 7px; border-radius: 8px;
+        background: rgba(20,19,15,0.88); border: 1px solid #3a3730;
+      }
+      #orders button {
+        font: inherit; font-size: 12px; color: #cfc8b6; background: #2a2820;
+        border: 1px solid #46423a; border-radius: 5px; padding: 6px 9px; cursor: pointer;
+        min-width: 64px; text-align: center; line-height: 1.25;
+      }
+      #orders button:hover { background: #34322a; }
+      #orders button.armed { background: #5a4a22; border-color: #b89a4a; color: #fff3d6; }
+      #orders button .k { color: #8a8474; font-size: 10px; }
+      #orders button.armed .k { color: #e8d9a8; }
+
+      /* --- Deploy menu --- */
+      #menu {
+        position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column;
+        background: #14130f;
+      }
+      #menu .head { padding: 14px 18px; border-bottom: 1px solid #2e2b24; }
+      #menu h1 { margin: 0; font-size: 20px; letter-spacing: 3px; color: #e8e2d2; }
+      #menu .tag { margin-top: 3px; font-size: 12px; color: #8a8474; }
+      #menu .bar { display: flex; gap: 8px; padding: 10px 18px; align-items: center; flex-wrap: wrap; }
+      #menu input[type=text] {
+        flex: 1; min-width: 200px; font: inherit; font-size: 13px; color: #e8e2d2;
+        background: #201f19; border: 1px solid #46423a; border-radius: 5px; padding: 7px 10px;
+      }
+      #menu button {
+        font: inherit; font-size: 13px; color: #d8d2c2; background: #2a2820;
+        border: 1px solid #4a463c; border-radius: 5px; padding: 7px 12px; cursor: pointer;
+      }
+      #menu button:hover { background: #34322a; }
+      #menu button.primary { background: #5a4a22; border-color: #b89a4a; color: #fff3d6; }
+      #map { flex: 1; min-height: 0; }
+      #menu .foot { padding: 8px 18px; font-size: 11px; color: #6f6a5c; border-top: 1px solid #2e2b24; }
+      .reticle {
+        position: absolute; inset: 0; pointer-events: none; z-index: 500;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .reticle .box { border: 2px solid #ffe27a; box-shadow: 0 0 0 9999px rgba(10,10,8,0.28); }
+      #loading {
+        position: fixed; inset: 0; z-index: 60; display: none;
+        align-items: center; justify-content: center; background: rgba(10,10,8,0.82);
+        color: #e8e2d2; font-size: 15px; text-align: center;
+      }
+      #loading .spin {
+        width: 26px; height: 26px; margin: 0 auto 12px; border: 3px solid #4a463c;
+        border-top-color: #e8d27a; border-radius: 50%; animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      #deployBar {
+        position: fixed; bottom: 0; left: 0; right: 0; z-index: 15;
+        display: none; align-items: center; justify-content: space-between;
+        padding: 10px 18px; gap: 14px;
+        background: rgba(20,19,15,0.94); border-top: 2px solid #4f7fd1;
+        backdrop-filter: blur(4px);
+      }
+      #deployLabel { font-size: 12px; color: #7fa8e8; flex: 1; }
+      #launchBtn {
+        font: inherit; font-size: 13px; font-weight: 700; letter-spacing: 1px;
+        color: #fff3d6; background: #7a3020; border: 1.5px solid #e0533a;
+        border-radius: 6px; padding: 9px 20px; cursor: pointer;
+        transition: background 0.15s;
+      }
+      #launchBtn:hover { background: #9a4030; }
+
+      /* --- Unit navigator (Close Combat-style roster) --- */
+      #roster {
+        position: fixed; top: 62px; left: 12px; z-index: 10;
+        width: 196px; max-height: calc(100vh - 140px); overflow-y: auto;
+        display: flex; flex-direction: column; gap: 4px;
+        padding: 7px; border: 1px solid #3a3730; border-radius: 7px;
+        background: rgba(20, 19, 15, 0.82); backdrop-filter: blur(4px);
+      }
+      #roster .rtitle {
+        font-size: 10px; letter-spacing: 1.5px; color: #8a8474;
+        padding: 1px 3px 3px;
+      }
+      .rcard {
+        padding: 6px 7px; border: 1px solid #383530; border-radius: 5px;
+        background: #232118; cursor: pointer; user-select: none;
+      }
+      .rcard:hover { background: #2c2a20; }
+      .rcard.sel { border-color: #b89a4a; background: #322c1c; }
+      .rcard.dead { opacity: 0.45; }
+      .rcard .rhead { display: flex; align-items: center; gap: 5px; font-size: 11.5px; }
+      .rcard .rname { color: #e8e2d2; font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .rbadge {
+        font-size: 9px; font-weight: 700; letter-spacing: 0.5px;
+        padding: 1px 4px; border-radius: 3px; color: #14130f;
+      }
+      .rbadge.rifle  { background: #8a8474; }
+      .rbadge.mg     { background: #c7a23f; }
+      .rbadge.at     { background: #e0796f; }
+      .rbadge.mortar { background: #7fa8e8; }
+      .rbadge.tank   { background: #9a8f6a; }
+      .rcard .rcount { font-size: 10px; color: #b0aa98; margin-left: auto; }
+      .rcard .rbars { margin-top: 5px; display: flex; flex-direction: column; gap: 3px; }
+      .rbar { display: flex; align-items: center; gap: 4px; font-size: 9px; color: #8a8474; }
+      .rbar .rlabel { width: 12px; }
+      .rbar .rtrack { flex: 1; height: 5px; border-radius: 3px; background: #14130f; overflow: hidden; }
+      .rbar .rfill { height: 100%; border-radius: 3px; }
+    </style>
+  </head>
+  <body>
+    <div id="menu">
+      <div class="head">
+        <h1>DAS BLUT</h1>
+        <div class="tag">Pick any spot on Earth. It becomes the battlefield.</div>
+      </div>
+      <div class="bar">
+        <input id="search" type="text" placeholder="Search a place (e.g. Carentan, Bastogne, your street)…" />
+        <button id="searchBtn">Search</button>
+        <button id="deployBtn" class="primary">⚔ Deploy here</button>
+        <button id="testBtn">Use test map</button>
+      </div>
+      <div id="map">
+        <div class="reticle"><div class="box" id="reticleBox"></div></div>
+      </div>
+      <div class="foot">Pan/zoom to frame ~380 × 300 m inside the yellow box · map data © OpenStreetMap contributors</div>
+    </div>
+    <div id="loading"><div><div class="spin"></div><div id="loadingMsg">Reconnoitering the ground…</div></div></div>
+    <div id="app"></div>
+    <div id="hud">
+      <button id="pauseBtn">⏸ Pause</button>
+      <span class="pill" id="speedPill">1×</span>
+      <button id="speedBtn">Speed</button>
+      <span class="dim" id="clock">t 0.0s</span>
+      <span class="pill" id="forces">US — · AXIS —</span>
+    </div>
+    <div id="roster"><div class="rtitle">UNITS</div></div>
+    <div id="status"><span class="dim">No team selected</span></div>
+    <div id="objective"></div>
+    <div id="banner"><div class="card"><div class="big" id="bannerBig"></div><div class="sub" id="bannerSub"></div></div></div>
+    <div id="orders">
+      <button data-order="move"   data-key="q">Move<br><span class="k">Q</span></button>
+      <button data-order="fast"   data-key="w">Fast<br><span class="k">W</span></button>
+      <button data-order="sneak"  data-key="e">Sneak<br><span class="k">E</span></button>
+      <button data-order="defend" data-key="r">Defend<br><span class="k">R</span></button>
+      <button data-order="ambush" data-key="t">Ambush<br><span class="k">T</span></button>
+      <button data-order="fire"   data-key="f">Fire<br><span class="k">F</span></button>
+    </div>
+    <div id="deployBar">
+      <div id="deployLabel">DEPLOYMENT PHASE — position your squads in the blue zone · press O to scout the objective</div>
+      <button id="launchBtn">⚔ LAUNCH ATTACK</button>
+    </div>
+    <div id="hint">Select squad → pick an order → click the map · Defend/Ambush apply in place · Space = pause · Arrows = pan · O = snap to objective</div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

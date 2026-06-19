@@ -1,0 +1,24 @@
+{
+  "name": "dasblut",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser-based Close Combat-style WW2 tactics with real-world maps. Phase 0 vertical slice.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "start": "vite preview"
+  },
+  "dependencies": {
+    "howler": "^2.2.4",
+    "leaflet": "^1.9.4",
+    "pixi.js": "^8.6.6"
+  },
+  "devDependencies": {
+    "@types/howler": "^2.2.13",
+    "@types/leaflet": "^1.9.12",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5"
+  }
+}

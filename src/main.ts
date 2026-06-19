@@ -387,9 +387,12 @@ async function startGame(map: GameMap) {
     () => step(world),
     (alpha) => {
       const now = performance.now();
+      const dtSec = (now - lastRenderTs) / 1000;
       input.update(now - lastRenderTs);
       lastRenderTs = now;
       renderer.render(world, alpha);
+      // Distant battlefield ambience while the fighting is live.
+      sound.updateAmbient(dtSec, world.phase === "battle" && !world.outcome && !loop.paused);
       if (world.objOwner !== prevObjOwner) {
         sound.playUI(world.objOwner === "us" ? "obj_capture" : "obj_lost");
         prevObjOwner = world.objOwner;
@@ -420,6 +423,7 @@ async function startGame(map: GameMap) {
   const setPaused = (p: boolean) => {
     loop.paused = p;
     pauseBtn.textContent = p ? "▶ Resume" : "⏸ Pause";
+    sound.setMuted(p); // silence loops/ambience while frozen
   };
   pauseBtn.addEventListener("click", () => setPaused(!loop.paused));
   speedBtn.addEventListener("click", () => {

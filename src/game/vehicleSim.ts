@@ -16,6 +16,7 @@ export function updateVehicles(world: World): void {
   for (const v of world.vehicles) {
     if (v.status === "ko") {
       emitSmoke(world, v, dt);
+      sound.setEngine(v.id, false, v.x, v.y); // dead engine — cut the loop
       v.px = v.x;
       v.py = v.y;
       continue;
@@ -26,6 +27,9 @@ export function updateVehicles(world: World): void {
     acquire(world, v);
     aimAndFire(world, v, dt);
     move(world, v, dt);
+    // Run the engine loop whenever the hull actually shifted this step.
+    const moved = (v.x - v.px) ** 2 + (v.y - v.py) ** 2 > 1e-7;
+    sound.setEngine(v.id, moved, v.x, v.y);
   }
 }
 

@@ -26,6 +26,7 @@ export type SfxId =
   | "obj_capture"
   | "obj_lost"
   | "tank_engine"
+  | "ambient"
   | "mortar";
 
 // Maps each game event to one or more real audio files in public/sfx/ (filenames are
@@ -50,6 +51,21 @@ const SCREAMS = [
   "dying_screaming_sayi_#3-1781820762927.mp3",
   "dying_screaming_sayi_#4-1781820762927.mp3",
 ];
+// Tank engine — three driving recordings; one is picked per tank for variety and
+// looped continuously while that tank is on the move.
+const TANK_DRIVE = [
+  "VEHMil-tank_driving-Elevenlabs.mp3",
+  "VEHMil-heavy_tank_driving_f-Elevenlabs.mp3",
+  "VEHMil-heavy_battle_tank_dr-Elevenlabs.mp3",
+];
+// Distant battlefield atmosphere — planes, far-off small-arms, general battle din.
+// Played at low volume on a slow random timer so the field never feels empty.
+const AMBIENT = [
+  "AEROMil-WW2_planes_in_distan-Elevenlabs.mp3",
+  "GUNRif-distant_small_arms_f-Elevenlabs.mp3",
+  "GUNRif-distant_small_arms_f-Elevenlabs (1).mp3",
+  "ambient_battle_dista_#1-1781828842109.mp3",
+];
 
 const SFX_DEFS: Record<SfxId, { files: string[]; vol: number }> = {
   rifle:          { files: [RIFLE],     vol: 0.8 },
@@ -71,12 +87,13 @@ const SFX_DEFS: Record<SfxId, { files: string[]; vol: number }> = {
   ui_order:       { files: [],          vol: 0.4 }, // synth fallback
   obj_capture:    { files: [],          vol: 0.9 }, // synth fallback
   obj_lost:       { files: [],          vol: 0.9 }, // synth fallback
-  tank_engine:    { files: [],          vol: 0.3 }, // synth fallback
+  tank_engine:    { files: TANK_DRIVE,  vol: 0.45 }, // looped while a tank drives
+  ambient:        { files: AMBIENT,     vol: 0.3 },  // low distant battlefield bed
   mortar:         { files: [MORTAR_FIRE], vol: 0.9 }, // tube thump when a mortar fires
 };
 
-// Maximum sounds per frame to avoid audio avalanche during heavy combat.
-const MAX_PER_FRAME = 6;
+// Maximum audible sounds per frame to avoid an audio avalanche during heavy combat.
+const MAX_PER_FRAME = 10;
 // Distance in cells beyond which audio is inaudible.
 const FADE_CELLS = 35;
 
@@ -89,6 +106,10 @@ export class SoundManager {
   // World-space camera center, set each frame by the renderer.
   cameraX = 0;
   cameraY = 0;
+  // Sustained engine loops, keyed by vehicle id (started/stopped as tanks move).
+  private engines = new Map<number, { howl: Howl; sid: number }>();
+  // Seconds until the next random distant-ambience cue.
+  private ambientTimer = 6;
 
   constructor() {
     Howler.volume(this.masterVol);
@@ -99,6 +120,12 @@ export class SoundManager {
     Howler.volume(v);
   }
 
+  // Mute everything at once (used while the game is paused) — silences looping
+  // engines and ambience too, which one-shot throttling can't reach.
+  setMuted(m: boolean) {
+    Howler.mute(m);
+  }
+
   // Called each render frame to reset the per-frame throttle.
   tick() {
     this.frameCount = 0;
@@ -106,13 +133,16 @@ export class SoundManager {
 
   // Play a sound at world-cell coordinates. Distance from camera affects volume/pan.
   play(id: SfxId, worldX: number, worldY: number) {
-    if (this.frameCount >= MAX_PER_FRAME) return;
-    this.frameCount++;
-
+    // Cull out-of-earshot sounds BEFORE spending the per-frame budget, otherwise a
+    // burst of distant gunfire silently eats the budget and starves the close-up
+    // shots the player is actually watching.
     const dx = worldX - this.cameraX;
     const dy = worldY - this.cameraY;
     const dist = Math.hypot(dx, dy);
     if (dist > FADE_CELLS) return;
+
+    if (this.frameCount >= MAX_PER_FRAME) return;
+    this.frameCount++;
 
     const vol = (1 - dist / FADE_CELLS) ** 1.5;
     const pan = Math.max(-1, Math.min(1, dx / (FADE_CELLS * 0.5)));
@@ -125,6 +155,51 @@ export class SoundManager {
     } else {
       this.playFallback(id, vol, pan);
     }
+  }
+
+  // Start/maintain/stop a looping engine sound for a vehicle. Call every step with
+  // whether the tank is currently moving; volume and pan track the camera so the
+  // engine swells as you watch it and fades as it drives off.
+  setEngine(vehId: number, moving: boolean, worldX: number, worldY: number) {
+    const cur = this.engines.get(vehId);
+    if (!moving) {
+      if (cur) {
+        cur.howl.stop(cur.sid);
+        this.engines.delete(vehId);
+      }
+      return;
+    }
+    const dx = worldX - this.cameraX;
+    const dy = worldY - this.cameraY;
+    const dist = Math.hypot(dx, dy);
+    const vol = dist > FADE_CELLS ? 0 : (1 - dist / FADE_CELLS) ** 1.5;
+    const pan = Math.max(-1, Math.min(1, dx / (FADE_CELLS * 0.5)));
+    if (!cur) {
+      const howl = this.pickHowl("tank_engine");
+      if (!howl) return; // no engine files → stay silent (no synth loop)
+      const sid = howl.play();
+      howl.loop(true, sid);
+      howl.volume(SFX_DEFS.tank_engine.vol * vol, sid);
+      howl.stereo(pan, sid);
+      this.engines.set(vehId, { howl, sid });
+    } else {
+      cur.howl.volume(SFX_DEFS.tank_engine.vol * vol, cur.sid);
+      cur.howl.stereo(pan, cur.sid);
+    }
+  }
+
+  // Slow random scheduler for distant battlefield ambience. Call once per rendered
+  // frame with the elapsed seconds; only fires while a battle is actually underway.
+  updateAmbient(dtSec: number, active: boolean) {
+    if (!active) return;
+    this.ambientTimer -= dtSec;
+    if (this.ambientTimer > 0) return;
+    this.ambientTimer = 14 + Math.random() * 16; // next cue in 14–30s
+    const howl = this.pickHowl("ambient");
+    if (!howl) return;
+    const sid = howl.play();
+    howl.volume(SFX_DEFS.ambient.vol, sid);
+    howl.stereo((Math.random() * 2 - 1) * 0.6, sid); // spread it around the field
   }
 
   // Play a UI sound (not positional).
@@ -159,39 +234,45 @@ export class SoundManager {
   }
 
   // Synthesized Web Audio fallback so gameplay has audio before real files are added.
+  // Wrapped so a missing/closed AudioContext can never throw into the sim loop — a
+  // synth-only positional cue (e.g. ricochet) must fail silently, not break a step.
   private playFallback(id: SfxId, vol: number, pan: number) {
-    if (!this.synth) {
-      try { this.synth = new AudioContext(); } catch { return; }
-    }
-    const ctx = this.synth;
-    const gain = ctx.createGain();
-    const panner = ctx.createStereoPanner();
-    panner.pan.value = pan;
-    gain.gain.value = vol * 0.15; // quiet fallback
-    gain.connect(panner);
-    panner.connect(ctx.destination);
+    try {
+      if (!this.synth || this.synth.state === "closed") {
+        this.synth = new AudioContext();
+      }
+      const ctx = this.synth;
+      const gain = ctx.createGain();
+      const panner = ctx.createStereoPanner();
+      panner.pan.value = pan;
+      gain.gain.value = vol * 0.15; // quiet fallback
+      gain.connect(panner);
+      panner.connect(ctx.destination);
 
-    const { freq, dur, type } = FALLBACK_PARAMS[id] ?? { freq: 200, dur: 0.1, type: "sawtooth" as OscillatorType };
+      const { freq, dur, type } = FALLBACK_PARAMS[id] ?? { freq: 200, dur: 0.1, type: "sawtooth" as OscillatorType };
 
-    if (id === "explosion" || id === "tank_he" || id === "tank_destroy") {
-      // Noise burst for explosions.
-      const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
-      const data = buf.getChannelData(0);
-      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length) ** 2;
-      const src = ctx.createBufferSource();
-      src.buffer = buf;
-      src.connect(gain);
-      src.start();
-    } else {
-      const osc = ctx.createOscillator();
-      osc.type = type;
-      osc.frequency.setValueAtTime(freq, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(freq * 0.3, ctx.currentTime + dur);
-      gain.gain.setValueAtTime(vol * 0.15, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
-      osc.connect(gain);
-      osc.start();
-      osc.stop(ctx.currentTime + dur);
+      if (id === "explosion" || id === "tank_he" || id === "tank_destroy") {
+        // Noise burst for explosions.
+        const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length) ** 2;
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(gain);
+        src.start();
+      } else {
+        const osc = ctx.createOscillator();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(freq * 0.3, ctx.currentTime + dur);
+        gain.gain.setValueAtTime(vol * 0.15, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        osc.connect(gain);
+        osc.start();
+        osc.stop(ctx.currentTime + dur);
+      }
+    } catch {
+      // Audio context unavailable (e.g. backgrounded tab) — stay silent.
     }
   }
 }

@@ -26,6 +26,8 @@ type ArmedOrder = "move" | "fast" | "sneak" | "fire" | "smoke";
 // no WS server answers (offline / Vite dev), we just start the normal single game.
 let booted = false;
 let pendingSetup: Setup | null = null;
+// True when a human German commander is connected (the host's "opponent ready" flag).
+let opponentPresent = false;
 // Host hooks, wired up once startGame has built the world.
 let onAxisOrderHost: ((o: AxisOrder) => void) | null = null;
 let onGermanPresentHost: ((present: boolean) => void) | null = null;
@@ -34,16 +36,39 @@ let onSnapshotClient: ((s: Snapshot) => void) | null = null;
 
 net.connect({
   onRole: (role, germanPresent) => {
+    opponentPresent = germanPresent;
     if (role === "spectator" && !germanPresent) net.claimGerman(); // first joiner takes the Axis
     if (role === "host") startOffline();
     else maybeStartClient();
   },
-  onGermanPresent: (p) => onGermanPresentHost?.(p),
+  onGermanPresent: (p) => {
+    if (p && !opponentPresent) toast("A human German commander has joined — the AI stands down.");
+    opponentPresent = p;
+    onGermanPresentHost?.(p);
+  },
   onSetup: (d) => { pendingSetup = d as Setup; maybeStartClient(); },
   onSnapshot: (d) => onSnapshotClient?.(d as Snapshot),
   onAxisOrder: (d) => onAxisOrderHost?.(d as AxisOrder),
   onClose: () => startOffline(), // host left / disconnected → fall back to local play
 });
+
+// Brief on-screen notice (e.g. when an opponent connects).
+function toast(msg: string): void {
+  let t = document.getElementById("toast");
+  if (!t) {
+    t = document.createElement("div");
+    t.id = "toast";
+    t.style.cssText =
+      "position:fixed;top:44px;left:50%;transform:translateX(-50%);z-index:40;" +
+      "font:600 13px ui-monospace,monospace;padding:8px 16px;border-radius:8px;" +
+      "background:rgba(20,40,20,0.92);border:1px solid #6f9f4f;color:#cfe8bf;" +
+      "transition:opacity 0.4s;pointer-events:none;";
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.opacity = "1";
+  window.setTimeout(() => { if (t) t.style.opacity = "0"; }, 4000);
+}
 // If nothing answers shortly, there's no multiplayer server: play offline.
 setTimeout(() => startOffline(), 900);
 
@@ -135,8 +160,8 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
     badge = document.createElement("div");
     badge.id = "netbadge";
     badge.style.cssText =
-      "position:fixed;top:8px;right:12px;z-index:30;font:600 12px ui-monospace,monospace;" +
-      "padding:4px 10px;border-radius:6px;background:rgba(20,19,15,0.85);border:1px solid #4a463c;color:#cfc8b6;";
+      "position:fixed;bottom:12px;right:12px;z-index:30;font:600 12px ui-monospace,monospace;" +
+      "padding:5px 12px;border-radius:6px;background:rgba(20,19,15,0.88);border:1px solid #4a463c;color:#cfc8b6;";
     document.body.appendChild(badge);
   }
 
@@ -438,10 +463,22 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
       clockEl.textContent = `⏱ ${Math.floor(left / 60)}:${Math.floor(left % 60).toString().padStart(2, "0")}`;
       clockEl.style.color = left < 60 ? "#e0796f" : "";
     }
-    if (net.connected) {
-      badge!.style.display = "block";
-      badge!.textContent = net.role === "host" ? "MULTIPLAYER · HOST (US)" : net.role === "german" ? "MULTIPLAYER · COMMANDING AXIS" : "MULTIPLAYER · SPECTATING";
-    } else badge!.style.display = "none";
+    // Always show the mode. Offline = single player; on the server the host sees
+    // whether a human opponent has taken the Axis yet.
+    badge!.style.display = "block";
+    if (!net.connected) {
+      badge!.textContent = "SINGLE PLAYER";
+      badge!.style.color = "#9a9484";
+    } else if (net.role === "host") {
+      badge!.textContent = opponentPresent ? "MULTIPLAYER · YOU: US · GERMAN: human ✓" : "MULTIPLAYER · YOU: US · waiting for opponent…";
+      badge!.style.color = opponentPresent ? "#9fcf6f" : "#e0c060";
+    } else if (net.role === "german") {
+      badge!.textContent = "MULTIPLAYER · YOU: GERMAN (Axis)";
+      badge!.style.color = "#e0a06a";
+    } else {
+      badge!.textContent = "MULTIPLAYER · SPECTATING";
+      badge!.style.color = "#9a9484";
+    }
     refreshStatus(); updateOrdersBar(); refreshRoster();
   };
   return { frame, update: (ms: number) => input.update(ms) };

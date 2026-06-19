@@ -7,6 +7,7 @@ import {
   OBJECTIVE_CAPTURE_TIME,
   OBJECTIVE_HOLD_TO_WIN,
   SIM_DT,
+  SMOKE_DECAY,
   STANCE_SPEED,
   VIS_INTERVAL,
 } from "./constants.ts";
@@ -34,6 +35,7 @@ export function step(world: World): void {
 
   world.time += SIM_DT;
   ageEffects(world, SIM_DT);
+  decaySmoke(world, SIM_DT);
 
   world.visAccum += SIM_DT;
   if (world.visAccum >= VIS_INTERVAL) {
@@ -164,6 +166,16 @@ function advance(world: World, s: Soldier, speedMul: number): void {
   const mvx = s.x - s.px;
   const mvy = s.y - s.py;
   if (mvx * mvx + mvy * mvy > 1e-6) s.facing = Math.atan2(mvy, mvx);
+}
+
+// Smoke thins out over time; once a cell drops below the LOS-blocking threshold it
+// stops concealing, and at ~0 it's gone entirely.
+function decaySmoke(world: World, dt: number): void {
+  const g = world.smokeGrid;
+  const d = SMOKE_DECAY * dt;
+  for (let i = 0; i < g.length; i++) {
+    if (g[i] > 0) g[i] = Math.max(0, g[i] - d);
+  }
 }
 
 function ageEffects(world: World, dt: number): void {

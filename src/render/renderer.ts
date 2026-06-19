@@ -20,6 +20,7 @@ export class Renderer {
   private vehicleLayer = new Container();
   private shadowLayer = new Container();
   private bodyLayer = new Container();
+  private smokeScreen = new Graphics();
   private fx = new Graphics();
   // Screen-space drag-select box drawn on top of everything, outside the camera.
   private selBox = new Graphics();
@@ -56,7 +57,7 @@ export class Renderer {
     // Soften the blocky cell edges of the fog shroud so it reads as a smooth haze.
     this.shroud.filters = [new BlurFilter({ strength: 10, quality: 3 })];
 
-    this.camera.addChild(bg, this.damageLayer, this.shroud, this.overlay, this.vehicleLayer, this.shadowLayer, this.bodyLayer, this.fx);
+    this.camera.addChild(bg, this.damageLayer, this.shroud, this.overlay, this.vehicleLayer, this.shadowLayer, this.bodyLayer, this.smokeScreen, this.fx);
     // selBox lives outside the camera so it stays in screen space.
     this.app.stage.addChild(this.camera, this.selBox);
 
@@ -229,7 +230,26 @@ export class Renderer {
     this.drawOverlay(world);
     this.drawVehicles(world, alpha);
     this.drawSoldiers(world, alpha);
+    this.drawSmoke(world);
     this.drawEffects(world);
+  }
+
+  // Persistent mortar-smoke screen, drawn from the smoke density grid each frame so it
+  // billows and thins as the grid decays. Overlapping soft discs read as a cloud bank.
+  private drawSmoke(world: World): void {
+    const g = this.smokeScreen;
+    g.clear();
+    const { grid } = world;
+    const sm = world.smokeGrid;
+    for (let cy = 0; cy < grid.height; cy++) {
+      for (let cx = 0; cx < grid.width; cx++) {
+        const d = sm[grid.idx(cx, cy)];
+        if (d < 0.06) continue;
+        const a = Math.min(0.72, d * 0.55);
+        g.circle((cx + 0.5) * CELL_SIZE, (cy + 0.5) * CELL_SIZE, CELL_SIZE * 0.95)
+          .fill({ color: 0xb9b6ad, alpha: a });
+      }
+    }
   }
 
   private drawVehicles(world: World, alpha: number): void {

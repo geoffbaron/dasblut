@@ -102,7 +102,7 @@ function aimAndFire(world: World, v: Vehicle, dt: number): void {
   // Machine gun hoses infantry independently of the main gun's reload.
   if (inf && v.mgAmmo > 0) {
     const d = Math.hypot(inf.x - v.x, inf.y - v.y);
-    if (d <= def.mg.rangeCells && hasLOS(world.grid, Math.floor(v.x), Math.floor(v.y), Math.floor(inf.x), Math.floor(inf.y))) {
+    if (d <= def.mg.rangeCells && hasLOS(world.grid, Math.floor(v.x), Math.floor(v.y), Math.floor(inf.x), Math.floor(inf.y), world.smokeGrid)) {
       let guard = 6;
       while (v.mgCD <= 0 && v.mgAmmo > 0 && guard-- > 0) {
         v.mgCD += 1 / def.mg.rof;
@@ -231,7 +231,7 @@ function nearestEnemyVeh(world: World, v: Vehicle, range: number): Vehicle | nul
   for (const t of world.vehicles) {
     if (t.faction === v.faction || t.status === "ko" || !t.seen) continue;
     const d = (t.x - v.x) ** 2 + (t.y - v.y) ** 2;
-    if (d < bestD && hasLOS(world.grid, Math.floor(v.x), Math.floor(v.y), Math.floor(t.x), Math.floor(t.y))) {
+    if (d < bestD && hasLOS(world.grid, Math.floor(v.x), Math.floor(v.y), Math.floor(t.x), Math.floor(t.y), world.smokeGrid)) {
       best = t;
       bestD = d;
     }
@@ -244,7 +244,7 @@ function nearestEnemyInf(world: World, v: Vehicle, range: number): Soldier | nul
   for (const t of world.soldiers) {
     if (t.faction === v.faction || t.status !== "active" || !t.seen) continue;
     const d = (t.x - v.x) ** 2 + (t.y - v.y) ** 2;
-    if (d < bestD && hasLOS(world.grid, Math.floor(v.x), Math.floor(v.y), Math.floor(t.x), Math.floor(t.y))) {
+    if (d < bestD && hasLOS(world.grid, Math.floor(v.x), Math.floor(v.y), Math.floor(t.x), Math.floor(t.y), world.smokeGrid)) {
       best = t;
       bestD = d;
     }
@@ -254,7 +254,7 @@ function nearestEnemyInf(world: World, v: Vehicle, range: number): Soldier | nul
 function inRangeLOS(world: World, v: Vehicle, x: number, y: number, range: number): boolean {
   return (
     (x - v.x) ** 2 + (y - v.y) ** 2 <= range * range &&
-    hasLOS(world.grid, Math.floor(v.x), Math.floor(v.y), Math.floor(x), Math.floor(y))
+    hasLOS(world.grid, Math.floor(v.x), Math.floor(v.y), Math.floor(x), Math.floor(y), world.smokeGrid)
   );
 }
 

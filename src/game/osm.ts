@@ -213,16 +213,27 @@ function rasterizeBuilding(grid: Grid, poly: Pt[], features: MapFeatures): void 
   }
   for (const [cx, cy] of walls) grid.set(cx, cy, Terrain.Wall);
 
-  // Doorway: a wall cell that touches passable open ground outside.
+  // Doorways: punch openings wherever the wall faces open ground, spaced out so a
+  // squad can get in and out from several sides instead of funnelling through one
+  // awkward corner. A previous single-doorway version left buildings near-impossible
+  // to enter.
+  const cands: [number, number][] = [];
   for (const [cx, cy] of walls) {
     const out = [
       [cx - 1, cy], [cx + 1, cy], [cx, cy - 1], [cx, cy + 1],
     ].some(([nx, ny]) => grid.inBounds(nx, ny) && passableOpen(grid.get(nx, ny)));
-    if (out) {
-      grid.set(cx, cy, Terrain.Floor);
-      break;
+    if (out) cands.push([cx, cy]);
+  }
+  const doors: [number, number][] = [];
+  const MIN_GAP = 3; // keep openings at least this far apart so some wall remains
+  for (const c of cands) {
+    if (doors.every((d) => Math.abs(d[0] - c[0]) + Math.abs(d[1] - c[1]) >= MIN_GAP)) {
+      grid.set(c[0], c[1], Terrain.Floor);
+      doors.push(c);
     }
   }
+  // Guarantee at least one way in even if nothing touched open ground directly.
+  if (doors.length === 0 && walls.length) grid.set(walls[0][0], walls[0][1], Terrain.Floor);
 
   const lvl = 1 + (inside.length > 30 ? 1 : 0);
   features.buildings.push({ poly, levels: lvl });

@@ -44,7 +44,7 @@ export function acquireTargets(world: World): void {
       const t = world.soldier(s.manualTargetId);
       if (t && t.status === "active" && t.seen) {
         const d = Math.hypot(t.x - s.x, t.y - s.y);
-        if (d <= w.rangeCells && hasLOS(world.grid, scx, scy, Math.floor(t.x), Math.floor(t.y))) {
+        if (d <= w.rangeCells && hasLOS(world.grid, scx, scy, Math.floor(t.x), Math.floor(t.y), world.smokeGrid)) {
           s.targetId = t.id;
           if (!s.path) s.facing = Math.atan2(t.y - s.y, t.x - s.x);
           continue;
@@ -64,7 +64,7 @@ export function acquireTargets(world: World): void {
       const dy = t.y - s.y;
       const d = dx * dx + dy * dy;
       if (d > range2 || d >= bestD) continue;
-      if (!hasLOS(world.grid, scx, scy, Math.floor(t.x), Math.floor(t.y))) continue;
+      if (!hasLOS(world.grid, scx, scy, Math.floor(t.x), Math.floor(t.y), world.smokeGrid)) continue;
       best = t;
       bestD = d;
     }
@@ -86,7 +86,7 @@ function acquireVehicle(world: World, s: Soldier, range: number): number | null 
     if (v.faction === s.faction || v.status === "ko" || !v.seen) continue;
     const d = (v.x - s.x) ** 2 + (v.y - s.y) ** 2;
     if (d > bestD) continue;
-    if (!hasLOS(world.grid, scx, scy, Math.floor(v.x), Math.floor(v.y))) continue;
+    if (!hasLOS(world.grid, scx, scy, Math.floor(v.x), Math.floor(v.y), world.smokeGrid)) continue;
     best = v;
     bestD = d;
   }

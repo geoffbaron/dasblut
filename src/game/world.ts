@@ -41,6 +41,7 @@ export interface Soldier {
   targetVehId: number | null; // AT men engage enemy armor
   manualTargetId: number | null; // player-designated focus-fire target
   fireCell: Cell | null; // player-designated area (suppressing) fire point
+  fireSmoke: boolean; // when firing on fireCell, lay smoke instead of HE (mortars)
   ambushTimer: number; // >0 → opening-volley bonus active
   fireCD: number; // seconds until the next shot is ready
   firedTimer: number; // >0 shortly after firing (muzzle flash / easier to spot)
@@ -186,6 +187,10 @@ export class World {
   buildDmg: Float32Array;
   buildDmgVersion = 0;
 
+  // Per-cell smoke density (0..~1.6). Decays over time; cells above SMOKE_LOS_BLOCK
+  // break line of sight, so a mortar smoke screen conceals units moving behind it.
+  smokeGrid: Float32Array;
+
   private nextId = 1;
   private byId = new Map<number, Soldier>();
   private byVid = new Map<number, Vehicle>();
@@ -199,6 +204,7 @@ export class World {
     this.objective = map.objective;
     this.visGrid = new Uint8Array(this.grid.width * this.grid.height);
     this.buildDmg = new Float32Array(this.grid.width * this.grid.height);
+    this.smokeGrid = new Float32Array(this.grid.width * this.grid.height);
     // Deployment zones: each side gets the outer 25% of map depth.
     this.deployY0Us    = Math.floor(this.grid.height * 0.75);
     this.deployY1Axis  = Math.ceil(this.grid.height  * 0.25);
@@ -295,6 +301,7 @@ export class World {
         targetVehId: null,
         manualTargetId: null,
         fireCell: null,
+        fireSmoke: false,
         ambushTimer: 0,
         fireCD: Math.random() * 0.5,
         firedTimer: 0,
@@ -358,6 +365,7 @@ export class World {
       s.stance = stance;
       s.manualTargetId = null;
       s.fireCell = null;
+      s.fireSmoke = false;
       const goal = this.nearestPassable(target.cx + s.ox, target.cy + s.oy, target);
       const start: Cell = { cx: Math.floor(s.x), cy: Math.floor(s.y) };
       const raw = findPath(this.grid, start, goal);
@@ -388,6 +396,7 @@ export class World {
       s.stance = stance;
       s.manualTargetId = null;
       s.fireCell = null;
+      s.fireSmoke = false;
       const enemy = this.nearestSpottedEnemy(s);
       if (enemy) s.facing = Math.atan2(enemy.y - s.y, enemy.x - s.x);
     }
@@ -402,6 +411,7 @@ export class World {
       if (s.status !== "active") continue;
       s.manualTargetId = enemyId;
       s.fireCell = null;
+      s.fireSmoke = false;
       if (s.stance === "sneak" || s.stance === "ambush") s.stance = "defend";
     }
   }
@@ -416,9 +426,37 @@ export class World {
       s.path = null;
       s.manualTargetId = null;
       s.fireCell = cell;
+      s.fireSmoke = false;
       if (s.stance === "sneak" || s.stance === "ambush") s.stance = "defend";
       s.facing = Math.atan2(cell.cy + 0.5 - s.y, cell.cx + 0.5 - s.x);
     }
+  }
+
+  /**
+   * Order a mortar team to lay a smoke screen on a cell. Only the indirect-fire tubes
+   * respond (the rest of the team holds); returns false if the team has no mortars,
+   * so the UI can reflect that smoke is a mortar-only order.
+   */
+  orderSmoke(teamId: number, cell: Cell): boolean {
+    const team = this.team(teamId);
+    if (!team) return false;
+    let anyTube = false;
+    for (const id of team.soldierIds) {
+      const s = this.soldier(id)!;
+      if (s.status !== "active") continue;
+      if (WEAPONS[s.weapon].indirect) {
+        s.path = null;
+        s.manualTargetId = null;
+        s.fireCell = cell;
+        s.fireSmoke = true;
+        anyTube = true;
+      } else {
+        // Riflemen/leader just hold — no point spraying the smoked ground.
+        s.fireCell = null;
+        s.fireSmoke = false;
+      }
+    }
+    return anyTube;
   }
 
   // --- Vehicle selection & orders ---

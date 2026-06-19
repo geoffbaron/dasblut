@@ -39,6 +39,13 @@ export const BATTLEFIELD_W_M = 380;
 export const BATTLEFIELD_H_M = 300;
 
 // --- Objective: capture & hold (Phase 6) ---
+// --- Mortar smoke screens ---
+export const SMOKE_DEPOSIT = 1.6;   // density a smoke round stamps at its center cell
+export const SMOKE_RADIUS = 4;      // cells; how wide a smoke round blooms
+export const SMOKE_DECAY = 0.085;   // density lost per second (a screen lasts ~18s)
+export const SMOKE_LOS_BLOCK = 0.5; // density at/above which a cell blocks line of sight
+export const SMOKE_RELOAD = 2.2;    // seconds between smoke rounds (faster than HE)
+
 export const OBJECTIVE_RADIUS = 7; // cells; the capture zone
 export const OBJECTIVE_CAPTURE_TIME = 6; // seconds of uncontested presence to flip it
 export const OBJECTIVE_HOLD_TO_WIN = 35; // seconds the attacker must hold it to win

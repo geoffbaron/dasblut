@@ -93,7 +93,9 @@ function applySeen(
     const dx = s.x - t.x;
     const dy = s.y - t.y;
     if (dx * dx + dy * dy > range2) continue;
-    if (hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), tcx, tcy)) {
+    // Smoke blocks spotting (but not the friendly shroud above) — that's what makes
+    // a mortar screen hide a moving squad from the enemy.
+    if (hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), tcx, tcy, world.smokeGrid)) {
       visible = true;
       break;
     }

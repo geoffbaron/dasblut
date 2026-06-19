@@ -12,7 +12,7 @@ import { runMenu } from "./render/menu.ts";
 import { sound } from "./render/sound.ts";
 
 // Armed map-click order: which movement/fire order a left-click issues.
-type ArmedOrder = "move" | "fast" | "sneak" | "fire";
+type ArmedOrder = "move" | "fast" | "sneak" | "fire" | "smoke";
 
 // Show the deploy menu first; once a battlefield is chosen, start the battle.
 runMenu(startGame);
@@ -142,9 +142,15 @@ async function startGame(map: GameMap) {
     const show = (world.selectedTeamIds.size > 0 || world.selectedVehicleId != null) && !world.outcome;
     ordersBar.style.display = show ? "flex" : "none";
     const deployPhase = world.phase === "deploy";
+    // Smoke is a mortar-team-only order (and not for tanks / deployment).
+    const hasMortar =
+      world.selectedVehicleId == null &&
+      [...world.selectedTeamIds].some((id) => world.team(id)?.kind === "mortar");
     for (const b of orderBtns) {
       const order = b.dataset.order!;
-      b.style.display = deployPhase && (order === "fire" || order === "fast" || order === "ambush" || order === "defend") ? "none" : "";
+      let hidden = deployPhase && (order === "fire" || order === "fast" || order === "ambush" || order === "defend");
+      if (order === "smoke") hidden = deployPhase || !hasMortar;
+      b.style.display = hidden ? "none" : "";
       b.classList.toggle("armed", order === armed);
     }
   };
@@ -175,7 +181,15 @@ async function startGame(map: GameMap) {
     const teamIds = [...world.selectedTeamIds];
     if (teamIds.length === 0) return;
 
-    if (armed === "fire") {
+    if (armed === "smoke") {
+      // Lay a smoke screen — only mortar teams in the selection respond.
+      let anyTube = false;
+      for (const tid of teamIds) if (world.orderSmoke(tid, cell)) anyTube = true;
+      if (!anyTube) { flagBlocked(x, y); refreshStatus(); return; } // no mortars selected
+      sound.playUI("ui_order");
+      refreshStatus();
+      return;
+    } else if (armed === "fire") {
       // Fire is aimed by the primary (first selected) team only.
       const primary = world.selectedTeamId!;
       const enemy = world.soldiers.find(
@@ -199,9 +213,16 @@ async function startGame(map: GameMap) {
 
   // Clicking an order button: Defend/Ambush apply in place; the rest arm a map click.
   const pickOrder = (order: string) => {
+    // Smoke is mortar-only — ignore it (incl. the hotkey) when no mortar team is selected.
+    if (order === "smoke") {
+      const hasMortar =
+        world.selectedVehicleId == null &&
+        [...world.selectedTeamIds].some((id) => world.team(id)?.kind === "mortar");
+      if (!hasMortar) return;
+    }
     if (world.selectedVehicleId != null) {
       if (order === "defend" || order === "ambush") world.orderVehiclePosture(world.selectedVehicleId);
-      else armed = (order === "sneak" ? "move" : order) as ArmedOrder;
+      else if (order !== "smoke") armed = (order === "sneak" ? "move" : order) as ArmedOrder;
       updateOrdersBar();
       refreshStatus();
       return;
@@ -442,7 +463,7 @@ async function startGame(map: GameMap) {
     speedPill.textContent = `${loop.speed}×`;
   });
   const ORDER_KEYS: Record<string, string> = {
-    q: "move", w: "fast", e: "sneak", r: "defend", t: "ambush", f: "fire",
+    q: "move", w: "fast", e: "sneak", r: "defend", t: "ambush", f: "fire", g: "smoke",
   };
   window.addEventListener("keydown", (e) => {
     if (e.code === "Space") {

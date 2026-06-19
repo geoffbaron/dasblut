@@ -1,6 +1,6 @@
 import { addSuppression, killSoldier, woundSoldier } from "./casualty.ts";
 import { damageBuildings } from "./buildingDamage.ts";
-import { AMBUSH_ACC_MULT, AREA_FIRE_RADIUS } from "./constants.ts";
+import { AMBUSH_ACC_MULT, AREA_FIRE_RADIUS, SMOKE_DEPOSIT, SMOKE_RADIUS, SMOKE_RELOAD } from "./constants.ts";
 import { hasLOS } from "./los.ts";
 import { TERRAIN } from "./terrain.ts";
 import { resolveArmorHit } from "./vehicleCombat.ts";
@@ -38,7 +38,7 @@ export function resolveFire(world: World, dt: number): void {
         s.targetVehId = null;
       } else {
         const d = Math.hypot(veh.x - s.x, veh.y - s.y);
-        if (d <= w.rangeCells && hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), Math.floor(veh.x), Math.floor(veh.y))) {
+        if (d <= w.rangeCells && hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), Math.floor(veh.x), Math.floor(veh.y), world.smokeGrid)) {
           s.fireCD -= dt;
           if (s.fireCD <= 0 && s.ammo > 0) {
             s.fireCD = 1 / w.rof;
@@ -57,24 +57,29 @@ export function resolveFire(world: World, dt: number): void {
       continue;
     }
 
-    // Indirect mortar fire: lob HE onto the designated cell with no line-of-sight,
-    // so long as it's within the min/max range arc.
+    // Indirect mortar fire: lob HE — or a smoke screen — onto the designated cell
+    // with no line-of-sight, so long as it's within the min/max range arc.
     if (s.fireCell && w.indirect) {
       const d = Math.hypot(s.fireCell.cx + 0.5 - s.x, s.fireCell.cy + 0.5 - s.y);
       if (d < (w.minRangeCells ?? 0) || d > w.rangeCells) continue;
       s.fireCD -= dt * rateMul;
       if (s.fireCD <= 0 && s.ammo > 0) {
-        s.fireCD += 1 / w.rof;
         s.ammo--;
         s.firedTimer = 0.5;
-        mortarShot(world, s);
+        if (s.fireSmoke) {
+          s.fireCD += SMOKE_RELOAD; // smoke rounds drop a touch faster than HE
+          smokeShot(world, s);
+        } else {
+          s.fireCD += 1 / w.rof;
+          mortarShot(world, s);
+        }
       }
       continue;
     }
 
     // Area (suppressing) fire onto a designated patch of ground.
     if (s.fireCell) {
-      if (!hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), s.fireCell.cx, s.fireCell.cy)) continue;
+      if (!hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), s.fireCell.cx, s.fireCell.cy, world.smokeGrid)) continue;
       s.fireCD -= dt * rateMul;
       let guard = 8;
       while (s.fireCD <= 0 && s.ammo > 0 && guard-- > 0) {
@@ -97,7 +102,7 @@ export function resolveFire(world: World, dt: number): void {
     }
     const dist = Math.hypot(target.x - s.x, target.y - s.y);
     if (dist > w.rangeCells) continue;
-    if (!hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), Math.floor(target.x), Math.floor(target.y)))
+    if (!hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), Math.floor(target.x), Math.floor(target.y), world.smokeGrid))
       continue;
 
     s.fireCD -= dt * rateMul;
@@ -166,6 +171,44 @@ function mortarShot(world: World, s: Soldier): void {
   }
 }
 
+// A smoke round: lands near the aimpoint and blooms a screen — stamping the smoke
+// grid (which breaks line of sight) and seeding drifting visual puffs. No casualties;
+// this is for covering an advance, not killing.
+function smokeShot(world: World, s: Soldier): void {
+  const cell = s.fireCell!;
+  // Smoke is meant to land where you asked, so dispersion is tighter than HE.
+  const tx = cell.cx + 0.5 + (Math.random() - 0.5) * 1.4;
+  const ty = cell.cy + 0.5 + (Math.random() - 0.5) * 1.4;
+
+  sound.play("mortar", s.x, s.y); // tube thump at the firing position
+  world.effects.push({ kind: "flash", x0: s.x, y0: s.y, x1: s.x, y1: s.y, ttl: 0.12 });
+  world.effects.push({ kind: "lob", x0: s.x, y0: s.y, x1: tx, y1: ty, ttl: 0.7, maxTtl: 0.7 });
+
+  // Stamp the smoke grid in a soft disc, densest at the center.
+  const grid = world.grid;
+  const r = SMOKE_RADIUS;
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      const x = Math.floor(tx) + dx;
+      const y = Math.floor(ty) + dy;
+      if (!grid.inBounds(x, y)) continue;
+      const dist = Math.hypot(dx, dy);
+      if (dist > r) continue;
+      const add = SMOKE_DEPOSIT * (1 - dist / r);
+      const i = grid.idx(x, y);
+      world.smokeGrid[i] = Math.min(2.2, world.smokeGrid[i] + add);
+    }
+  }
+  // A couple of visual puffs to sell the burst the moment it lands.
+  for (let k = 0; k < 3; k++) {
+    world.effects.push({
+      kind: "smoke",
+      x0: tx + (Math.random() - 0.5) * 2, y0: ty + (Math.random() - 0.5) * 2,
+      x1: 0, y1: 0, ttl: 2.4, maxTtl: 2.4,
+    });
+  }
+}
+
 const GRENADE_RANGE = 6; // cells (~12 m) — throwing distance
 const GRENADE_RADIUS = 1.8; // blast radius in cells
 const GRENADE_COOLDOWN = 3.5; // seconds between throws per man
@@ -189,7 +232,7 @@ function tryThrowGrenade(world: World, s: Soldier): void {
       : 0;
     // Grenade a man in any real cover, or anyone who's right on top of us.
     if (tc < 0.2 && d > GRENADE_POINT_BLANK) continue;
-    if (!hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), Math.floor(e.x), Math.floor(e.y))) continue;
+    if (!hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), Math.floor(e.x), Math.floor(e.y), world.smokeGrid)) continue;
     target = e;
     bestD = d;
   }

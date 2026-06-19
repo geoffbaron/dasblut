@@ -40,11 +40,17 @@ export const BATTLEFIELD_H_M = 300;
 
 // --- Objective: capture & hold (Phase 6) ---
 // --- Mortar smoke screens ---
-export const SMOKE_DEPOSIT = 1.6;   // density a smoke round stamps at its center cell
-export const SMOKE_RADIUS = 4;      // cells; how wide a smoke round blooms
-export const SMOKE_DECAY = 0.085;   // density lost per second (a screen lasts ~18s)
+// A shell pops on impact, then the canister keeps emitting: the cloud blooms outward
+// over a few seconds, holds thick for most of a minute, then thins as the source
+// burns out and the grid decays. Tuned so a screen blocks LOS for ~60s total.
+export const SMOKE_RADIUS = 4.5;    // cells; the cloud's full bloom radius
+export const SMOKE_EMIT = 0.75;     // density added per second at a source's center
+export const SMOKE_CAP = 1.6;       // max density a cell holds
+export const SMOKE_DECAY = 0.11;    // density lost per second (sets the fade-out tail)
+export const SMOKE_BUILD = 4;       // seconds for the cloud to bloom to full size
+export const SMOKE_LIFE = 52;       // seconds the canister keeps emitting before burning out
 export const SMOKE_LOS_BLOCK = 0.5; // density at/above which a cell blocks line of sight
-export const SMOKE_RELOAD = 2.2;    // seconds between smoke rounds (faster than HE)
+export const SMOKE_INITIAL = 0.45;  // density of the puff the instant the shell lands
 
 export const OBJECTIVE_RADIUS = 7; // cells; the capture zone
 export const OBJECTIVE_CAPTURE_TIME = 6; // seconds of uncontested presence to flip it

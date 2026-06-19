@@ -69,6 +69,9 @@ export interface Team {
 }
 
 export type EffectKind = "tracer" | "flash" | "hit" | "ap" | "spark" | "smoke" | "fire" | "lob" | "ricochet" | "blocked";
+
+// A burning smoke canister that emits into the smoke grid over its lifetime.
+export interface SmokeSource { cx: number; cy: number; t: number; }
 export interface Effect {
   kind: EffectKind;
   x0: number;
@@ -192,6 +195,9 @@ export class World {
   // Per-cell smoke density (0..~1.6). Decays over time; cells above SMOKE_LOS_BLOCK
   // break line of sight, so a mortar smoke screen conceals units moving behind it.
   smokeGrid: Float32Array;
+  // Active smoke canisters: each keeps emitting into smokeGrid (blooming then holding)
+  // until it burns out. `t` is seconds since the shell landed.
+  smokeSources: SmokeSource[] = [];
 
   private nextId = 1;
   private byId = new Map<number, Soldier>();

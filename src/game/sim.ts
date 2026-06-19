@@ -7,7 +7,12 @@ import {
   OBJECTIVE_CAPTURE_TIME,
   OBJECTIVE_HOLD_TO_WIN,
   SIM_DT,
+  SMOKE_BUILD,
+  SMOKE_CAP,
   SMOKE_DECAY,
+  SMOKE_EMIT,
+  SMOKE_LIFE,
+  SMOKE_RADIUS,
   STANCE_SPEED,
   VIS_INTERVAL,
 } from "./constants.ts";
@@ -35,7 +40,7 @@ export function step(world: World): void {
 
   world.time += SIM_DT;
   ageEffects(world, SIM_DT);
-  decaySmoke(world, SIM_DT);
+  updateSmoke(world, SIM_DT);
 
   world.visAccum += SIM_DT;
   if (world.visAccum >= VIS_INTERVAL) {
@@ -168,14 +173,35 @@ function advance(world: World, s: Soldier, speedMul: number): void {
   if (mvx * mvx + mvy * mvy > 1e-6) s.facing = Math.atan2(mvy, mvx);
 }
 
-// Smoke thins out over time; once a cell drops below the LOS-blocking threshold it
-// stops concealing, and at ~0 it's gone entirely.
-function decaySmoke(world: World, dt: number): void {
+// Smoke dynamics: each active canister emits into the grid (the cloud blooms outward
+// over SMOKE_BUILD seconds, then holds while emission outpaces decay) until it burns
+// out at SMOKE_LIFE; meanwhile the whole grid decays, which both caps the plateau and
+// fades the screen away over ~10s once the source is gone.
+function updateSmoke(world: World, dt: number): void {
   const g = world.smokeGrid;
-  const d = SMOKE_DECAY * dt;
-  for (let i = 0; i < g.length; i++) {
-    if (g[i] > 0) g[i] = Math.max(0, g[i] - d);
+  const grid = world.grid;
+  const srcs = world.smokeSources;
+  for (let k = srcs.length - 1; k >= 0; k--) {
+    const src = srcs[k];
+    src.t += dt;
+    if (src.t > SMOKE_LIFE) { srcs.splice(k, 1); continue; }
+    // Bloom: radius grows from ~30% to full over SMOKE_BUILD seconds.
+    const radius = SMOKE_RADIUS * Math.min(1, 0.3 + src.t / SMOKE_BUILD);
+    const r = Math.ceil(radius);
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const x = src.cx + dx, y = src.cy + dy;
+        if (!grid.inBounds(x, y)) continue;
+        const dist = Math.hypot(dx, dy);
+        if (dist > radius) continue;
+        const i = grid.idx(x, y);
+        const add = SMOKE_EMIT * dt * (1 - dist / (radius + 0.001)); // densest at center
+        if (add > 0) g[i] = Math.min(SMOKE_CAP, g[i] + add);
+      }
+    }
   }
+  const d = SMOKE_DECAY * dt;
+  for (let i = 0; i < g.length; i++) if (g[i] > 0) g[i] = Math.max(0, g[i] - d);
 }
 
 function ageEffects(world: World, dt: number): void {

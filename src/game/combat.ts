@@ -1,6 +1,6 @@
 import { addSuppression, killSoldier, woundSoldier } from "./casualty.ts";
 import { damageBuildings } from "./buildingDamage.ts";
-import { AMBUSH_ACC_MULT, AREA_FIRE_RADIUS, SMOKE_DEPOSIT, SMOKE_RADIUS } from "./constants.ts";
+import { AMBUSH_ACC_MULT, AREA_FIRE_RADIUS, SMOKE_INITIAL } from "./constants.ts";
 import { hasLOS } from "./los.ts";
 import { TERRAIN } from "./terrain.ts";
 import { resolveArmorHit } from "./vehicleCombat.ts";
@@ -173,42 +173,26 @@ function mortarShot(world: World, s: Soldier): void {
   }
 }
 
-// A smoke round: lands near the aimpoint and blooms a screen — stamping the smoke
-// grid (which breaks line of sight) and seeding drifting visual puffs. No casualties;
-// this is for covering an advance, not killing.
+// A smoke round: lands near the aimpoint, pops a small puff on impact, and drops a
+// burning canister that emits a screen which blooms over a few seconds and lasts most
+// of a minute (see updateSmoke). No casualties — this is for covering an advance.
 function smokeShot(world: World, s: Soldier): void {
   const cell = s.fireCell!;
   // Smoke is meant to land where you asked, so dispersion is tighter than HE.
   const tx = cell.cx + 0.5 + (Math.random() - 0.5) * 1.4;
   const ty = cell.cy + 0.5 + (Math.random() - 0.5) * 1.4;
+  const cx = Math.floor(tx), cy = Math.floor(ty);
 
   sound.play("mortar", s.x, s.y); // tube thump at the firing position
   world.effects.push({ kind: "flash", x0: s.x, y0: s.y, x1: s.x, y1: s.y, ttl: 0.12 });
   world.effects.push({ kind: "lob", x0: s.x, y0: s.y, x1: tx, y1: ty, ttl: 0.7, maxTtl: 0.7 });
-
-  // Stamp the smoke grid in a soft disc, densest at the center.
-  const grid = world.grid;
-  const r = SMOKE_RADIUS;
-  for (let dy = -r; dy <= r; dy++) {
-    for (let dx = -r; dx <= r; dx++) {
-      const x = Math.floor(tx) + dx;
-      const y = Math.floor(ty) + dy;
-      if (!grid.inBounds(x, y)) continue;
-      const dist = Math.hypot(dx, dy);
-      if (dist > r) continue;
-      const add = SMOKE_DEPOSIT * (1 - dist / r);
-      const i = grid.idx(x, y);
-      world.smokeGrid[i] = Math.min(2.2, world.smokeGrid[i] + add);
-    }
+  // A small puff the instant it lands; the cloud then builds from the canister.
+  world.effects.push({ kind: "smoke", x0: tx, y0: ty, x1: 0, y1: 0, ttl: 1.6, maxTtl: 1.6 });
+  if (world.grid.inBounds(cx, cy)) {
+    const i = world.grid.idx(cx, cy);
+    world.smokeGrid[i] = Math.max(world.smokeGrid[i], SMOKE_INITIAL);
   }
-  // A couple of visual puffs to sell the burst the moment it lands.
-  for (let k = 0; k < 3; k++) {
-    world.effects.push({
-      kind: "smoke",
-      x0: tx + (Math.random() - 0.5) * 2, y0: ty + (Math.random() - 0.5) * 2,
-      x1: 0, y1: 0, ttl: 2.4, maxTtl: 2.4,
-    });
-  }
+  world.smokeSources.push({ cx, cy, t: 0 });
 }
 
 const GRENADE_RANGE = 6; // cells (~12 m) — throwing distance

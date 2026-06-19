@@ -92,11 +92,26 @@ async function startGame(map: GameMap) {
       return;
     }
 
-    if (world.selectedTeamId == null) {
+    if (world.selectedTeamIds.size === 0) {
       statusEl.innerHTML = `<span class="dim">No team selected</span>`;
       return;
     }
-    const team = world.team(world.selectedTeamId)!;
+    // Multi-select: show a combined summary instead of per-team detail.
+    if (world.selectedTeamIds.size > 1) {
+      let totalLive = 0, total = 0;
+      for (const tid of world.selectedTeamIds) {
+        const t = world.team(tid);
+        if (!t) continue;
+        total += t.soldierIds.length;
+        for (const sid of t.soldierIds)
+          if (world.soldier(sid)?.status === "active") totalLive++;
+      }
+      statusEl.innerHTML =
+        `<div class="name">${world.selectedTeamIds.size} squads selected</div>` +
+        `<div class="dim">${totalLive} effective · ${total - totalLive} down</div>`;
+      return;
+    }
+    const team = world.team(world.selectedTeamId!)!;
     const live = team.soldierIds.map((id) => world.soldier(id)!).filter((s) => s.status === "active");
     const counts: Record<string, number> = {};
     let moraleSum = 0;
@@ -124,7 +139,7 @@ async function startGame(map: GameMap) {
   let armed: ArmedOrder = "move";
 
   const updateOrdersBar = () => {
-    const show = (world.selectedTeamId != null || world.selectedVehicleId != null) && !world.outcome;
+    const show = (world.selectedTeamIds.size > 0 || world.selectedVehicleId != null) && !world.outcome;
     ordersBar.style.display = show ? "flex" : "none";
     const deployPhase = world.phase === "deploy";
     for (const b of orderBtns) {
@@ -134,7 +149,7 @@ async function startGame(map: GameMap) {
     }
   };
 
-  // A left-click on the ground issues the currently armed order.
+  // A left-click on the ground issues the currently armed order to all selected teams.
   const handleOrder = (x: number, y: number) => {
     const cell = { cx: Math.floor(x), cy: Math.floor(y) };
 
@@ -148,17 +163,25 @@ async function startGame(map: GameMap) {
       refreshStatus();
       return;
     }
-    const teamId = world.selectedTeamId;
-    if (teamId == null) return;
+
+    const teamIds = [...world.selectedTeamIds];
+    if (teamIds.length === 0) return;
+
     if (armed === "fire") {
-      // Focus-fire a spotted enemy near the click, else suppress the ground.
+      // Fire is aimed by the primary (first selected) team only.
+      const primary = world.selectedTeamId!;
       const enemy = world.soldiers.find(
         (s) => s.faction === "axis" && s.status === "active" && s.seen && Math.hypot(s.x - x, s.y - y) < 1.4,
       );
-      if (enemy) world.orderFireUnit(teamId, enemy.id);
-      else world.orderAreaFire(teamId, cell);
+      if (enemy) world.orderFireUnit(primary, enemy.id);
+      else world.orderAreaFire(primary, cell);
     } else {
-      world.orderMove(teamId, cell, armed as Stance);
+      // Group move: fan teams out horizontally around the target so they don't pile up.
+      const n = teamIds.length;
+      teamIds.forEach((tid, i) => {
+        const col = Math.round(i - (n - 1) / 2); // -1, 0, 1 for n=3 etc.
+        world.orderMove(tid, { cx: cell.cx + col * 4, cy: cell.cy }, armed as Stance);
+      });
     }
     sound.playUI("ui_order");
     refreshStatus();
@@ -168,14 +191,15 @@ async function startGame(map: GameMap) {
   const pickOrder = (order: string) => {
     if (world.selectedVehicleId != null) {
       if (order === "defend" || order === "ambush") world.orderVehiclePosture(world.selectedVehicleId);
-      else armed = (order === "sneak" ? "move" : order) as ArmedOrder; // tanks don't sneak
+      else armed = (order === "sneak" ? "move" : order) as ArmedOrder;
       updateOrdersBar();
       refreshStatus();
       return;
     }
-    if (world.selectedTeamId == null) return;
+    if (world.selectedTeamIds.size === 0) return;
     if (order === "defend" || order === "ambush") {
-      world.orderPosture(world.selectedTeamId, order as Stance);
+      // Posture orders apply to every team in the group.
+      for (const tid of world.selectedTeamIds) world.orderPosture(tid, order as Stance);
     } else {
       armed = order as ArmedOrder;
     }
@@ -184,13 +208,42 @@ async function startGame(map: GameMap) {
   };
   for (const b of orderBtns) b.addEventListener("click", () => pickOrder(b.dataset.order!));
 
-  const input = new Input(renderer, world, () => {
-    armed = "move"; // reset to Move whenever a new squad is selected
-    sound.playUI("ui_select");
-    updateOrdersBar();
-    refreshStatus();
-    refreshRoster();
-  }, handleOrder);
+  const input = new Input(renderer, world,
+    () => {
+      armed = "move";
+      sound.playUI("ui_select");
+      updateOrdersBar();
+      refreshStatus();
+      refreshRoster();
+    },
+    handleOrder,
+    (sx0, sy0, sx1, sy1) => {
+      // Convert screen box to world space and find all US teams with a soldier inside.
+      const wA = renderer.screenToWorld(Math.min(sx0, sx1), Math.min(sy0, sy1));
+      const wB = renderer.screenToWorld(Math.max(sx0, sx1), Math.max(sy0, sy1));
+      const ids = new Set<number>();
+      for (const team of world.teams) {
+        if (team.faction !== "us") continue;
+        for (const sid of team.soldierIds) {
+          const s = world.soldier(sid);
+          if (!s || s.status !== "active") continue;
+          if (s.x >= wA.x && s.x <= wB.x && s.y >= wA.y && s.y <= wB.y) {
+            ids.add(team.id);
+            break; // one soldier inside = whole team selected
+          }
+        }
+      }
+      if (ids.size === 0) return;
+      world.selectedTeamIds = ids;
+      world.selectedTeamId = [...ids][0];
+      world.selectedVehicleId = null;
+      armed = "move";
+      sound.playUI("ui_select");
+      updateOrdersBar();
+      refreshStatus();
+      refreshRoster();
+    },
+  );
   updateOrdersBar();
 
   // --- Unit navigator (Close Combat-style roster) ---
@@ -221,6 +274,7 @@ async function startGame(map: GameMap) {
         `</div>`;
       el.addEventListener("click", () => {
         world.selectedTeamId = team.id;
+        world.selectedTeamIds = new Set([team.id]);
         world.selectedVehicleId = null;
         armed = "move";
         sound.playUI("ui_select");
@@ -256,6 +310,7 @@ async function startGame(map: GameMap) {
       el.addEventListener("click", () => {
         world.selectedVehicleId = v.id;
         world.selectedTeamId = null;
+        world.selectedTeamIds.clear();
         armed = "move";
         sound.playUI("ui_select");
         renderer.centerOnVehicle(world, v.id);
@@ -296,7 +351,7 @@ async function startGame(map: GameMap) {
       card.moraleFill.style.background = morale > 0.55 ? "#8fbf6f" : morale > 0.3 ? "#e0a23a" : "#e0533a";
       card.ammoFill.style.width = `${ammoMax ? Math.round((ammo / ammoMax) * 100) : 0}%`;
       card.ammoFill.style.background = "#c7a23f";
-      card.el.classList.toggle("sel", world.selectedTeamId === team.id);
+      card.el.classList.toggle("sel", world.selectedTeamIds.has(team.id));
       card.el.classList.toggle("dead", live === 0);
     }
 

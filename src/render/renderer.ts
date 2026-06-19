@@ -21,6 +21,8 @@ export class Renderer {
   private shadowLayer = new Container();
   private bodyLayer = new Container();
   private fx = new Graphics();
+  // Screen-space drag-select box drawn on top of everything, outside the camera.
+  private selBox = new Graphics();
   private camX = 0;
   private camY = 0;
   zoom = 1.0;
@@ -55,7 +57,8 @@ export class Renderer {
     this.shroud.filters = [new BlurFilter({ strength: 10, quality: 3 })];
 
     this.camera.addChild(bg, this.damageLayer, this.shroud, this.overlay, this.vehicleLayer, this.shadowLayer, this.bodyLayer, this.fx);
-    this.app.stage.addChild(this.camera);
+    // selBox lives outside the camera so it stays in screen space.
+    this.app.stage.addChild(this.camera, this.selBox);
 
     this.shadowTex = Texture.from(makeSoldierArt(0).shadow);
     this.casualtyTex = Texture.from(makeCasualtyCanvas());
@@ -199,6 +202,22 @@ export class Renderer {
   screenToWorld(sx: number, sy: number): { x: number; y: number } {
     return { x: (sx + this.camX) / (CELL_SIZE * this.zoom), y: (sy + this.camY) / (CELL_SIZE * this.zoom) };
   }
+
+  worldToScreen(wx: number, wy: number): { x: number; y: number } {
+    return { x: wx * CELL_SIZE * this.zoom - this.camX, y: wy * CELL_SIZE * this.zoom - this.camY };
+  }
+
+  // Draw a rubber-band selection rectangle in screen space.
+  setSelectionBox(x0: number, y0: number, x1: number, y1: number): void {
+    const x = Math.min(x0, x1), y = Math.min(y0, y1);
+    const w = Math.abs(x1 - x0), h = Math.abs(y1 - y0);
+    this.selBox.clear()
+      .rect(x, y, w, h)
+      .fill({ color: 0x88ddff, alpha: 0.08 })
+      .stroke({ color: 0x88ddff, width: 1.5, alpha: 0.85 });
+  }
+
+  clearSelectionBox(): void { this.selBox.clear(); }
 
   render(world: World, alpha: number): void {
     // Keep the sound manager's spatial reference point at the screen center in world coords.

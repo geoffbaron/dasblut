@@ -158,6 +158,7 @@ export class World {
   deployY0Us: number = 0;   // US zone: rows deployY0Us..grid.height-1
   deployY1Axis: number = 0; // Axis zone: rows 0..deployY1Axis-1
   selectedTeamId: number | null = null;
+  selectedTeamIds: Set<number> = new Set();
   selectedVehicleId: number | null = null;
   outcome: "win" | "lose" | null = null;
 

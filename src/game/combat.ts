@@ -121,8 +121,10 @@ function areaShot(world: World, s: Soldier): void {
   const ty = cell.cy + 0.5 + (Math.random() - 0.5);
   sound.play(s.weapon as SfxId, s.x, s.y);
   world.effects.push({ kind: "flash", x0: s.x, y0: s.y, x1: s.x, y1: s.y, ttl: 0.07 });
-  if (Math.random() < w.tracerRate)
+  if (Math.random() < w.tracerRate) {
     world.effects.push({ kind: "tracer", x0: s.x, y0: s.y, x1: tx, y1: ty, ttl: 0.06 });
+    spawnRicochet(world, tx, ty);
+  }
 
   for (const e of world.soldiers) {
     if (e.faction === s.faction || e.status !== "active") continue;
@@ -158,13 +160,8 @@ function mortarShot(world: World, s: Soldier): void {
     const falloff = 1 - d / blast;
     addSuppression(e, w.suppression * falloff);
     if (Math.random() < w.lethality * falloff * 0.5) {
-      if (Math.random() < 0.5) {
-        sound.play("soldier_scream", e.x, e.y);
-        killSoldier(world, e);
-      } else {
-        sound.play("soldier_hit", e.x, e.y);
-        woundSoldier(world, e);
-      }
+      if (Math.random() < 0.5) killSoldier(world, e);
+      else woundSoldier(world, e);
     }
   }
 }
@@ -215,13 +212,8 @@ function throwGrenade(world: World, s: Soldier, tx: number, ty: number): void {
     const falloff = 1 - d / GRENADE_RADIUS;
     // Frag ignores small-arms cover — the whole point of grenading a holed-up man.
     if (Math.random() < 0.55 * falloff) {
-      if (Math.random() < 0.5) {
-        sound.play("soldier_scream", e.x, e.y);
-        killSoldier(world, e);
-      } else {
-        sound.play("soldier_hit", e.x, e.y);
-        woundSoldier(world, e);
-      }
+      if (Math.random() < 0.5) killSoldier(world, e);
+      else woundSoldier(world, e);
     } else {
       addSuppression(e, 0.5 * falloff);
     }
@@ -240,8 +232,10 @@ function fireShot(world: World, s: Soldier, target: Soldier, dist: number): void
   // Muzzle flash + occasional tracer.
   sound.play(s.weapon as SfxId, s.x, s.y);
   world.effects.push({ kind: "flash", x0: s.x, y0: s.y, x1: s.x, y1: s.y, ttl: 0.07 });
-  if (Math.random() < w.tracerRate)
+  if (Math.random() < w.tracerRate) {
     world.effects.push({ kind: "tracer", x0: s.x, y0: s.y, x1: target.x, y1: target.y, ttl: 0.06 });
+    spawnRicochet(world, target.x, target.y);
+  }
 
   // Hit probability.
   let p = w.accuracy * (1 - 0.55 * (dist / w.rangeCells));
@@ -262,16 +256,25 @@ function fireShot(world: World, s: Soldier, target: Soldier, dist: number): void
   if (Math.random() < p) {
     const lethal = w.lethality * (1 - cover * 0.5);
     const r = Math.random();
-    if (r < lethal * 0.5) {
-      sound.play("soldier_scream", target.x, target.y);
-      killSoldier(world, target);
-    } else if (r < lethal) {
-      sound.play("soldier_hit", target.x, target.y);
-      woundSoldier(world, target);
-    } else {
-      addSuppression(target, 0.3); // a graze / near-miss hammers morale
-    }
+    if (r < lethal * 0.5) killSoldier(world, target);
+    else if (r < lethal) woundSoldier(world, target);
+    else addSuppression(target, 0.3); // a graze / near-miss hammers morale
   }
+}
+
+// Some rounds spit off the ground/cover where a tracer lands: a quick bright spark
+// streak shooting away in a random direction, with the occasional audible zing.
+export function spawnRicochet(world: World, x: number, y: number): void {
+  if (Math.random() > 0.22) return; // only a fraction of tracers kick off
+  const a = Math.random() * Math.PI * 2;
+  const len = 1.2 + Math.random() * 2.2;
+  world.effects.push({
+    kind: "ricochet",
+    x0: x, y0: y,
+    x1: x + Math.cos(a) * len, y1: y + Math.sin(a) * len,
+    ttl: 0.14,
+  });
+  if (Math.random() < 0.35) sound.play("ricochet", x, y);
 }
 
 function splashSuppression(world: World, around: Soldier, amt: number): void {

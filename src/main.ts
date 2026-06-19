@@ -149,17 +149,25 @@ async function startGame(map: GameMap) {
     }
   };
 
+  // Flash a red "can't go there" marker at a world point and give a soft cue.
+  const flagBlocked = (x: number, y: number) => {
+    world.effects.push({ kind: "blocked", x0: x, y0: y, x1: x, y1: y, ttl: 0.8 });
+  };
+
   // A left-click on the ground issues the currently armed order to all selected teams.
   const handleOrder = (x: number, y: number) => {
     const cell = { cx: Math.floor(x), cy: Math.floor(y) };
 
     // During deployment, US squads can only move within their southern zone.
-    if (world.phase === "deploy" && cell.cy < world.deployY0Us) return;
+    if (world.phase === "deploy" && cell.cy < world.deployY0Us) {
+      flagBlocked(x, y); // clicked outside the deploy zone
+      return;
+    }
 
     if (world.selectedVehicleId != null) {
       const vid = world.selectedVehicleId;
       if (armed === "fire") world.orderVehicleFire(vid, x, y);
-      else world.orderVehicleMove(vid, cell, armed === "fast");
+      else if (!world.orderVehicleMove(vid, cell, armed === "fast")) flagBlocked(x, y);
       refreshStatus();
       return;
     }
@@ -178,10 +186,12 @@ async function startGame(map: GameMap) {
     } else {
       // Group move: fan teams out horizontally around the target so they don't pile up.
       const n = teamIds.length;
+      let anyOk = false;
       teamIds.forEach((tid, i) => {
         const col = Math.round(i - (n - 1) / 2); // -1, 0, 1 for n=3 etc.
-        world.orderMove(tid, { cx: cell.cx + col * 4, cy: cell.cy }, armed as Stance);
+        if (world.orderMove(tid, { cx: cell.cx + col * 4, cy: cell.cy }, armed as Stance)) anyOk = true;
       });
+      if (!anyOk) { flagBlocked(x, y); refreshStatus(); return; } // nobody could reach it
     }
     sound.playUI("ui_order");
     refreshStatus();

@@ -67,7 +67,7 @@ export interface Team {
   kind: SquadKind; // weapon mix: rifle / mg / at / mortar
 }
 
-export type EffectKind = "tracer" | "flash" | "hit" | "ap" | "spark" | "smoke" | "fire" | "lob";
+export type EffectKind = "tracer" | "flash" | "hit" | "ap" | "spark" | "smoke" | "fire" | "lob" | "ricochet" | "blocked";
 export interface Effect {
   kind: EffectKind;
   x0: number;
@@ -340,13 +340,20 @@ export class World {
     return best;
   }
 
-  /** Issue a movement order (Move/Fast/Sneak): each soldier paths to a formation slot. */
-  orderMove(teamId: number, target: Cell, stance: Stance = "move"): void {
+  /**
+   * Issue a movement order (Move/Fast/Sneak): each soldier paths to a formation slot.
+   * Returns true if at least one soldier found a route — false means the destination
+   * is unreachable, so the caller can flag the order as impossible.
+   */
+  orderMove(teamId: number, target: Cell, stance: Stance = "move"): boolean {
     const team = this.team(teamId);
-    if (!team) return;
+    if (!team) return false;
+    let anyPathed = false;
+    let anyActive = false;
     for (const id of team.soldierIds) {
       const s = this.soldier(id)!;
       if (s.status !== "active") continue;
+      anyActive = true;
       s.fleeGoal = null;
       s.stance = stance;
       s.manualTargetId = null;
@@ -357,10 +364,16 @@ export class World {
       if (raw && raw.length > 1) {
         s.path = smoothPath(this.grid, raw);
         s.pathIndex = 1;
+        anyPathed = true;
+      } else if (raw && raw.length === 1 && start.cx === goal.cx && start.cy === goal.cy) {
+        // Already standing on the goal cell — a valid (no-op) order, not a failure.
+        s.path = null;
+        anyPathed = true;
       } else {
         s.path = null;
       }
     }
+    return anyPathed || !anyActive;
   }
 
   /** Hold position in a Defend or Ambush posture, facing the nearest known threat. */
@@ -431,9 +444,10 @@ export class World {
     };
   }
 
-  orderVehicleMove(vid: number, target: Cell, fast: boolean): void {
+  /** Returns true if the vehicle found a route; false means the target is unreachable. */
+  orderVehicleMove(vid: number, target: Cell, fast: boolean): boolean {
     const v = this.vehicle(vid);
-    if (!v || v.status === "ko" || v.immobilized) return;
+    if (!v || v.status === "ko" || v.immobilized) return false;
     v.stance = fast ? "fast" : "move";
     v.manualVeh = null;
     v.manualInf = null;
@@ -445,9 +459,10 @@ export class World {
     if (raw && raw.length > 1) {
       v.path = smoothPath(this.grid, raw, opts);
       v.pathIndex = 1;
-    } else {
-      v.path = null;
+      return true;
     }
+    v.path = null;
+    return false;
   }
 
   orderVehiclePosture(vid: number): void {

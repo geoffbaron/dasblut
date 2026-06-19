@@ -58,6 +58,7 @@ export function buildTestMap(): GameMap {
     us: [
       { name: "1st Squad", cx: 18, cy: 37, count: 8, kind: "rifle" },
       { name: "2nd Squad", cx: 22, cy: 38, count: 8, kind: "rifle" },
+      { name: "LMG Team", cx: 30, cy: 38, count: 6, kind: "mg" },
       { name: "AT Team", cx: 26, cy: 37, count: 5, kind: "at" },
       { name: "Mortar Team", cx: 20, cy: 41, count: 5, kind: "mortar" },
     ],

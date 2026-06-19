@@ -505,6 +505,22 @@ export class Renderer {
       } else if (e.kind === "ap") {
         g.moveTo(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE).lineTo(e.x1 * CELL_SIZE, e.y1 * CELL_SIZE);
         g.stroke({ width: 2.6, color: 0xfff2c0, alpha: 0.95 });
+      } else if (e.kind === "ricochet") {
+        // A round spitting off in a random direction — quick, bright, white-hot.
+        const a = Math.max(0, e.ttl / 0.14);
+        g.moveTo(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE).lineTo(e.x1 * CELL_SIZE, e.y1 * CELL_SIZE);
+        g.stroke({ width: 1.2, color: 0xfff6d8, alpha: a });
+        g.circle(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE, 1.6).fill({ color: 0xffe9a0, alpha: a });
+      } else if (e.kind === "blocked") {
+        // "Can't move there": a red no-entry marker that pulses and fades.
+        const a = Math.max(0, Math.min(1, e.ttl / 0.8));
+        const cx = e.x0 * CELL_SIZE, cy = e.y0 * CELL_SIZE;
+        const r = 9 + (1 - a) * 5;
+        g.circle(cx, cy, r).stroke({ width: 2, color: 0xe0463a, alpha: a });
+        const d = r * 0.7;
+        g.moveTo(cx - d, cy - d).lineTo(cx + d, cy + d)
+         .moveTo(cx + d, cy - d).lineTo(cx - d, cy + d)
+         .stroke({ width: 2, color: 0xe0463a, alpha: a });
       } else if (e.kind === "spark") {
         g.circle(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE, 4).fill({ color: 0xffd24a, alpha: Math.max(0, e.ttl / 0.18) });
       } else if (e.kind === "fire") {

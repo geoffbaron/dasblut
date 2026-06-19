@@ -1,5 +1,6 @@
 import { CASUALTY_SHOCK, SHOCK_RADIUS } from "./constants.ts";
 import { Soldier, World } from "./world.ts";
+import { sound } from "../render/sound.ts";
 
 // Shared casualty/suppression helpers, used by both infantry fire and vehicle HE/MG
 // so the morale-shock rules stay in one place.
@@ -15,6 +16,9 @@ export function killSoldier(world: World, t: Soldier, shockMul = 1): void {
   t.targetId = null;
   t.targetVehId = null;
   world.effects.push({ kind: "hit", x0: t.x, y0: t.y, x1: t.x, y1: t.y, ttl: 0.3 });
+  // A man screaming as he falls — Germans and Americans sound distinct. Routed
+  // through the priority audio budget so it's never drowned out by gunfire.
+  sound.play(t.faction === "axis" ? "soldier_scream" : "soldier_scream_us", t.x, t.y, true);
   casualtyShock(world, t, CASUALTY_SHOCK * shockMul);
 }
 
@@ -25,6 +29,7 @@ export function woundSoldier(world: World, t: Soldier): void {
   t.targetId = null;
   t.targetVehId = null;
   world.effects.push({ kind: "hit", x0: t.x, y0: t.y, x1: t.x, y1: t.y, ttl: 0.25 });
+  sound.play("soldier_hit", t.x, t.y, true); // a cry of pain, also priority
   casualtyShock(world, t, CASUALTY_SHOCK * 0.6);
 }
 

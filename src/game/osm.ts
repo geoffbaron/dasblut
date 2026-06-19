@@ -293,6 +293,7 @@ function generateSpawns(grid: Grid): Spawns {
   const usSquads: { name: string; kind: SquadSpawn["kind"]; count: number }[] = [
     { name: "1st Squad", kind: "rifle", count: 8 },
     { name: "2nd Squad", kind: "rifle", count: 8 },
+    { name: "LMG Team", kind: "mg", count: 6 },
     { name: "AT Team", kind: "at", count: 5 },
     { name: "Mortar Team", kind: "mortar", count: 5 },
   ];

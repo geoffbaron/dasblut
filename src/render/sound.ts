@@ -20,6 +20,7 @@ export type SfxId =
   | "tank_destroy"
   | "soldier_hit"
   | "soldier_scream"
+  | "soldier_scream_us"
   | "suppress_shout"
   | "ui_select"
   | "ui_order"
@@ -45,12 +46,17 @@ const TANK_BOOM = "large_loud_WWII_tank_#4-1781811223525.mp3";
 const GRENADE = "EXPLReal-grenade_explosion-Elevenlabs.mp3";
 const MORTAR_FIRE = "WEAPSiege-mortar_firing_sound,-Elevenlabs.mp3";
 const GASP = "GOREMisc-Soldier_dying_gasp,_-Elevenlabs.mp3";
+const BAZOOKA_BLAST = "EXPLReal-bazooka_blast-Elevenlabs.mp3";
+const SWITCH = "electric_switch_flip_#1-1781840526177.mp3"; // UI select/order click
+// German death-screams — used when an Axis soldier is killed.
 const SCREAMS = [
   "dying_screaming_sayi_#1-1781820762926.mp3",
   "dying_screaming_sayi_#2-1781820762927.mp3",
   "dying_screaming_sayi_#3-1781820762927.mp3",
   "dying_screaming_sayi_#4-1781820762927.mp3",
 ];
+// A separate scream for US deaths so the two sides sound distinct.
+const SCREAM_US = "HMNMisc-A_male_soldier_screa-Elevenlabs.mp3";
 // Tank engine — three driving recordings; one is picked per tank for variety and
 // looped continuously while that tank is on the move.
 const TANK_DRIVE = [
@@ -71,20 +77,21 @@ const SFX_DEFS: Record<SfxId, { files: string[]; vol: number }> = {
   rifle:          { files: [RIFLE],     vol: 0.8 },
   smg:            { files: [MG42],      vol: 0.6 }, // no SMG sample — MG42 stands in
   lmg:            { files: [MG42],      vol: 0.9 },
-  bazooka:        { files: [BIG_BOOM],  vol: 1.0 },
-  panzerfaust:    { files: [BIG_BOOM],  vol: 1.0 },
+  bazooka:        { files: [BAZOOKA_BLAST], vol: 1.0 },
+  panzerfaust:    { files: [BAZOOKA_BLAST], vol: 1.0 },
   tank_ap:        { files: [BIG_BOOM],  vol: 1.0 },
   tank_mg:        { files: [MG42],      vol: 0.8 },
   tank_he:        { files: [TANK_BOOM], vol: 1.0 },
   explosion:      { files: [GRENADE],   vol: 1.0 },
-  ricochet:       { files: [],          vol: 0.6 }, // synth fallback
+  ricochet:       { files: [],          vol: 0.6 }, // synth fallback (zing)
   tank_hit:       { files: [TANK_BOOM], vol: 1.0 },
   tank_destroy:   { files: [BIG_BOOM],  vol: 1.0 },
-  soldier_hit:    { files: [GASP],      vol: 0.8 },
-  soldier_scream: { files: SCREAMS,     vol: 0.9 }, // 4 random German death-screams
+  soldier_hit:    { files: [GASP],      vol: 0.85 },
+  soldier_scream:    { files: SCREAMS,      vol: 0.95 }, // 4 random German death-screams (Axis)
+  soldier_scream_us: { files: [SCREAM_US],  vol: 0.95 }, // US death scream
   suppress_shout: { files: [],          vol: 0.5 }, // synth fallback
-  ui_select:      { files: [],          vol: 0.4 }, // synth fallback
-  ui_order:       { files: [],          vol: 0.4 }, // synth fallback
+  ui_select:      { files: [SWITCH],    vol: 0.5 }, // switch-flip click
+  ui_order:       { files: [SWITCH],    vol: 0.5 }, // switch-flip click
   obj_capture:    { files: [],          vol: 0.9 }, // synth fallback
   obj_lost:       { files: [],          vol: 0.9 }, // synth fallback
   tank_engine:    { files: TANK_DRIVE,  vol: 0.45 }, // looped while a tank drives
@@ -94,6 +101,9 @@ const SFX_DEFS: Record<SfxId, { files: string[]; vol: number }> = {
 
 // Maximum audible sounds per frame to avoid an audio avalanche during heavy combat.
 const MAX_PER_FRAME = 10;
+// Priority sounds (deaths/screams) get their own reserved budget so the constant
+// chatter of gunfire can never starve them — being able to hear men fall matters.
+const MAX_PRIORITY_PER_FRAME = 4;
 // Distance in cells beyond which audio is inaudible.
 const FADE_CELLS = 35;
 
@@ -102,6 +112,7 @@ export class SoundManager {
   private howls = new Map<SfxId, Howl[]>();
   private synth: AudioContext | null = null;
   private frameCount = 0;
+  private priorityCount = 0;
   private masterVol = 0.8;
   // World-space camera center, set each frame by the renderer.
   cameraX = 0;
@@ -126,13 +137,16 @@ export class SoundManager {
     Howler.mute(m);
   }
 
-  // Called each render frame to reset the per-frame throttle.
+  // Called each render frame to reset the per-frame throttles.
   tick() {
     this.frameCount = 0;
+    this.priorityCount = 0;
   }
 
   // Play a sound at world-cell coordinates. Distance from camera affects volume/pan.
-  play(id: SfxId, worldX: number, worldY: number) {
+  // `priority` events (deaths/screams) draw from a separate reserved budget so they
+  // are never crowded out by routine gunfire.
+  play(id: SfxId, worldX: number, worldY: number, priority = false) {
     // Cull out-of-earshot sounds BEFORE spending the per-frame budget, otherwise a
     // burst of distant gunfire silently eats the budget and starves the close-up
     // shots the player is actually watching.
@@ -141,8 +155,13 @@ export class SoundManager {
     const dist = Math.hypot(dx, dy);
     if (dist > FADE_CELLS) return;
 
-    if (this.frameCount >= MAX_PER_FRAME) return;
-    this.frameCount++;
+    if (priority) {
+      if (this.priorityCount >= MAX_PRIORITY_PER_FRAME) return;
+      this.priorityCount++;
+    } else {
+      if (this.frameCount >= MAX_PER_FRAME) return;
+      this.frameCount++;
+    }
 
     const vol = (1 - dist / FADE_CELLS) ** 1.5;
     const pan = Math.max(-1, Math.min(1, dx / (FADE_CELLS * 0.5)));
@@ -293,6 +312,7 @@ const FALLBACK_PARAMS: Partial<Record<SfxId, { freq: number; dur: number; type: 
   tank_destroy:   { freq: 120,  dur: 0.6,  type: "sawtooth"  },
   soldier_hit:    { freq: 300,  dur: 0.08, type: "triangle"  },
   soldier_scream: { freq: 500,  dur: 0.25, type: "sine"      },
+  soldier_scream_us: { freq: 460, dur: 0.25, type: "sine"   },
   suppress_shout: { freq: 350,  dur: 0.15, type: "sine"      },
   ui_select:      { freq: 880,  dur: 0.05, type: "sine"      },
   ui_order:       { freq: 660,  dur: 0.07, type: "sine"      },

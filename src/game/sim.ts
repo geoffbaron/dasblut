@@ -22,6 +22,7 @@ import { Soldier, World } from "./world.ts";
 export function step(world: World): void {
   // During deployment the clock is frozen; only movement and spotting run.
   if (world.phase === "deploy") {
+    ageEffects(world, SIM_DT); // let transient markers (e.g. blocked-move) fade
     world.visAccum += SIM_DT;
     if (world.visAccum >= VIS_INTERVAL) {
       updateVisibility(world, world.visAccum);

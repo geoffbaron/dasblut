@@ -1,5 +1,5 @@
 import { Renderer } from "./renderer.ts";
-import { World } from "../game/world.ts";
+import { Faction, World } from "../game/world.ts";
 
 // Pointer & keyboard handling.
 // Left button  — click to select / issue order; drag to rubber-band select.
@@ -26,6 +26,7 @@ export class Input {
     private readonly onSelectionChange: () => void,
     private readonly onOrder: (x: number, y: number) => void,
     private readonly onBoxSelect: (sx0: number, sy0: number, sx1: number, sy1: number) => void,
+    private readonly side: Faction = "us",
   ) {
     const canvas = renderer.app.canvas;
     canvas.addEventListener("pointerdown", (e) => this.onPointerDown(e));
@@ -126,7 +127,7 @@ export class Input {
 
     // Plain click: select a vehicle, then a squad, otherwise issue the armed order.
     const { x, y } = this.renderer.screenToWorld(sx, sy);
-    const vid = this.world.pickVehicleAt(x, y, 1.8);
+    const vid = this.world.pickVehicleAt(x, y, 1.8, this.side);
     if (vid != null) {
       this.world.selectedVehicleId = vid;
       this.world.selectedTeamId = null;
@@ -134,7 +135,7 @@ export class Input {
       this.onSelectionChange();
       return;
     }
-    const teamId = this.world.pickTeamAt(x, y, 1.2);
+    const teamId = this.world.pickTeamAt(x, y, 1.2, this.side);
     if (teamId != null) {
       this.world.selectedTeamId = teamId;
       this.world.selectedTeamIds = new Set([teamId]);

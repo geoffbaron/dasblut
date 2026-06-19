@@ -1,6 +1,6 @@
 import { addSuppression, killSoldier, woundSoldier } from "./casualty.ts";
 import { damageBuildings } from "./buildingDamage.ts";
-import { AMBUSH_ACC_MULT, AREA_FIRE_RADIUS, SMOKE_DEPOSIT, SMOKE_RADIUS, SMOKE_RELOAD } from "./constants.ts";
+import { AMBUSH_ACC_MULT, AREA_FIRE_RADIUS, SMOKE_DEPOSIT, SMOKE_RADIUS } from "./constants.ts";
 import { hasLOS } from "./los.ts";
 import { TERRAIN } from "./terrain.ts";
 import { resolveArmorHit } from "./vehicleCombat.ts";
@@ -67,8 +67,10 @@ export function resolveFire(world: World, dt: number): void {
         s.ammo--;
         s.firedTimer = 0.5;
         if (s.fireSmoke) {
-          s.fireCD += SMOKE_RELOAD; // smoke rounds drop a touch faster than HE
+          // One smoke shell per order — fire it, then the screen stands on its own.
           smokeShot(world, s);
+          s.fireSmoke = false;
+          s.fireCell = null;
         } else {
           s.fireCD += 1 / w.rof;
           mortarShot(world, s);

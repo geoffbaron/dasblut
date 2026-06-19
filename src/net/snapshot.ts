@@ -168,9 +168,15 @@ function makeVehicle(id: number, faction: Faction, cls: string, name: string): V
   };
 }
 
-// A movement/fire order the German client sends to the host for an Axis team/cell.
+// An order the German client sends to the host. Mirrors the full US command set so
+// the German experience matches: team moves/fire/smoke/postures and vehicle orders.
 export interface AxisOrder {
-  kind: "move" | "fast" | "fire" | "defend" | "ambush";
-  teamId: number;
+  kind:
+    | "move" | "fast" | "sneak" | "fire" | "smoke" | "defend" | "ambush"
+    | "vehMove" | "vehFast" | "vehFire" | "vehDefend";
+  teamId?: number;
+  vid?: number;
+  enemyId?: number; // focus-fire a specific spotted enemy
+  x?: number; y?: number; // world coords (vehicle fire)
   cell?: Cell;
 }

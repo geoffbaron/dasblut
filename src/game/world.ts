@@ -139,7 +139,7 @@ function squadLoadout(kind: SquadKind, count: number, faction: Faction): WeaponI
   const tail: WeaponId[] =
     kind === "mg" ? ["lmg", "lmg", "rifle"]
     : kind === "at" ? [at, at, "rifle"]
-    : kind === "mortar" ? ["mortar", "mortar", "rifle"]
+    : kind === "mortar" ? ["mortar", "rifle", "rifle"] // a single tube + crew
     : ["lmg", "rifle", "rifle"]; // rifle squad
   const out: WeaponId[] = ["smg"];
   for (let i = 1; i < count; i++) out.push(tail[i - 1] ?? "rifle");
@@ -332,12 +332,12 @@ export class World {
     return this.byId.get(id);
   }
 
-  /** Find the (player) team whose nearest active soldier is within `radius` cells. */
-  pickTeamAt(x: number, y: number, radius: number): number | null {
+  /** Find the team (of the given faction) whose nearest active soldier is within `radius`. */
+  pickTeamAt(x: number, y: number, radius: number, faction: Faction = "us"): number | null {
     let best: number | null = null;
     let bestDist = radius * radius;
     for (const s of this.soldiers) {
-      if (s.faction !== "us" || s.status !== "active") continue;
+      if (s.faction !== faction || s.status !== "active") continue;
       const dx = s.x - x;
       const dy = s.y - y;
       const d = dx * dx + dy * dy;
@@ -463,11 +463,11 @@ export class World {
 
   // --- Vehicle selection & orders ---
 
-  pickVehicleAt(x: number, y: number, radius: number): number | null {
+  pickVehicleAt(x: number, y: number, radius: number, faction: Faction = "us"): number | null {
     let best: number | null = null;
     let bestD = radius * radius;
     for (const v of this.vehicles) {
-      if (v.faction !== "us" || v.status === "ko") continue;
+      if (v.faction !== faction || v.status === "ko") continue;
       const d = (v.x - x) ** 2 + (v.y - y) ** 2;
       if (d < bestD) {
         bestD = d;

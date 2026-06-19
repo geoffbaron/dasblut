@@ -2,7 +2,8 @@ import { GameLoop } from "./game/loop.ts";
 import { BATTLE_TIME_S, OBJECTIVE_HOLD_TO_WIN, SPEED_STEPS, VIS_INTERVAL } from "./game/constants.ts";
 import { GameMap } from "./game/gamemap.ts";
 import { step } from "./game/sim.ts";
-import { Stance, World } from "./game/world.ts";
+import { Cell } from "./game/pathfinding.ts";
+import { Faction, Stance, World } from "./game/world.ts";
 import { WEAPONS } from "./game/weapons.ts";
 import { VEHICLES } from "./game/vehicleDefs.ts";
 import { updateVisibility } from "./game/visibility.ts";
@@ -20,8 +21,9 @@ type ArmedOrder = "move" | "fast" | "sneak" | "fire" | "smoke";
 
 // --- Multiplayer bootstrap ---------------------------------------------------------
 // The host runs the authoritative sim and plays US (the normal single-player flow,
-// plus broadcasting). German/spectator clients render the host's snapshots. If no WS
-// server answers (offline / Vite dev), we just start the normal single-player game.
+// plus broadcasting). German/spectator clients render the host's snapshots and get
+// the same HUD (the German commands the Axis; a spectator can look but not touch). If
+// no WS server answers (offline / Vite dev), we just start the normal single game.
 let booted = false;
 let pendingSetup: Setup | null = null;
 // Host hooks, wired up once startGame has built the world.
@@ -57,13 +59,63 @@ function maybeStartClient(): void {
   startClientView(pendingSetup);
 }
 
-async function startGame(map: GameMap) {
-  const mount = document.getElementById("app")!;
-  const world = new World(map);
-  // Pre-warm visibility so the first rendered frame shows your forces, not all-black fog.
-  updateVisibility(world, VIS_INTERVAL);
-  const renderer = new Renderer();
-  await renderer.init(mount, world);
+// === Shared HUD ====================================================================
+
+const SIDE_LABEL: Record<Faction, string> = { us: "US", axis: "AXIS" };
+
+// An order issuer: the host applies orders to the world directly; a client relays
+// them to the host over the network (and only an active German commander may do so).
+interface Issuer {
+  move(teamId: number, cell: Cell, stance: Stance): boolean;
+  fireUnit(teamId: number, enemyId: number): void;
+  areaFire(teamId: number, cell: Cell): void;
+  smoke(teamId: number, cell: Cell): boolean;
+  posture(teamId: number, stance: Stance): void;
+  vehMove(vid: number, cell: Cell, fast: boolean): boolean;
+  vehFire(vid: number, x: number, y: number): void;
+  vehPosture(vid: number): void;
+}
+
+function localIssuer(world: World): Issuer {
+  return {
+    move: (t, c, s) => world.orderMove(t, c, s),
+    fireUnit: (t, e) => world.orderFireUnit(t, e),
+    areaFire: (t, c) => world.orderAreaFire(t, c),
+    smoke: (t, c) => world.orderSmoke(t, c),
+    posture: (t, s) => world.orderPosture(t, s),
+    vehMove: (v, c, f) => world.orderVehicleMove(v, c, f),
+    vehFire: (v, x, y) => world.orderVehicleFire(v, x, y),
+    vehPosture: (v) => world.orderVehiclePosture(v),
+  };
+}
+// Networked issuer — only the German commander's orders are actually sent.
+function netIssuer(): Issuer {
+  const ok = () => net.role === "german";
+  return {
+    move: (teamId, cell, s) => { if (ok()) net.sendAxisOrder({ kind: s === "fast" ? "fast" : s === "sneak" ? "sneak" : "move", teamId, cell }); return ok(); },
+    fireUnit: (teamId, enemyId) => { if (ok()) net.sendAxisOrder({ kind: "fire", teamId, enemyId }); },
+    areaFire: (teamId, cell) => { if (ok()) net.sendAxisOrder({ kind: "fire", teamId, cell }); },
+    smoke: (teamId, cell) => { if (ok()) net.sendAxisOrder({ kind: "smoke", teamId, cell }); return ok(); },
+    posture: (teamId, s) => { if (ok()) net.sendAxisOrder({ kind: s === "ambush" ? "ambush" : "defend", teamId }); },
+    vehMove: (vid, cell, fast) => { if (ok()) net.sendAxisOrder({ kind: fast ? "vehFast" : "vehMove", vid, cell }); return ok(); },
+    vehFire: (vid, x, y) => { if (ok()) net.sendAxisOrder({ kind: "vehFire", vid, x, y }); },
+    vehPosture: (vid) => { if (ok()) net.sendAxisOrder({ kind: "vehDefend", vid }); },
+  };
+}
+
+interface HudOpts {
+  side: Faction | null; // controllable side; null = pure spectator
+  local: boolean;       // host applies orders locally; client relays them
+}
+
+// Builds the entire HUD (force tracker, objective panel, roster, orders bar, selection
+// + map input, keybinds, win/lose banner) for one viewer. Returns a per-frame update.
+// Shared by the US host and the German/spectator clients so both sides play the same.
+function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: () => void; update: (ms: number) => void } {
+  const side = opts.side;
+  const enemy: Faction = side === "axis" ? "us" : "axis";
+  const issuer = opts.local ? localIssuer(world) : netIssuer();
+  const canCommand = side != null;
 
   const statusEl = document.getElementById("status")!;
   const clockEl = document.getElementById("clock")!;
@@ -74,26 +126,47 @@ async function startGame(map: GameMap) {
   const bannerSub = document.getElementById("bannerSub")!;
   const deployBar = document.getElementById("deployBar")!;
   const launchBtn = document.getElementById("launchBtn")!;
+  const ordersBar = document.getElementById("orders")!;
+  const rosterEl = document.getElementById("roster")!;
 
-  deployBar.style.display = "flex";
-  launchBtn.addEventListener("click", () => {
-    world.phase = "battle";
+  // Multiplayer role badge.
+  let badge = document.getElementById("netbadge");
+  if (!badge) {
+    badge = document.createElement("div");
+    badge.id = "netbadge";
+    badge.style.cssText =
+      "position:fixed;top:8px;right:12px;z-index:30;font:600 12px ui-monospace,monospace;" +
+      "padding:4px 10px;border-radius:6px;background:rgba(20,19,15,0.85);border:1px solid #4a463c;color:#cfc8b6;";
+    document.body.appendChild(badge);
+  }
+
+  // The deploy bar + launch belong to the host (US), who controls the battle phase.
+  if (opts.local && side === "us") {
+    deployBar.style.display = "flex";
+    launchBtn.addEventListener("click", () => {
+      world.phase = "battle";
+      deployBar.style.display = "none";
+      renderer.centerOnObjective(world);
+    });
+  } else {
     deployBar.style.display = "none";
-    renderer.centerOnObjective(world);
-  });
+  }
+  if (!canCommand) { ordersBar.style.display = "none"; rosterEl.style.display = "none"; }
 
+  const inDeployZone = (cy: number): boolean =>
+    side === "axis" ? cy < world.deployY1Axis : cy >= world.deployY0Us;
+
+  // --- force tracker / objective / selection / banner ---
   const refreshStatus = () => {
-    // Force tracker.
-    let us = 0;
-    let axisSeen = 0;
+    let mine = 0, enemySeen = 0, enemyTotal = 0;
     for (const s of world.soldiers) {
       if (s.status !== "active") continue;
-      if (s.faction === "us") us++;
-      else if (s.seen) axisSeen++;
+      if (s.faction === (side ?? "us")) mine++;
+      else { enemyTotal++; if (s.seen) enemySeen++; }
     }
-    forcesEl.textContent = `US ${us} · AXIS ${axisSeen > 0 ? axisSeen + " seen" : "?"}`;
+    if (side) forcesEl.textContent = `${SIDE_LABEL[side]} ${mine} · ${SIDE_LABEL[enemy]} ${enemySeen > 0 ? enemySeen + " seen" : "?"}`;
+    else forcesEl.textContent = `US ${mine} · AXIS ${enemyTotal}`;
 
-    // Objective panel.
     {
       const ownerCls = world.objOwner === "us" ? "obj-us" : "obj-axis";
       const ownerName = world.objOwner === "us" ? "US holds" : "Axis holds";
@@ -107,85 +180,60 @@ async function startGame(map: GameMap) {
       objectiveEl.innerHTML = `<div class="obj-title">OBJECTIVE</div><div>${line}</div>`;
     }
 
-    // Outcome banner.
     if (world.outcome) {
       bannerEl.style.display = "flex";
-      bannerBig.textContent = world.outcome === "win" ? "OBJECTIVE SECURED" : "ATTACK REPULSED";
-      bannerBig.style.color = world.outcome === "win" ? "#9fcf6f" : "#e0533a";
-      bannerSub.textContent =
-        world.outcome === "win" ? "You hold the victory location." : "The defenders held the line.";
+      // win/lose meaning flips for the Axis commander.
+      const iWon = side === "axis" ? world.outcome === "lose" : world.outcome === "win";
+      bannerBig.textContent = iWon ? (side === "axis" ? "POSITION HELD" : "OBJECTIVE SECURED") : (side === "axis" ? "POSITION OVERRUN" : "ATTACK REPULSED");
+      bannerBig.style.color = iWon ? "#9fcf6f" : "#e0533a";
+      bannerSub.textContent = iWon ? "The field is yours." : "The battle is lost.";
     }
 
-    // Selected vehicle.
+    if (!canCommand) { statusEl.innerHTML = `<span class="dim">spectating</span>`; return; }
+
     if (world.selectedVehicleId != null) {
       const v = world.vehicle(world.selectedVehicleId)!;
       const tags: string[] = [];
       if (v.status === "ko") tags.push(`<span class="tag s-routing">knocked out</span>`);
-      else {
-        if (v.immobilized) tags.push(`<span class="tag s-pinned">immobilized</span>`);
-        if (v.suppression > 0.85) tags.push(`<span class="tag s-shaken">buttoned up</span>`);
-      }
       statusEl.innerHTML =
         `<div class="name">${v.name} <span class="dim">· ${v.status === "ko" ? "wreck" : v.stance}</span></div>` +
         `<div class="dim">crew ${v.crew} · AP ${v.apAmmo} · HE ${v.heAmmo}</div>` +
         (tags.length ? `<div class="row">${tags.join("")}</div>` : "");
       return;
     }
-
-    if (world.selectedTeamIds.size === 0) {
-      statusEl.innerHTML = `<span class="dim">No team selected</span>`;
-      return;
-    }
-    // Multi-select: show a combined summary instead of per-team detail.
+    if (world.selectedTeamIds.size === 0) { statusEl.innerHTML = `<span class="dim">No team selected</span>`; return; }
     if (world.selectedTeamIds.size > 1) {
-      let totalLive = 0, total = 0;
+      let live = 0, total = 0;
       for (const tid of world.selectedTeamIds) {
-        const t = world.team(tid);
-        if (!t) continue;
+        const t = world.team(tid); if (!t) continue;
         total += t.soldierIds.length;
-        for (const sid of t.soldierIds)
-          if (world.soldier(sid)?.status === "active") totalLive++;
+        for (const sid of t.soldierIds) if (world.soldier(sid)?.status === "active") live++;
       }
-      statusEl.innerHTML =
-        `<div class="name">${world.selectedTeamIds.size} squads selected</div>` +
-        `<div class="dim">${totalLive} effective · ${total - totalLive} down</div>`;
+      statusEl.innerHTML = `<div class="name">${world.selectedTeamIds.size} squads selected</div><div class="dim">${live} effective · ${total - live} down</div>`;
       return;
     }
-    const team = world.team(world.selectedTeamId!)!;
-    const live = team.soldierIds.map((id) => world.soldier(id)!).filter((s) => s.status === "active");
+    const team = world.team(world.selectedTeamId!);
+    if (!team) { statusEl.innerHTML = `<span class="dim">No team selected</span>`; return; }
+    const live = team.soldierIds.map((id) => world.soldier(id)!).filter((s) => s && s.status === "active");
     const counts: Record<string, number> = {};
-    let moraleSum = 0;
-    for (const s of live) {
-      counts[s.state] = (counts[s.state] ?? 0) + 1;
-      moraleSum += s.morale;
-    }
+    for (const s of live) counts[s.state] = (counts[s.state] ?? 0) + 1;
     const casualties = team.soldierIds.length - live.length;
-    const avgMorale = live.length ? Math.round((moraleSum / live.length) * 100) : 0;
     const tags = (["steady", "shaken", "pinned", "panicked", "routing"] as const)
-      .filter((st) => counts[st])
-      .map((st) => `<span class="tag s-${st}">${counts[st]} ${st}</span>`)
-      .join("");
-    const stance = live[0]?.stance ?? "move";
+      .filter((st) => counts[st]).map((st) => `<span class="tag s-${st}">${counts[st]} ${st}</span>`).join("");
     statusEl.innerHTML =
-      `<div class="name">${team.name} <span class="dim">· ${stance}</span></div>` +
-      `<div class="dim">${live.length} effective · ${casualties} down · morale ${avgMorale}%</div>` +
-      `<div class="row">${tags}</div>`;
+      `<div class="name">${team.name} <span class="dim">· ${live[0]?.stance ?? "move"}</span></div>` +
+      `<div class="dim">${live.length} effective · ${casualties} down</div><div class="row">${tags}</div>`;
   };
-  refreshStatus();
 
-  // --- Orders system ---
-  const ordersBar = document.getElementById("orders")!;
+  // --- orders bar ---
   const orderBtns = Array.from(ordersBar.querySelectorAll<HTMLButtonElement>("button"));
   let armed: ArmedOrder = "move";
-
   const updateOrdersBar = () => {
+    if (!canCommand) return;
     const show = (world.selectedTeamIds.size > 0 || world.selectedVehicleId != null) && !world.outcome;
     ordersBar.style.display = show ? "flex" : "none";
     const deployPhase = world.phase === "deploy";
-    // Smoke is a mortar-team-only order (and not for tanks / deployment).
-    const hasMortar =
-      world.selectedVehicleId == null &&
-      [...world.selectedTeamIds].some((id) => world.team(id)?.kind === "mortar");
+    const hasMortar = world.selectedVehicleId == null && [...world.selectedTeamIds].some((id) => world.team(id)?.kind === "mortar");
     for (const b of orderBtns) {
       const order = b.dataset.order!;
       let hidden = deployPhase && (order === "fire" || order === "fast" || order === "ambush" || order === "defend");
@@ -195,225 +243,125 @@ async function startGame(map: GameMap) {
     }
   };
 
-  // Flash a red "can't go there" marker at a world point and give a soft cue.
-  const flagBlocked = (x: number, y: number) => {
-    world.effects.push({ kind: "blocked", x0: x, y0: y, x1: x, y1: y, ttl: 0.8 });
-  };
+  const flagBlocked = (x: number, y: number) => { world.effects.push({ kind: "blocked", x0: x, y0: y, x1: x, y1: y, ttl: 0.8 }); };
 
-  // A left-click on the ground issues the currently armed order to all selected teams.
   const handleOrder = (x: number, y: number) => {
+    if (!canCommand) return;
     const cell = { cx: Math.floor(x), cy: Math.floor(y) };
-
-    // During deployment, US squads can only move within their southern zone.
-    if (world.phase === "deploy" && cell.cy < world.deployY0Us) {
-      flagBlocked(x, y); // clicked outside the deploy zone
-      return;
-    }
+    if (world.phase === "deploy" && !inDeployZone(cell.cy)) { flagBlocked(x, y); return; }
 
     if (world.selectedVehicleId != null) {
       const vid = world.selectedVehicleId;
-      if (armed === "fire") world.orderVehicleFire(vid, x, y);
-      else if (!world.orderVehicleMove(vid, cell, armed === "fast")) flagBlocked(x, y);
+      if (armed === "fire") issuer.vehFire(vid, x, y);
+      else if (!issuer.vehMove(vid, cell, armed === "fast")) flagBlocked(x, y);
       refreshStatus();
       return;
     }
-
     const teamIds = [...world.selectedTeamIds];
     if (teamIds.length === 0) return;
 
     if (armed === "smoke") {
-      // Lay a smoke screen — only mortar teams in the selection respond.
       let anyTube = false;
-      for (const tid of teamIds) if (world.orderSmoke(tid, cell)) anyTube = true;
-      if (!anyTube) { flagBlocked(x, y); refreshStatus(); return; } // no mortars selected
-      sound.playUI("ui_order");
-      refreshStatus();
-      return;
+      for (const tid of teamIds) if (issuer.smoke(tid, cell)) anyTube = true;
+      if (!anyTube) { flagBlocked(x, y); refreshStatus(); return; }
     } else if (armed === "fire") {
-      // Fire is aimed by the primary (first selected) team only.
       const primary = world.selectedTeamId!;
-      const enemy = world.soldiers.find(
-        (s) => s.faction === "axis" && s.status === "active" && s.seen && Math.hypot(s.x - x, s.y - y) < 1.4,
-      );
-      if (enemy) world.orderFireUnit(primary, enemy.id);
-      else world.orderAreaFire(primary, cell);
+      const foe = world.soldiers.find((s) => s.faction === enemy && s.status === "active" && s.seen && Math.hypot(s.x - x, s.y - y) < 1.4);
+      if (foe) issuer.fireUnit(primary, foe.id);
+      else issuer.areaFire(primary, cell);
     } else {
-      // Group move: fan teams out horizontally around the target so they don't pile up.
       const n = teamIds.length;
       let anyOk = false;
       teamIds.forEach((tid, i) => {
-        const col = Math.round(i - (n - 1) / 2); // -1, 0, 1 for n=3 etc.
-        if (world.orderMove(tid, { cx: cell.cx + col * 4, cy: cell.cy }, armed as Stance)) anyOk = true;
+        const col = Math.round(i - (n - 1) / 2);
+        if (issuer.move(tid, { cx: cell.cx + col * 4, cy: cell.cy }, armed as Stance)) anyOk = true;
       });
-      if (!anyOk) { flagBlocked(x, y); refreshStatus(); return; } // nobody could reach it
+      if (!anyOk) { flagBlocked(x, y); refreshStatus(); return; }
     }
     sound.playUI("ui_order");
     refreshStatus();
   };
 
-  // Clicking an order button: Defend/Ambush apply in place; the rest arm a map click.
   const pickOrder = (order: string) => {
-    // Smoke is mortar-only — ignore it (incl. the hotkey) when no mortar team is selected.
+    if (!canCommand) return;
     if (order === "smoke") {
-      const hasMortar =
-        world.selectedVehicleId == null &&
-        [...world.selectedTeamIds].some((id) => world.team(id)?.kind === "mortar");
+      const hasMortar = world.selectedVehicleId == null && [...world.selectedTeamIds].some((id) => world.team(id)?.kind === "mortar");
       if (!hasMortar) return;
     }
     if (world.selectedVehicleId != null) {
-      if (order === "defend" || order === "ambush") world.orderVehiclePosture(world.selectedVehicleId);
+      if (order === "defend" || order === "ambush") issuer.vehPosture(world.selectedVehicleId);
       else if (order !== "smoke") armed = (order === "sneak" ? "move" : order) as ArmedOrder;
-      updateOrdersBar();
-      refreshStatus();
-      return;
+      updateOrdersBar(); refreshStatus(); return;
     }
     if (world.selectedTeamIds.size === 0) return;
-    if (order === "defend" || order === "ambush") {
-      // Posture orders apply to every team in the group.
-      for (const tid of world.selectedTeamIds) world.orderPosture(tid, order as Stance);
-    } else {
-      armed = order as ArmedOrder;
-    }
-    updateOrdersBar();
-    refreshStatus();
+    if (order === "defend" || order === "ambush") for (const tid of world.selectedTeamIds) issuer.posture(tid, order as Stance);
+    else armed = order as ArmedOrder;
+    updateOrdersBar(); refreshStatus();
   };
   for (const b of orderBtns) b.addEventListener("click", () => pickOrder(b.dataset.order!));
 
-  const input = new Input(renderer, world,
-    () => {
-      armed = "move";
-      sound.playUI("ui_select");
-      updateOrdersBar();
-      refreshStatus();
-      refreshRoster();
-    },
-    handleOrder,
-    (sx0, sy0, sx1, sy1) => {
-      // Convert screen box to world space and find all US teams with a soldier inside.
-      const wA = renderer.screenToWorld(Math.min(sx0, sx1), Math.min(sy0, sy1));
-      const wB = renderer.screenToWorld(Math.max(sx0, sx1), Math.max(sy0, sy1));
-      const ids = new Set<number>();
-      for (const team of world.teams) {
-        if (team.faction !== "us") continue;
-        for (const sid of team.soldierIds) {
-          const s = world.soldier(sid);
-          if (!s || s.status !== "active") continue;
-          if (s.x >= wA.x && s.x <= wB.x && s.y >= wA.y && s.y <= wB.y) {
-            ids.add(team.id);
-            break; // one soldier inside = whole team selected
-          }
-        }
-      }
-      if (ids.size === 0) return;
-      world.selectedTeamIds = ids;
-      world.selectedTeamId = [...ids][0];
-      world.selectedVehicleId = null;
-      armed = "move";
-      sound.playUI("ui_select");
-      updateOrdersBar();
-      refreshStatus();
-      refreshRoster();
-    },
-  );
-  updateOrdersBar();
-
-  // --- Unit navigator (Close Combat-style roster) ---
-  // One card per friendly team showing weapon kind, strength, morale and ammo.
-  // Click a card to select that squad and snap the camera to it.
-  const rosterEl = document.getElementById("roster")!;
+  // --- roster ---
   const KIND_LABEL: Record<string, string> = { rifle: "RIFLE", mg: "MG", at: "AT", mortar: "MORTAR" };
-  interface RosterCard {
-    el: HTMLDivElement; count: HTMLSpanElement;
-    moraleFill: HTMLDivElement; ammoFill: HTMLDivElement; strFill: HTMLDivElement;
-  }
+  interface RosterCard { el: HTMLDivElement; count: HTMLSpanElement; moraleFill: HTMLDivElement; ammoFill: HTMLDivElement; strFill: HTMLDivElement; }
   const rosterCards = new Map<number, RosterCard>();
   const vehicleCards = new Map<number, RosterCard>();
-
+  const mkCard = (el: HTMLDivElement): RosterCard => ({
+    el,
+    count: el.querySelector(".rcount") as HTMLSpanElement,
+    strFill: el.querySelector('[data-k="str"]') as HTMLDivElement,
+    moraleFill: el.querySelector('[data-k="mor"]') as HTMLDivElement,
+    ammoFill: el.querySelector('[data-k="ammo"]') as HTMLDivElement,
+  });
   const buildRoster = () => {
+    if (!canCommand) return;
     for (const team of world.teams) {
-      if (team.faction !== "us") continue;
+      if (team.faction !== side) continue;
       const el = document.createElement("div");
       el.className = "rcard";
       el.innerHTML =
-        `<div class="rhead"><span class="rname">${team.name}</span>` +
-        `<span class="rbadge ${team.kind}">${KIND_LABEL[team.kind]}</span>` +
-        `<span class="rcount"></span></div>` +
-        `<div class="rbars">` +
-        `<div class="rbar"><span class="rlabel">S</span><div class="rtrack"><div class="rfill" data-k="str"></div></div></div>` +
+        `<div class="rhead"><span class="rname">${team.name}</span><span class="rbadge ${team.kind}">${KIND_LABEL[team.kind]}</span><span class="rcount"></span></div>` +
+        `<div class="rbars"><div class="rbar"><span class="rlabel">S</span><div class="rtrack"><div class="rfill" data-k="str"></div></div></div>` +
         `<div class="rbar"><span class="rlabel">M</span><div class="rtrack"><div class="rfill" data-k="mor"></div></div></div>` +
-        `<div class="rbar"><span class="rlabel">A</span><div class="rtrack"><div class="rfill" data-k="ammo"></div></div></div>` +
-        `</div>`;
+        `<div class="rbar"><span class="rlabel">A</span><div class="rtrack"><div class="rfill" data-k="ammo"></div></div></div></div>`;
       el.addEventListener("click", () => {
-        world.selectedTeamId = team.id;
-        world.selectedTeamIds = new Set([team.id]);
-        world.selectedVehicleId = null;
-        armed = "move";
-        sound.playUI("ui_select");
-        renderer.centerOnTeam(world, team.id);
-        updateOrdersBar();
-        refreshStatus();
-        refreshRoster();
+        world.selectedTeamId = team.id; world.selectedTeamIds = new Set([team.id]); world.selectedVehicleId = null;
+        armed = "move"; sound.playUI("ui_select"); renderer.centerOnTeam(world, team.id);
+        updateOrdersBar(); refreshStatus(); refreshRoster();
       });
       rosterEl.appendChild(el);
-      rosterCards.set(team.id, {
-        el,
-        count: el.querySelector(".rcount") as HTMLSpanElement,
-        strFill: el.querySelector('[data-k="str"]') as HTMLDivElement,
-        moraleFill: el.querySelector('[data-k="mor"]') as HTMLDivElement,
-        ammoFill: el.querySelector('[data-k="ammo"]') as HTMLDivElement,
-      });
+      rosterCards.set(team.id, mkCard(el));
     }
-
-    // Tank cards: armor shows up as its own unit (crew strength + gun ammo).
     for (const v of world.vehicles) {
-      if (v.faction !== "us") continue;
+      if (v.faction !== side) continue;
       const el = document.createElement("div");
       el.className = "rcard";
       el.innerHTML =
-        `<div class="rhead"><span class="rname">${v.name}</span>` +
-        `<span class="rbadge tank">TANK</span>` +
-        `<span class="rcount"></span></div>` +
-        `<div class="rbars">` +
-        `<div class="rbar"><span class="rlabel">C</span><div class="rtrack"><div class="rfill" data-k="str"></div></div></div>` +
+        `<div class="rhead"><span class="rname">${v.name}</span><span class="rbadge tank">TANK</span><span class="rcount"></span></div>` +
+        `<div class="rbars"><div class="rbar"><span class="rlabel">C</span><div class="rtrack"><div class="rfill" data-k="str"></div></div></div>` +
         `<div class="rbar"><span class="rlabel">R</span><div class="rtrack"><div class="rfill" data-k="mor"></div></div></div>` +
-        `<div class="rbar"><span class="rlabel">A</span><div class="rtrack"><div class="rfill" data-k="ammo"></div></div></div>` +
-        `</div>`;
+        `<div class="rbar"><span class="rlabel">A</span><div class="rtrack"><div class="rfill" data-k="ammo"></div></div></div></div>`;
       el.addEventListener("click", () => {
-        world.selectedVehicleId = v.id;
-        world.selectedTeamId = null;
-        world.selectedTeamIds.clear();
-        armed = "move";
-        sound.playUI("ui_select");
-        renderer.centerOnVehicle(world, v.id);
-        updateOrdersBar();
-        refreshStatus();
-        refreshRoster();
+        world.selectedVehicleId = v.id; world.selectedTeamId = null; world.selectedTeamIds.clear();
+        armed = "move"; sound.playUI("ui_select"); renderer.centerOnVehicle(world, v.id);
+        updateOrdersBar(); refreshStatus(); refreshRoster();
       });
       rosterEl.appendChild(el);
-      vehicleCards.set(v.id, {
-        el,
-        count: el.querySelector(".rcount") as HTMLSpanElement,
-        strFill: el.querySelector('[data-k="str"]') as HTMLDivElement,
-        moraleFill: el.querySelector('[data-k="mor"]') as HTMLDivElement,
-        ammoFill: el.querySelector('[data-k="ammo"]') as HTMLDivElement,
-      });
+      vehicleCards.set(v.id, mkCard(el));
     }
   };
-
   const refreshRoster = () => {
+    if (!canCommand) return;
     for (const team of world.teams) {
       const card = rosterCards.get(team.id);
       if (!card) continue;
       let live = 0, moraleSum = 0, ammo = 0, ammoMax = 0;
       for (const id of team.soldierIds) {
-        const s = world.soldier(id)!;
+        const s = world.soldier(id); if (!s) continue;
         ammoMax += WEAPONS[s.weapon].ammo;
         if (s.status !== "active") continue;
-        live++;
-        moraleSum += s.morale;
-        ammo += s.ammo;
+        live++; moraleSum += s.morale; ammo += s.ammo;
       }
-      const total = team.soldierIds.length;
+      const total = team.soldierIds.length || 1;
       const morale = live ? moraleSum / live : 0;
       card.count.textContent = `${live}/${total}`;
       card.strFill.style.width = `${(live / total) * 100}%`;
@@ -425,21 +373,18 @@ async function startGame(map: GameMap) {
       card.el.classList.toggle("sel", world.selectedTeamIds.has(team.id));
       card.el.classList.toggle("dead", live === 0);
     }
-
     for (const v of world.vehicles) {
       const card = vehicleCards.get(v.id);
       if (!card) continue;
       const def = VEHICLES[v.cls];
       const ko = v.status === "ko";
       const crewFrac = ko ? 0 : v.crew / def.crew;
-      const ready = ko ? 0 : 1 - v.suppression; // crew readiness (buttoned-up under fire)
-      const ammo = v.apAmmo + v.heAmmo;
-      const ammoMax = def.apAmmo + def.heAmmo;
+      const ammo = v.apAmmo + v.heAmmo, ammoMax = def.apAmmo + def.heAmmo;
       card.count.textContent = ko ? "wreck" : `AP ${v.apAmmo}·HE ${v.heAmmo}`;
       card.strFill.style.width = `${crewFrac * 100}%`;
       card.strFill.style.background = crewFrac > 0.6 ? "#8fbf6f" : crewFrac > 0.3 ? "#e0a23a" : "#e0533a";
-      card.moraleFill.style.width = `${Math.round(ready * 100)}%`;
-      card.moraleFill.style.background = ready > 0.55 ? "#8fbf6f" : ready > 0.3 ? "#e0a23a" : "#e0533a";
+      card.moraleFill.style.width = `${ko ? 0 : 100}%`;
+      card.moraleFill.style.background = "#8fbf6f";
       card.ammoFill.style.width = `${ammoMax ? Math.round((ammo / ammoMax) * 100) : 0}%`;
       card.ammoFill.style.background = "#c7a23f";
       card.el.classList.toggle("sel", world.selectedVehicleId === v.id);
@@ -447,18 +392,77 @@ async function startGame(map: GameMap) {
     }
   };
   buildRoster();
-  refreshRoster();
 
-  // Dev-only handle for debugging from the console / preview tools.
+  // --- map input (selection + orders) ---
+  // One Input per viewer drives the camera (pan/zoom) for everyone; selection and
+  // orders only do anything for a commanding side (spectators just look around).
+  const inputSide: Faction = side ?? "axis";
+  const onSel = () => {
+    armed = "move";
+    if (canCommand) sound.playUI("ui_select");
+    updateOrdersBar(); refreshStatus(); refreshRoster();
+  };
+  const onBox = (sx0: number, sy0: number, sx1: number, sy1: number) => {
+    if (!canCommand) return;
+    const a = renderer.screenToWorld(Math.min(sx0, sx1), Math.min(sy0, sy1));
+    const b = renderer.screenToWorld(Math.max(sx0, sx1), Math.max(sy0, sy1));
+    const ids = new Set<number>();
+    for (const team of world.teams) {
+      if (team.faction !== side) continue;
+      for (const sid of team.soldierIds) {
+        const s = world.soldier(sid);
+        if (s && s.status === "active" && s.x >= a.x && s.x <= b.x && s.y >= a.y && s.y <= b.y) { ids.add(team.id); break; }
+      }
+    }
+    if (ids.size === 0) return;
+    world.selectedTeamIds = ids; world.selectedTeamId = [...ids][0]; world.selectedVehicleId = null;
+    onSel();
+  };
+  const input = new Input(renderer, world, onSel, handleOrder, onBox, inputSide);
+
+  if (canCommand) {
+    const ORDER_KEYS: Record<string, string> = { q: "move", w: "fast", e: "sneak", r: "defend", t: "ambush", f: "fire", g: "smoke" };
+    window.addEventListener("keydown", (e) => {
+      if (e.key.toLowerCase() === "o") { renderer.centerOnObjective(world); return; }
+      const order = ORDER_KEYS[e.key.toLowerCase()];
+      if (order && (world.selectedTeamId != null || world.selectedVehicleId != null)) pickOrder(order);
+    });
+  }
+  updateOrdersBar();
+
+  // --- per-frame HUD refresh ---
+  const frame = () => {
+    if (world.phase === "deploy") { clockEl.textContent = "DEPLOY"; clockEl.style.color = "#7fa8e8"; }
+    else {
+      const left = Math.max(0, BATTLE_TIME_S - world.time);
+      clockEl.textContent = `⏱ ${Math.floor(left / 60)}:${Math.floor(left % 60).toString().padStart(2, "0")}`;
+      clockEl.style.color = left < 60 ? "#e0796f" : "";
+    }
+    if (net.connected) {
+      badge!.style.display = "block";
+      badge!.textContent = net.role === "host" ? "MULTIPLAYER · HOST (US)" : net.role === "german" ? "MULTIPLAYER · COMMANDING AXIS" : "MULTIPLAYER · SPECTATING";
+    } else badge!.style.display = "none";
+    refreshStatus(); updateOrdersBar(); refreshRoster();
+  };
+  return { frame, update: (ms: number) => input.update(ms) };
+}
+
+// === Host (US) / offline single-player =============================================
+
+async function startGame(map: GameMap) {
+  const mount = document.getElementById("app")!;
+  const world = new World(map);
+  updateVisibility(world, VIS_INTERVAL);
+  const renderer = new Renderer();
+  await renderer.init(mount, world);
   (window as { __game?: unknown }).__game = { world, renderer };
 
-  // --- Multiplayer host wiring -----------------------------------------------------
-  // Apply orders relayed from the German commander, and toggle the Axis AI off while
-  // a human is in command.
+  const hud = installHUD(world, renderer, { side: "us", local: true });
+
+  // Multiplayer host: apply relayed Axis orders; disable the Axis AI while a human is in.
   onAxisOrderHost = (o) => applyAxisOrder(world, o);
   onGermanPresentHost = (present) => { world.axisHuman = present; };
-  let setupSent = false;
-  let netAccum = 0;
+  let setupSent = false, netAccum = 0;
 
   let lastRenderTs = performance.now();
   let prevObjOwner = world.objOwner;
@@ -467,169 +471,83 @@ async function startGame(map: GameMap) {
     (alpha) => {
       const now = performance.now();
       const dtSec = (now - lastRenderTs) / 1000;
-      input.update(now - lastRenderTs);
+      hud.update(now - lastRenderTs); // keyboard pan
       lastRenderTs = now;
       renderer.render(world, alpha);
-      // Host: publish the map once, then broadcast entity snapshots at ~8 Hz.
       if (net.role === "host") {
         if (!setupSent) { net.sendSetup(encodeSetup(world)); setupSent = true; }
         netAccum += dtSec;
         if (netAccum >= 0.12) { net.sendSnapshot(encodeSnapshot(world)); netAccum = 0; }
       }
-      // Distant battlefield ambience while the fighting is live.
       sound.updateAmbient(dtSec, world.phase === "battle" && !world.outcome && !loop.paused);
-      if (world.objOwner !== prevObjOwner) {
-        sound.playUI(world.objOwner === "us" ? "obj_capture" : "obj_lost");
-        prevObjOwner = world.objOwner;
-      }
-      if (world.phase === "deploy") {
-        clockEl.textContent = "DEPLOY";
-        clockEl.style.color = "#7fa8e8";
-      } else {
-        const left = Math.max(0, BATTLE_TIME_S - world.time);
-        const m = Math.floor(left / 60);
-        const s = Math.floor(left % 60);
-        clockEl.textContent = `⏱ ${m}:${s.toString().padStart(2, "0")}`;
-        clockEl.style.color = left < 60 ? "#e0796f" : "";
-      }
-      refreshStatus();
-      updateOrdersBar();
-      refreshRoster();
+      if (world.objOwner !== prevObjOwner) { sound.playUI(world.objOwner === "us" ? "obj_capture" : "obj_lost"); prevObjOwner = world.objOwner; }
+      hud.frame();
     },
   );
   loop.start();
 
-  // --- HUD wiring ---
+  // Pause / speed (host controls the sim).
   const pauseBtn = document.getElementById("pauseBtn") as HTMLButtonElement;
   const speedBtn = document.getElementById("speedBtn") as HTMLButtonElement;
   const speedPill = document.getElementById("speedPill")!;
   let speedIdx = 0;
-
-  const setPaused = (p: boolean) => {
-    loop.paused = p;
-    pauseBtn.textContent = p ? "▶ Resume" : "⏸ Pause";
-    sound.setMuted(p); // silence loops/ambience while frozen
-  };
+  const setPaused = (p: boolean) => { loop.paused = p; pauseBtn.textContent = p ? "▶ Resume" : "⏸ Pause"; sound.setMuted(p); };
   pauseBtn.addEventListener("click", () => setPaused(!loop.paused));
-  speedBtn.addEventListener("click", () => {
-    speedIdx = (speedIdx + 1) % SPEED_STEPS.length;
-    loop.speed = SPEED_STEPS[speedIdx];
-    speedPill.textContent = `${loop.speed}×`;
-  });
-  const ORDER_KEYS: Record<string, string> = {
-    q: "move", w: "fast", e: "sneak", r: "defend", t: "ambush", f: "fire", g: "smoke",
-  };
-  window.addEventListener("keydown", (e) => {
-    if (e.code === "Space") {
-      e.preventDefault();
-      setPaused(!loop.paused);
-      return;
-    }
-    if (e.key.toLowerCase() === "o") { renderer.centerOnObjective(world); return; }
-    const order = ORDER_KEYS[e.key.toLowerCase()];
-    if (order && (world.selectedTeamId != null || world.selectedVehicleId != null)) pickOrder(order);
-  });
+  speedBtn.addEventListener("click", () => { speedIdx = (speedIdx + 1) % SPEED_STEPS.length; loop.speed = SPEED_STEPS[speedIdx]; speedPill.textContent = `${loop.speed}×`; });
+  window.addEventListener("keydown", (e) => { if (e.code === "Space") { e.preventDefault(); setPaused(!loop.paused); } });
 
   document.title = `DasBlut — ${world.mapName}`;
 }
 
-// Host-side: apply an order relayed from the German commander to an Axis team.
+// Host-side: apply an order relayed from the German commander to an Axis unit.
 function applyAxisOrder(world: World, o: AxisOrder): void {
+  if (o.vid != null) {
+    const v = world.vehicle(o.vid);
+    if (!v || v.faction !== "axis") return;
+    if (o.kind === "vehDefend") world.orderVehiclePosture(o.vid);
+    else if (o.kind === "vehFire" && o.x != null && o.y != null) world.orderVehicleFire(o.vid, o.x, o.y);
+    else if (o.cell) world.orderVehicleMove(o.vid, o.cell, o.kind === "vehFast");
+    return;
+  }
+  if (o.teamId == null) return;
   const team = world.team(o.teamId);
   if (!team || team.faction !== "axis") return;
   if (o.kind === "defend" || o.kind === "ambush") world.orderPosture(o.teamId, o.kind);
-  else if (o.kind === "fire" && o.cell) world.orderAreaFire(o.teamId, o.cell);
-  else if (o.cell) world.orderMove(o.teamId, o.cell, o.kind === "fast" ? "fast" : "move");
+  else if (o.kind === "smoke" && o.cell) world.orderSmoke(o.teamId, o.cell);
+  else if (o.kind === "fire") { if (o.enemyId != null) world.orderFireUnit(o.teamId, o.enemyId); else if (o.cell) world.orderAreaFire(o.teamId, o.cell); }
+  else if (o.cell) world.orderMove(o.teamId, o.cell, o.kind === "fast" ? "fast" : o.kind === "sneak" ? "sneak" : "move");
 }
 
-// German / spectator view: render the host's snapshots; the German player can select
-// and command Axis squads, which are relayed to the host. No local simulation runs.
-async function startClientView(setup: Setup): Promise<void> {
+// === German / spectator client =====================================================
+
+async function startClientView(setup: Setup) {
   const mount = document.getElementById("app")!;
   const world = buildClientWorld(setup);
   const renderer = new Renderer();
   await renderer.init(mount, world);
-  renderer.revealAll = true; // clients see the whole field (host owns the fog)
-
-  onSnapshotClient = (snap) => applySnapshot(world, snap);
+  renderer.revealAll = true; // clients see the whole field (the host owns the fog)
   (window as { __game?: unknown }).__game = { world, renderer };
 
-  // Hide the host-only HUD; show a role banner + objective.
-  for (const id of ["deployBar", "orders", "roster"]) {
-    const el = document.getElementById(id);
-    if (el) el.style.display = "none";
+  onSnapshotClient = (snap) => applySnapshot(world, snap);
+
+  // Every client gets the Axis HUD; only an active German commander's orders are sent
+  // (netIssuer gates on net.role), so a spectator can look around but not interfere.
+  const hud = installHUD(world, renderer, { side: "axis", local: false });
+
+  // Pause/speed are meaningless for a client — hide them.
+  for (const id of ["pauseBtn", "speedBtn", "speedPill"]) {
+    const el = document.getElementById(id); if (el) el.style.display = "none";
   }
-  const statusEl = document.getElementById("status")!;
-  const isGerman = () => net.role === "german";
-  const setBanner = () => {
-    statusEl.innerHTML = isGerman()
-      ? `<div class="name">COMMANDING · AXIS</div><div class="dim">click a squad, then click the map to move · F = fire</div>`
-      : `<div class="name">SPECTATING</div><div class="dim">watching the battle</div>`;
-  };
-  setBanner();
 
-  // Pointer: right/middle drag pans, wheel zooms; left-click commands (German only).
-  const canvas = renderer.app.canvas;
-  let dragBtn: number | null = null, lx = 0, ly = 0;
-  let selTeam: number | null = null;
-  let armed: "move" | "fire" = "move";
-  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
-  canvas.addEventListener("wheel", (e) => {
-    e.preventDefault();
-    const r = canvas.getBoundingClientRect();
-    renderer.setZoom(renderer.zoom * Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top, world);
-  }, { passive: false });
-  canvas.addEventListener("pointerdown", (e) => {
-    if (e.button === 2 || e.button === 1) { dragBtn = e.button; lx = e.clientX; ly = e.clientY; return; }
-    if (e.button === 0 && isGerman()) {
-      const r = canvas.getBoundingClientRect();
-      const { x, y } = renderer.screenToWorld(e.clientX - r.left, e.clientY - r.top);
-      const tid = nearestAxisTeam(world, x, y, 1.6);
-      if (tid != null) { selTeam = tid; armed = "move"; }
-      else if (selTeam != null) {
-        net.sendAxisOrder({ kind: armed, teamId: selTeam, cell: { cx: Math.floor(x), cy: Math.floor(y) } });
-      }
-    }
-  });
-  canvas.addEventListener("pointermove", (e) => {
-    if (dragBtn == null) return;
-    const dx = e.clientX - lx, dy = e.clientY - ly; lx = e.clientX; ly = e.clientY;
-    renderer.panBy(-dx, -dy, world);
-  });
-  canvas.addEventListener("pointerup", (e) => { if (e.button === dragBtn) dragBtn = null; });
-  window.addEventListener("keydown", (e) => {
-    if (!isGerman()) return;
-    const k = e.key.toLowerCase();
-    if (k === "f") armed = "fire";
-    else if (k === "q" || k === "m") armed = "move";
-  });
-
-  const bannerEl = document.getElementById("banner")!;
-  const bannerBig = document.getElementById("bannerBig")!;
-  const bannerSub = document.getElementById("bannerSub")!;
+  let last = performance.now();
   const tick = () => {
-    setBanner();
+    const now = performance.now();
+    hud.update(now - last); // keyboard pan
+    last = now;
     renderer.render(world, 1);
-    if (world.outcome) {
-      bannerEl.style.display = "block";
-      // From the German player's seat the win/lose meaning is inverted.
-      const axisWon = world.outcome === "lose";
-      bannerBig.textContent = axisWon ? "ATTACK REPULSED" : "OBJECTIVE LOST";
-      bannerSub.textContent = axisWon ? "The line held." : "The Americans took the objective.";
-    }
+    hud.frame();
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
   document.title = `DasBlut — ${world.mapName}`;
-}
-
-function nearestAxisTeam(world: World, x: number, y: number, radius: number): number | null {
-  let best: number | null = null;
-  let bestD = radius * radius;
-  for (const s of world.soldiers) {
-    if (s.faction !== "axis" || s.status !== "active") continue;
-    const d = (s.x - x) ** 2 + (s.y - y) ** 2;
-    if (d < bestD) { bestD = d; best = s.teamId; }
-  }
-  return best;
 }

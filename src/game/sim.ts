@@ -43,7 +43,7 @@ export function step(world: World): void {
     world.visAccum = 0;
   }
 
-  commandAxis(world, SIM_DT);
+  if (!world.axisHuman) commandAxis(world, SIM_DT); // a human German commander replaces the AI
   acquireTargets(world);
   resolveFire(world, SIM_DT);
   updateVehicles(world);

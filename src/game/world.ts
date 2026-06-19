@@ -161,6 +161,8 @@ export class World {
   selectedTeamId: number | null = null;
   selectedTeamIds: Set<number> = new Set();
   selectedVehicleId: number | null = null;
+  // When a human (multiplayer German) is commanding the Axis, suppress the enemy AI.
+  axisHuman = false;
   outcome: "win" | "lose" | null = null;
 
   // Capture-and-hold objective. Starts under the defender (Axis); the attacker (US)

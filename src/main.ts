@@ -10,12 +10,52 @@ import { Renderer } from "./render/renderer.ts";
 import { Input } from "./render/input.ts";
 import { runMenu } from "./render/menu.ts";
 import { sound } from "./render/sound.ts";
+import { net } from "./net/net.ts";
+import {
+  applySnapshot, AxisOrder, buildClientWorld, encodeSetup, encodeSnapshot, Setup, Snapshot,
+} from "./net/snapshot.ts";
 
 // Armed map-click order: which movement/fire order a left-click issues.
 type ArmedOrder = "move" | "fast" | "sneak" | "fire" | "smoke";
 
-// Show the deploy menu first; once a battlefield is chosen, start the battle.
-runMenu(startGame);
+// --- Multiplayer bootstrap ---------------------------------------------------------
+// The host runs the authoritative sim and plays US (the normal single-player flow,
+// plus broadcasting). German/spectator clients render the host's snapshots. If no WS
+// server answers (offline / Vite dev), we just start the normal single-player game.
+let booted = false;
+let pendingSetup: Setup | null = null;
+// Host hooks, wired up once startGame has built the world.
+let onAxisOrderHost: ((o: AxisOrder) => void) | null = null;
+let onGermanPresentHost: ((present: boolean) => void) | null = null;
+// Client hook, wired up by startClientView.
+let onSnapshotClient: ((s: Snapshot) => void) | null = null;
+
+net.connect({
+  onRole: (role, germanPresent) => {
+    if (role === "spectator" && !germanPresent) net.claimGerman(); // first joiner takes the Axis
+    if (role === "host") startOffline();
+    else maybeStartClient();
+  },
+  onGermanPresent: (p) => onGermanPresentHost?.(p),
+  onSetup: (d) => { pendingSetup = d as Setup; maybeStartClient(); },
+  onSnapshot: (d) => onSnapshotClient?.(d as Snapshot),
+  onAxisOrder: (d) => onAxisOrderHost?.(d as AxisOrder),
+  onClose: () => startOffline(), // host left / disconnected → fall back to local play
+});
+// If nothing answers shortly, there's no multiplayer server: play offline.
+setTimeout(() => startOffline(), 900);
+
+function startOffline(): void {
+  if (booted) return;
+  booted = true;
+  runMenu(startGame);
+}
+function maybeStartClient(): void {
+  if (booted || !pendingSetup) return; // wait until the host has published a map
+  if (net.role !== "german" && net.role !== "spectator") return;
+  booted = true;
+  startClientView(pendingSetup);
+}
 
 async function startGame(map: GameMap) {
   const mount = document.getElementById("app")!;
@@ -412,6 +452,14 @@ async function startGame(map: GameMap) {
   // Dev-only handle for debugging from the console / preview tools.
   (window as { __game?: unknown }).__game = { world, renderer };
 
+  // --- Multiplayer host wiring -----------------------------------------------------
+  // Apply orders relayed from the German commander, and toggle the Axis AI off while
+  // a human is in command.
+  onAxisOrderHost = (o) => applyAxisOrder(world, o);
+  onGermanPresentHost = (present) => { world.axisHuman = present; };
+  let setupSent = false;
+  let netAccum = 0;
+
   let lastRenderTs = performance.now();
   let prevObjOwner = world.objOwner;
   const loop = new GameLoop(
@@ -422,6 +470,12 @@ async function startGame(map: GameMap) {
       input.update(now - lastRenderTs);
       lastRenderTs = now;
       renderer.render(world, alpha);
+      // Host: publish the map once, then broadcast entity snapshots at ~8 Hz.
+      if (net.role === "host") {
+        if (!setupSent) { net.sendSetup(encodeSetup(world)); setupSent = true; }
+        netAccum += dtSec;
+        if (netAccum >= 0.12) { net.sendSnapshot(encodeSnapshot(world)); netAccum = 0; }
+      }
       // Distant battlefield ambience while the fighting is live.
       sound.updateAmbient(dtSec, world.phase === "battle" && !world.outcome && !loop.paused);
       if (world.objOwner !== prevObjOwner) {
@@ -477,4 +531,105 @@ async function startGame(map: GameMap) {
   });
 
   document.title = `DasBlut — ${world.mapName}`;
+}
+
+// Host-side: apply an order relayed from the German commander to an Axis team.
+function applyAxisOrder(world: World, o: AxisOrder): void {
+  const team = world.team(o.teamId);
+  if (!team || team.faction !== "axis") return;
+  if (o.kind === "defend" || o.kind === "ambush") world.orderPosture(o.teamId, o.kind);
+  else if (o.kind === "fire" && o.cell) world.orderAreaFire(o.teamId, o.cell);
+  else if (o.cell) world.orderMove(o.teamId, o.cell, o.kind === "fast" ? "fast" : "move");
+}
+
+// German / spectator view: render the host's snapshots; the German player can select
+// and command Axis squads, which are relayed to the host. No local simulation runs.
+async function startClientView(setup: Setup): Promise<void> {
+  const mount = document.getElementById("app")!;
+  const world = buildClientWorld(setup);
+  const renderer = new Renderer();
+  await renderer.init(mount, world);
+  renderer.revealAll = true; // clients see the whole field (host owns the fog)
+
+  onSnapshotClient = (snap) => applySnapshot(world, snap);
+  (window as { __game?: unknown }).__game = { world, renderer };
+
+  // Hide the host-only HUD; show a role banner + objective.
+  for (const id of ["deployBar", "orders", "roster"]) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "none";
+  }
+  const statusEl = document.getElementById("status")!;
+  const isGerman = () => net.role === "german";
+  const setBanner = () => {
+    statusEl.innerHTML = isGerman()
+      ? `<div class="name">COMMANDING · AXIS</div><div class="dim">click a squad, then click the map to move · F = fire</div>`
+      : `<div class="name">SPECTATING</div><div class="dim">watching the battle</div>`;
+  };
+  setBanner();
+
+  // Pointer: right/middle drag pans, wheel zooms; left-click commands (German only).
+  const canvas = renderer.app.canvas;
+  let dragBtn: number | null = null, lx = 0, ly = 0;
+  let selTeam: number | null = null;
+  let armed: "move" | "fire" = "move";
+  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  canvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const r = canvas.getBoundingClientRect();
+    renderer.setZoom(renderer.zoom * Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top, world);
+  }, { passive: false });
+  canvas.addEventListener("pointerdown", (e) => {
+    if (e.button === 2 || e.button === 1) { dragBtn = e.button; lx = e.clientX; ly = e.clientY; return; }
+    if (e.button === 0 && isGerman()) {
+      const r = canvas.getBoundingClientRect();
+      const { x, y } = renderer.screenToWorld(e.clientX - r.left, e.clientY - r.top);
+      const tid = nearestAxisTeam(world, x, y, 1.6);
+      if (tid != null) { selTeam = tid; armed = "move"; }
+      else if (selTeam != null) {
+        net.sendAxisOrder({ kind: armed, teamId: selTeam, cell: { cx: Math.floor(x), cy: Math.floor(y) } });
+      }
+    }
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (dragBtn == null) return;
+    const dx = e.clientX - lx, dy = e.clientY - ly; lx = e.clientX; ly = e.clientY;
+    renderer.panBy(-dx, -dy, world);
+  });
+  canvas.addEventListener("pointerup", (e) => { if (e.button === dragBtn) dragBtn = null; });
+  window.addEventListener("keydown", (e) => {
+    if (!isGerman()) return;
+    const k = e.key.toLowerCase();
+    if (k === "f") armed = "fire";
+    else if (k === "q" || k === "m") armed = "move";
+  });
+
+  const bannerEl = document.getElementById("banner")!;
+  const bannerBig = document.getElementById("bannerBig")!;
+  const bannerSub = document.getElementById("bannerSub")!;
+  const tick = () => {
+    setBanner();
+    renderer.render(world, 1);
+    if (world.outcome) {
+      bannerEl.style.display = "block";
+      // From the German player's seat the win/lose meaning is inverted.
+      const axisWon = world.outcome === "lose";
+      bannerBig.textContent = axisWon ? "ATTACK REPULSED" : "OBJECTIVE LOST";
+      bannerSub.textContent = axisWon ? "The line held." : "The Americans took the objective.";
+    }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+  document.title = `DasBlut — ${world.mapName}`;
+}
+
+function nearestAxisTeam(world: World, x: number, y: number, radius: number): number | null {
+  let best: number | null = null;
+  let bestD = radius * radius;
+  for (const s of world.soldiers) {
+    if (s.faction !== "axis" || s.status !== "active") continue;
+    const d = (s.x - x) ** 2 + (s.y - y) ** 2;
+    if (d < bestD) { bestD = d; best = s.teamId; }
+  }
+  return best;
 }

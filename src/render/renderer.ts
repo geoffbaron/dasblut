@@ -27,6 +27,9 @@ export class Renderer {
   private camX = 0;
   private camY = 0;
   zoom = 1.0;
+  // Client (German/spectator) views have no fog and show every unit, since the
+  // authoritative fog lives on the host. Set true for those views.
+  revealAll = false;
   private shroudVersion = -1;
   private damageVersion = -1;
 
@@ -69,41 +72,53 @@ export class Renderer {
   }
 
   private buildVehicleSprites(world: World): void {
-    for (const v of world.vehicles) {
-      let art = this.vehArtByClass.get(v.cls);
-      if (!art) {
-        art = makeVehicleArt(VEHICLES[v.cls]);
-        this.vehArtByClass.set(v.cls, art);
-      }
-      const shadow = new Sprite(Texture.from(art.shadow));
-      const hullTex = Texture.from(art.hull);
-      const wreckTex = Texture.from(art.wreck);
-      const hull = new Sprite(hullTex);
-      const turret = new Sprite(Texture.from(art.turret));
-      for (const sp of [shadow, hull, turret]) {
-        sp.anchor.set(0.5);
-        sp.scale.set(art.scale);
-      }
-      this.vehicleLayer.addChild(shadow, hull, turret);
-      this.vehSprites.set(v.id, { shadow, hull, turret, hullTex, wreckTex, wrecked: false });
+    for (const v of world.vehicles) this.ensureVehicleSprite(v);
+  }
+
+  private ensureVehicleSprite(v: { id: number; cls: string }) {
+    let sp = this.vehSprites.get(v.id);
+    if (sp) return sp;
+    let art = this.vehArtByClass.get(v.cls);
+    if (!art) {
+      art = makeVehicleArt(VEHICLES[v.cls as keyof typeof VEHICLES]);
+      this.vehArtByClass.set(v.cls, art);
     }
+    const shadow = new Sprite(Texture.from(art.shadow));
+    const hullTex = Texture.from(art.hull);
+    const wreckTex = Texture.from(art.wreck);
+    const hull = new Sprite(hullTex);
+    const turret = new Sprite(Texture.from(art.turret));
+    for (const s of [shadow, hull, turret]) {
+      s.anchor.set(0.5);
+      s.scale.set(art.scale);
+    }
+    this.vehicleLayer.addChild(shadow, hull, turret);
+    sp = { shadow, hull, turret, hullTex, wreckTex, wrecked: false };
+    this.vehSprites.set(v.id, sp);
+    return sp;
   }
 
   private buildUnitSprites(world: World): void {
-    for (const s of world.soldiers) {
-      const team = world.team(s.teamId)!;
-      const shadow = new Sprite(this.shadowTex);
-      shadow.anchor.set(0.5);
-      shadow.scale.set(1 / 3);
+    for (const s of world.soldiers) this.ensureSoldierSprite(world, s);
+  }
 
-      const body = new Sprite(this.bodyTexture(team.color));
-      body.anchor.set(0.5);
-      body.scale.set(1 / 3);
-
-      this.shadowLayer.addChild(shadow);
-      this.bodyLayer.addChild(body);
-      this.sprites.set(s.id, { shadow, body, alive: true });
-    }
+  // Create a soldier's sprites if they don't exist yet. Built lazily so client views,
+  // which receive units via network snapshots after init, get sprites on demand too.
+  private ensureSoldierSprite(world: World, s: { id: number; teamId: number; faction: string }) {
+    let sp = this.sprites.get(s.id);
+    if (sp) return sp;
+    const color = world.team(s.teamId)?.color ?? (s.faction === "us" ? 0x4f7fd1 : 0xc4514a);
+    const shadow = new Sprite(this.shadowTex);
+    shadow.anchor.set(0.5);
+    shadow.scale.set(1 / 3);
+    const body = new Sprite(this.bodyTexture(color));
+    body.anchor.set(0.5);
+    body.scale.set(1 / 3);
+    this.shadowLayer.addChild(shadow);
+    this.bodyLayer.addChild(body);
+    sp = { shadow, body, alive: true };
+    this.sprites.set(s.id, sp);
+    return sp;
   }
 
   private bodyTexture(color: number): Texture {
@@ -254,9 +269,8 @@ export class Renderer {
 
   private drawVehicles(world: World, alpha: number): void {
     for (const v of world.vehicles) {
-      const sp = this.vehSprites.get(v.id);
-      if (!sp) continue;
-      const shown = v.faction === "us" || v.seen;
+      const sp = this.ensureVehicleSprite(v);
+      const shown = this.revealAll || v.faction === "us" || v.seen;
       sp.hull.visible = shown;
       sp.shadow.visible = shown && v.status !== "ko";
       sp.turret.visible = shown && v.status !== "ko";
@@ -318,6 +332,8 @@ export class Renderer {
 
   // Rebuild the fog shroud only when visibility actually changed.
   private drawShroud(world: World): void {
+    // Client (German/spectator) views have no fog — the host owns visibility.
+    if (this.revealAll) { this.shroud.clear(); return; }
     if (world.visVersion === this.shroudVersion) return;
     this.shroudVersion = world.visVersion;
     const g = this.shroud;
@@ -487,11 +503,10 @@ export class Renderer {
 
   private drawSoldiers(world: World, alpha: number): void {
     for (const s of world.soldiers) {
-      const sp = this.sprites.get(s.id);
-      if (!sp) continue;
+      const sp = this.ensureSoldierSprite(world, s);
 
       // Enemies are only drawn while spotted; corpses linger until LOS is lost.
-      const shown = s.faction === "us" || s.seen;
+      const shown = this.revealAll || s.faction === "us" || s.seen;
       sp.body.visible = shown;
       sp.shadow.visible = shown && s.status === "active";
       if (!shown) continue;
@@ -502,7 +517,8 @@ export class Renderer {
       const down = s.status === "dead" || s.status === "wounded" || s.status === "surrendered";
       if (down === sp.alive) {
         // Status changed → swap texture.
-        sp.body.texture = down ? this.casualtyTex : this.bodyTexture(world.team(s.teamId)!.color);
+        const col = world.team(s.teamId)?.color ?? (s.faction === "us" ? 0x4f7fd1 : 0xc4514a);
+        sp.body.texture = down ? this.casualtyTex : this.bodyTexture(col);
         sp.body.alpha = down ? (s.status === "dead" ? 0.85 : 0.95) : 1;
         sp.alive = !down;
       }

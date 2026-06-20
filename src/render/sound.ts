@@ -90,8 +90,8 @@ const SFX_DEFS: Record<SfxId, { files: string[]; vol: number }> = {
   soldier_scream:    { files: SCREAMS,      vol: 0.95 }, // 4 random German death-screams (Axis)
   soldier_scream_us: { files: [SCREAM_US],  vol: 0.95 }, // US death scream
   suppress_shout: { files: [],          vol: 0.5 }, // synth fallback
-  ui_select:      { files: [SWITCH],    vol: 0.5 }, // switch-flip click
-  ui_order:       { files: [SWITCH],    vol: 0.5 }, // switch-flip click
+  ui_select:      { files: [SWITCH],    vol: 0.5 }, // switch-flip click (selection only)
+  ui_order:       { files: [],          vol: 0.0 }, // silent — no click on every order
   obj_capture:    { files: [],          vol: 0.9 }, // synth fallback
   obj_lost:       { files: [],          vol: 0.9 }, // synth fallback
   tank_engine:    { files: TANK_DRIVE,  vol: 0.45 }, // looped while a tank drives

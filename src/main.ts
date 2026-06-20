@@ -95,6 +95,7 @@ interface Issuer {
   fireUnit(teamId: number, enemyId: number): void;
   areaFire(teamId: number, cell: Cell): void;
   smoke(teamId: number, cell: Cell): boolean;
+  ceaseFire(teamId: number): void;
   posture(teamId: number, stance: Stance): void;
   vehMove(vid: number, cell: Cell, fast: boolean): boolean;
   vehFire(vid: number, x: number, y: number): void;
@@ -107,6 +108,7 @@ function localIssuer(world: World): Issuer {
     fireUnit: (t, e) => world.orderFireUnit(t, e),
     areaFire: (t, c) => world.orderAreaFire(t, c),
     smoke: (t, c) => world.orderSmoke(t, c),
+    ceaseFire: (t) => world.orderCeaseFire(t),
     posture: (t, s) => world.orderPosture(t, s),
     vehMove: (v, c, f) => world.orderVehicleMove(v, c, f),
     vehFire: (v, x, y) => world.orderVehicleFire(v, x, y),
@@ -121,6 +123,7 @@ function netIssuer(): Issuer {
     fireUnit: (teamId, enemyId) => { if (ok()) net.sendAxisOrder({ kind: "fire", teamId, enemyId }); },
     areaFire: (teamId, cell) => { if (ok()) net.sendAxisOrder({ kind: "fire", teamId, cell }); },
     smoke: (teamId, cell) => { if (ok()) net.sendAxisOrder({ kind: "smoke", teamId, cell }); return ok(); },
+    ceaseFire: (teamId) => { if (ok()) net.sendAxisOrder({ kind: "defend", teamId }); }, // cease-fire doubles as defend
     posture: (teamId, s) => { if (ok()) net.sendAxisOrder({ kind: s === "ambush" ? "ambush" : "defend", teamId }); },
     vehMove: (vid, cell, fast) => { if (ok()) net.sendAxisOrder({ kind: fast ? "vehFast" : "vehMove", vid, cell }); return ok(); },
     vehFire: (vid, x, y) => { if (ok()) net.sendAxisOrder({ kind: "vehFire", vid, x, y }); },
@@ -266,12 +269,27 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
     ordersBar.style.display = show ? "flex" : "none";
     const deployPhase = world.phase === "deploy";
     const hasMortar = world.selectedVehicleId == null && [...world.selectedTeamIds].some((id) => world.team(id)?.kind === "mortar");
+    const primaryTeam = world.selectedTeamId != null ? world.team(world.selectedTeamId) : null;
+    const mortarFiring = hasMortar && primaryTeam?.kind === "mortar" && world.teamIsFiring(world.selectedTeamId!);
     for (const b of orderBtns) {
       const order = b.dataset.order!;
       let hidden = deployPhase && (order === "fire" || order === "fast" || order === "ambush" || order === "defend");
       if (order === "smoke") hidden = deployPhase || !hasMortar;
       b.style.display = hidden ? "none" : "";
       b.classList.toggle("armed", order === armed);
+      // While a mortar is sustaining fire, label the Fire button "STOP" and pulse it.
+      if (order === "fire") {
+        b.textContent = "";
+        if (mortarFiring) {
+          b.innerHTML = `Stop Fire<br><span class="k">F</span>`;
+          b.style.borderColor = "#e0533a";
+          b.style.color = "#e0a0a0";
+        } else {
+          b.innerHTML = `Fire<br><span class="k">F</span>`;
+          b.style.borderColor = "";
+          b.style.color = "";
+        }
+      }
     }
   };
 
@@ -298,9 +316,24 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
       if (!anyTube) { flagBlocked(x, y); refreshStatus(); return; }
     } else if (armed === "fire") {
       const primary = world.selectedTeamId!;
-      const foe = world.soldiers.find((s) => s.faction === enemy && s.status === "active" && s.seen && Math.hypot(s.x - x, s.y - y) < 1.4);
-      if (foe) issuer.fireUnit(primary, foe.id);
-      else issuer.areaFire(primary, cell);
+      const primaryTeam = world.team(primary);
+      // Mortar teams sustain fire until toggled off. If the mortar is already firing,
+      // a second fire order is a cease-fire (toggle). For direct-fire squads the order
+      // re-aims to a new target without needing a toggle.
+      if (primaryTeam?.kind === "mortar") {
+        if (world.teamIsFiring(primary)) {
+          for (const tid of teamIds) issuer.ceaseFire(tid);
+          armed = "move";
+          sound.playUI("ui_select");
+          updateOrdersBar(); refreshStatus();
+          return;
+        }
+        issuer.areaFire(primary, cell);
+      } else {
+        const foe = world.soldiers.find((s) => s.faction === enemy && s.status === "active" && s.seen && Math.hypot(s.x - x, s.y - y) < 1.4);
+        if (foe) issuer.fireUnit(primary, foe.id);
+        else issuer.areaFire(primary, cell);
+      }
     } else {
       const n = teamIds.length;
       let anyOk = false;
@@ -470,8 +503,8 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
       clockEl.textContent = `⏱ ${Math.floor(left / 60)}:${Math.floor(left % 60).toString().padStart(2, "0")}`;
       clockEl.style.color = left < 60 ? "#e0796f" : "";
     }
-    // Always show the mode. Offline = single player; on the server the host sees
-    // whether a human opponent has taken the Axis yet.
+    // Lift the badge above the deploy bar so it doesn't overlap the launch button.
+    badge!.style.bottom = world.phase === "deploy" ? "56px" : "12px";
     badge!.style.display = "block";
     if (!net.connected) {
       badge!.textContent = "SINGLE PLAYER";
@@ -557,7 +590,7 @@ function applyAxisOrder(world: World, o: AxisOrder): void {
   if (o.teamId == null) return;
   const team = world.team(o.teamId);
   if (!team || team.faction !== "axis") return;
-  if (o.kind === "defend" || o.kind === "ambush") world.orderPosture(o.teamId, o.kind);
+  if (o.kind === "defend" || o.kind === "ambush") { world.orderPosture(o.teamId, o.kind); world.orderCeaseFire(o.teamId); }
   else if (o.kind === "smoke" && o.cell) world.orderSmoke(o.teamId, o.cell);
   else if (o.kind === "fire") { if (o.enemyId != null) world.orderFireUnit(o.teamId, o.enemyId); else if (o.cell) world.orderAreaFire(o.teamId, o.cell); }
   else if (o.cell) world.orderMove(o.teamId, o.cell, o.kind === "fast" ? "fast" : o.kind === "sneak" ? "sneak" : "move");

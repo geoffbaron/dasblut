@@ -492,6 +492,29 @@ export class World {
     return anyTube;
   }
 
+  /** Stop all fire orders on a team — clears fireCell and resets to defend-in-place. */
+  orderCeaseFire(teamId: number): void {
+    const team = this.team(teamId);
+    if (!team) return;
+    for (const id of team.soldierIds) {
+      const s = this.soldier(id)!;
+      if (s.status !== "active") continue;
+      s.fireCell = null;
+      s.manualTargetId = null;
+      s.fireSmoke = false;
+    }
+  }
+
+  /** True if any active soldier in the team has a fire order assigned. */
+  teamIsFiring(teamId: number): boolean {
+    const team = this.team(teamId);
+    if (!team) return false;
+    return team.soldierIds.some((id) => {
+      const s = this.soldier(id);
+      return s?.status === "active" && (s.fireCell != null || s.manualTargetId != null);
+    });
+  }
+
   // --- Vehicle selection & orders ---
 
   pickVehicleAt(x: number, y: number, radius: number, faction: Faction = "us"): number | null {

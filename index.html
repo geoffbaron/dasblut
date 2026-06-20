@@ -165,6 +165,46 @@
       .rbar .rlabel { width: 12px; }
       .rbar .rtrack { flex: 1; height: 5px; border-radius: 3px; background: #14130f; overflow: hidden; }
       .rbar .rfill { height: 100%; border-radius: 3px; }
+
+      /* --- How-to-play tutorial --- */
+      #helpBtn {
+        font: inherit; color: #d8d2c2; background: #2a2820;
+        border: 1px solid #4a463c; border-radius: 50%; width: 28px; height: 28px;
+        padding: 0; cursor: pointer; font-weight: 700;
+      }
+      #helpBtn:hover { background: #34322a; }
+      #tutorial {
+        position: fixed; inset: 0; z-index: 50; display: none;
+        align-items: center; justify-content: center;
+        background: rgba(8, 8, 6, 0.78); backdrop-filter: blur(3px);
+        padding: 20px;
+      }
+      #tutorial .tcard {
+        max-width: 720px; max-height: 88vh; overflow-y: auto;
+        background: #1b1a15; border: 1px solid #4a463c; border-radius: 10px;
+        padding: 22px 26px; box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+      }
+      #tutorial h1 { margin: 0 0 2px; font-size: 22px; letter-spacing: 3px; color: #e8e2d2; }
+      #tutorial .sub { margin: 0 0 16px; font-size: 12px; color: #9a9484; }
+      #tutorial h2 { margin: 16px 0 6px; font-size: 12px; letter-spacing: 2px; color: #c7a23f; }
+      #tutorial p, #tutorial li { font-size: 13px; line-height: 1.5; color: #cfc8b6; margin: 4px 0; }
+      #tutorial ul { margin: 4px 0; padding-left: 18px; }
+      #tutorial b { color: #e8e2d2; }
+      #tutorial .key {
+        display: inline-block; min-width: 16px; text-align: center; padding: 0 5px;
+        border: 1px solid #4a463c; border-radius: 3px; background: #2a2820;
+        font-size: 11px; color: #e8e2d2;
+      }
+      #tutorial .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px; }
+      #tutorial .trow { display: flex; gap: 10px; align-items: baseline; }
+      #tutorial .actions { margin-top: 20px; display: flex; gap: 10px; align-items: center; }
+      #tutorial .actions button {
+        font: inherit; cursor: pointer; border-radius: 5px; padding: 8px 18px;
+        border: 1px solid #4a463c; background: #2a2820; color: #d8d2c2;
+      }
+      #tutorial .actions button.primary { background: #6f4a2a; border-color: #9a6a3a; color: #f0e6d6; font-weight: 700; }
+      #tutorial .actions button:hover { filter: brightness(1.15); }
+      #tutorial .actions .never { margin-left: auto; font-size: 11px; color: #9a9484; background: none; border: none; text-decoration: underline; }
     </style>
   </head>
   <body>
@@ -192,6 +232,7 @@
       <button id="speedBtn">Speed</button>
       <span class="dim" id="clock">t 0.0s</span>
       <span class="pill" id="forces">US — · AXIS —</span>
+      <button id="helpBtn" title="How to play">?</button>
     </div>
     <div id="roster"><div class="rtitle">UNITS</div></div>
     <div id="status"><span class="dim">No team selected</span></div>
@@ -211,6 +252,83 @@
       <button id="launchBtn">⚔ LAUNCH ATTACK</button>
     </div>
     <div id="hint">Select squad → pick an order → click the map · Defend/Ambush apply in place · Space = pause · Arrows = pan · O = snap to objective</div>
+
+    <div id="tutorial">
+      <div class="tcard">
+        <h1>DAS BLUT</h1>
+        <p class="sub">Close-Combat-style WW2 tactics. Here's how to play.</p>
+
+        <h2>THE MISSION</h2>
+        <p>You command the <b>US assault</b> (blue). Take the crossroads <b>objective</b> and hold it for <b>60 seconds</b> before the clock runs out. The <b>Germans</b> (red) defend it.</p>
+
+        <h2>DEPLOYMENT</h2>
+        <p>First, position your squads anywhere in the <b>blue zone</b> (drag them there). When you're set, hit <b>⚔ LAUNCH ATTACK</b>. Press <span class="key">O</span> any time to look at the objective.</p>
+
+        <h2>SELECT YOUR MEN</h2>
+        <ul>
+          <li>Click a soldier, or its card in the <b>UNITS</b> panel on the left.</li>
+          <li><b>Drag a box</b> across several squads to grab them all at once.</li>
+        </ul>
+
+        <h2>GIVE ORDERS</h2>
+        <p>With a unit selected, pick an order, then click the map:</p>
+        <div class="grid2">
+          <div class="trow"><span class="key">Q</span><span>Move — advance at a steady pace</span></div>
+          <div class="trow"><span class="key">W</span><span>Fast — rush (but easier to spot)</span></div>
+          <div class="trow"><span class="key">E</span><span>Sneak — slow, stay hidden</span></div>
+          <div class="trow"><span class="key">R</span><span>Defend — hold &amp; face the threat</span></div>
+          <div class="trow"><span class="key">T</span><span>Ambush — hold fire for a deadly first volley</span></div>
+          <div class="trow"><span class="key">F</span><span>Fire — click an enemy to focus, or ground to suppress</span></div>
+          <div class="trow"><span class="key">G</span><span>Smoke — mortar teams: screen an advance</span></div>
+          <div class="trow"><span class="key">Space</span><span>Pause / resume</span></div>
+        </div>
+        <p style="margin-top:8px">Right-drag to <b>pan</b> · scroll to <b>zoom</b> · arrow keys also pan.</p>
+
+        <h2>YOUR UNITS</h2>
+        <ul>
+          <li><b>RIFLE</b> — line infantry; the backbone of the assault.</li>
+          <li><b>MG</b> — light machine gun; superb at <b>suppressing</b> the enemy so others can move.</li>
+          <li><b>AT</b> — bazooka team; kills tanks — aim for the <b>flank or rear</b>.</li>
+          <li><b>MORTAR</b> — one tube, slow to reload; lobs HE or <b>smoke</b> over walls. You must call the shot.</li>
+          <li><b>TANK</b> — your Sherman; click to direct its fire.</li>
+        </ul>
+
+        <h2>TACTICS</h2>
+        <ul>
+          <li>Most fire <b>suppresses</b> rather than kills — pin the enemy, then flank.</li>
+          <li>Buildings, hedges and woods give <b>cover</b> and <b>concealment</b>; <b>smoke</b> blocks line of sight.</li>
+          <li>Watch <b>morale</b>: pinned or routing men won't fight. Lead with grenades and MGs.</li>
+        </ul>
+
+        <h2>MULTIPLAYER</h2>
+        <p>Just <b>share the page link</b>. The first person to open it hosts as the US; the next takes command of the <b>Germans</b>; anyone after that spectates. The badge in the bottom-right shows your role.</p>
+
+        <div class="actions">
+          <button id="tutGot" class="primary">Got it — to battle</button>
+          <button id="tutNever" class="never">don't show this again</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        var tut = document.getElementById("tutorial");
+        var open = function () { tut.style.display = "flex"; };
+        var close = function () { tut.style.display = "none"; };
+        document.getElementById("helpBtn").addEventListener("click", open);
+        document.getElementById("tutGot").addEventListener("click", close);
+        document.getElementById("tutNever").addEventListener("click", function () {
+          try { localStorage.setItem("dasblut_tut_seen", "1"); } catch (e) {}
+          close();
+        });
+        tut.addEventListener("click", function (e) { if (e.target === tut) close(); });
+        document.addEventListener("keydown", function (e) { if (e.key === "Escape") close(); });
+        var seen = false;
+        try { seen = localStorage.getItem("dasblut_tut_seen") === "1"; } catch (e) {}
+        if (!seen) open(); // show once for new players
+      })();
+    </script>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

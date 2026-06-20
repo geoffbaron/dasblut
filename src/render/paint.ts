@@ -105,6 +105,11 @@ export function paintBattlefield(grid: Grid, features: MapFeatures): PaintedMap 
   drawRoadRuts(ctx, grid, rng);
   // Water ripples + shoreline.
   drawWater(ctx, grid, rng);
+  // Battle scars: scorched ground, shell craters, and scattered debris. Drawn on the
+  // open ground (under trees/buildings) so the field reads as fought-over, not pristine.
+  drawScorch(ctx, grid, rng);
+  drawCraters(ctx, grid, rng);
+  drawDebris(ctx, grid, rng);
   // Woods canopy (the big visual win) and rubble debris.
   drawWoods(ctx, grid, rng);
   drawRubble(ctx, grid, rng);
@@ -243,6 +248,130 @@ function drawRubble(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number
   }
 }
 
+// Soft burn scars on the turf — where fire or HE has scorched the ground black.
+function drawScorch(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number): void {
+  const count = Math.round(grid.width * grid.height * 0.012);
+  let placed = 0, tries = 0;
+  while (placed < count && tries < count * 14) {
+    tries++;
+    const cx = Math.floor(rng() * grid.width);
+    const cy = Math.floor(rng() * grid.height);
+    const t = grid.get(cx, cy);
+    if (t !== Terrain.Open && t !== Terrain.Grass && t !== Terrain.Road) continue;
+    const x = (cx + rng()) * CELL_SIZE;
+    const y = (cy + rng()) * CELL_SIZE;
+    const r = CELL_SIZE * (0.6 + rng() * 1.2);
+    const g = ctx.createRadialGradient(x, y, r * 0.2, x, y, r);
+    g.addColorStop(0, "rgba(22,18,13,0.5)");
+    g.addColorStop(0.7, "rgba(22,18,13,0.22)");
+    g.addColorStop(1, "rgba(22,18,13,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(x, y, r, r * (0.7 + rng() * 0.25), rng() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+    placed++;
+  }
+}
+
+// Shell craters: a scorched halo, a sunlit raised lip, a dark bowl, and ejecta streaks.
+function drawCraters(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number): void {
+  const count = Math.round(grid.width * grid.height * 0.011);
+  let placed = 0, tries = 0;
+  while (placed < count && tries < count * 14) {
+    tries++;
+    const cx = Math.floor(rng() * grid.width);
+    const cy = Math.floor(rng() * grid.height);
+    const t = grid.get(cx, cy);
+    if (t !== Terrain.Open && t !== Terrain.Grass && t !== Terrain.Road) continue;
+    const x = (cx + rng()) * CELL_SIZE;
+    const y = (cy + rng()) * CELL_SIZE;
+    crater(ctx, x, y, CELL_SIZE * (0.32 + rng() * 0.5), rng);
+    placed++;
+    if (rng() < 0.4) {
+      // a twin impact close by — guns rarely land just one round
+      crater(ctx, x + (rng() - 0.5) * CELL_SIZE * 1.8, y + (rng() - 0.5) * CELL_SIZE * 1.8,
+        CELL_SIZE * (0.22 + rng() * 0.35), rng);
+    }
+  }
+}
+
+function crater(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, rng: () => number): void {
+  // Scorched halo.
+  let g = ctx.createRadialGradient(x, y, r * 0.3, x, y, r * 1.45);
+  g.addColorStop(0, "rgba(18,14,10,0.5)");
+  g.addColorStop(1, "rgba(18,14,10,0)");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(x, y, r * 1.45, 0, Math.PI * 2);
+  ctx.fill();
+  // Raised earth lip, brighter on the top-left sun side.
+  ctx.lineWidth = r * 0.34;
+  ctx.strokeStyle = "rgba(124,106,78,0.45)";
+  ctx.beginPath();
+  ctx.ellipse(x, y, r, r * 0.85, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  // Dark bowl with a shaded inner wall.
+  g = ctx.createRadialGradient(x - r * 0.25, y - r * 0.25, r * 0.1, x, y, r * 0.85);
+  g.addColorStop(0, "rgba(52,43,31,0.95)");
+  g.addColorStop(0.7, "rgba(28,22,16,0.95)");
+  g.addColorStop(1, "rgba(40,33,24,0.6)");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.ellipse(x, y, r * 0.8, r * 0.66, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Ejecta streaks thrown clear of the rim.
+  for (let i = 0; i < 5; i++) {
+    const a = rng() * Math.PI * 2;
+    const l = r * (1.1 + rng() * 0.9);
+    ctx.strokeStyle = `rgba(28,22,16,${0.18 + rng() * 0.22})`;
+    ctx.lineWidth = 0.7 + rng();
+    ctx.beginPath();
+    ctx.moveTo(x + Math.cos(a) * r * 0.7, y + Math.sin(a) * r * 0.6);
+    ctx.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
+    ctx.stroke();
+  }
+}
+
+// Scattered wreckage — splintered planks and broken brick flung across the ground.
+function drawDebris(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number): void {
+  const count = Math.round(grid.width * grid.height * 0.03);
+  let placed = 0, tries = 0;
+  while (placed < count && tries < count * 8) {
+    tries++;
+    const cx = Math.floor(rng() * grid.width);
+    const cy = Math.floor(rng() * grid.height);
+    const t = grid.get(cx, cy);
+    if (t === Terrain.Water || t === Terrain.Wall || t === Terrain.Woods) continue;
+    const x = (cx + rng()) * CELL_SIZE;
+    const y = (cy + rng()) * CELL_SIZE;
+    const n = 1 + Math.floor(rng() * 3);
+    for (let k = 0; k < n; k++) {
+      const px = x + (rng() - 0.5) * CELL_SIZE * 0.7;
+      const py = y + (rng() - 0.5) * CELL_SIZE * 0.7;
+      if (rng() < 0.5) {
+        // A plank or beam.
+        const len = 2 + rng() * 4.5;
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(rng() * Math.PI);
+        ctx.fillStyle = "rgba(14,11,8,0.3)";
+        ctx.fillRect(-len / 2 + 0.6, 0.2, len, 1.6);
+        ctx.fillStyle = `hsl(30,18%,${26 + rng() * 16}%)`;
+        ctx.fillRect(-len / 2, -0.8, len, 1.6);
+        ctx.restore();
+      } else {
+        // A brick or chunk of masonry.
+        const s = 1 + rng() * 1.7;
+        ctx.fillStyle = "rgba(14,11,8,0.3)";
+        ctx.fillRect(px + 0.6, py + 0.6, s, s);
+        ctx.fillStyle = `hsl(18,26%,${34 + rng() * 16}%)`;
+        ctx.fillRect(px, py, s, s);
+      }
+    }
+    placed++;
+  }
+}
+
 function drawHedge(ctx: CanvasRenderingContext2D, h: HedgeSeg, rng: () => number): void {
   const horiz = h.y0 === h.y1;
   const len = horiz ? Math.abs(h.x1 - h.x0) : Math.abs(h.y1 - h.y0);
@@ -284,15 +413,17 @@ const ROOF_PALETTES = [
 // Axis-aligned rectangles get the nice pitched roof; arbitrary OSM footprints get a
 // flat, shaded roof with a cast shadow — both read clearly as buildings from above.
 function drawBuilding(ctx: CanvasRenderingContext2D, b: Building, rng: () => number): void {
+  // Roughly a third of the houses have been gutted by fire — a war has rolled through.
+  const burned = rng() < 0.3;
   const rect = asAxisRect(b.poly);
-  if (rect) drawPitchedBuilding(ctx, rect.x0, rect.y0, rect.x1, rect.y1, b.levels, rng);
-  else drawFlatBuilding(ctx, b.poly, b.levels, rng);
+  if (rect) drawPitchedBuilding(ctx, rect.x0, rect.y0, rect.x1, rect.y1, b.levels, rng, burned);
+  else drawFlatBuilding(ctx, b.poly, b.levels, rng, burned);
 }
 
-function drawFlatBuilding(ctx: CanvasRenderingContext2D, poly: Pt[], levels: number, rng: () => number): void {
+function drawFlatBuilding(ctx: CanvasRenderingContext2D, poly: Pt[], levels: number, rng: () => number, burned = false): void {
   const pts = poly.map((p) => [p.x * CELL_SIZE, p.y * CELL_SIZE] as [number, number]);
   const lift = 3 + levels * 2.5;
-  const pal = ROOF_PALETTES[Math.floor(rng() * ROOF_PALETTES.length)];
+  const pal = burned ? ["#3c352f", "#2a2521"] : ROOF_PALETTES[Math.floor(rng() * ROOF_PALETTES.length)];
 
   // Cast shadow.
   ctx.save();
@@ -327,7 +458,40 @@ function drawFlatBuilding(ctx: CanvasRenderingContext2D, poly: Pt[], levels: num
     ctx.lineTo(lx, bb.y1);
     ctx.stroke();
   }
+  if (burned) burnDamage(ctx, bb, rng);
   ctx.restore();
+}
+
+// Collapsed-roof holes (open to a dark, rubble-strewn interior) and soot streaks,
+// drawn inside an already-clipped building footprint.
+function burnDamage(ctx: CanvasRenderingContext2D, bb: { x0: number; y0: number; x1: number; y1: number }, rng: () => number): void {
+  const w = bb.x1 - bb.x0;
+  const h = bb.y1 - bb.y0;
+  const holes = 2 + Math.floor(rng() * 3);
+  for (let i = 0; i < holes; i++) {
+    const hx = bb.x0 + rng() * w;
+    const hy = bb.y0 + rng() * h;
+    const hr = 2 + rng() * Math.min(w, h) * 0.3;
+    ctx.fillStyle = "rgba(10,8,6,0.85)";
+    ctx.beginPath();
+    ctx.ellipse(hx, hy, hr, hr * 0.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Charred joists / rubble down in the hole.
+    for (let k = 0; k < 4; k++) {
+      ctx.fillStyle = `hsl(28,8%,${18 + rng() * 16}%)`;
+      ctx.fillRect(hx + (rng() - 0.5) * hr, hy + (rng() - 0.5) * hr, 1 + rng() * 1.5, 1 + rng() * 1.5);
+    }
+  }
+  // Soot licking up the roof.
+  for (let i = 0; i < 6; i++) {
+    ctx.strokeStyle = `rgba(8,6,5,${0.14 + rng() * 0.2})`;
+    ctx.lineWidth = 1 + rng() * 2;
+    const sx = bb.x0 + rng() * w;
+    ctx.beginPath();
+    ctx.moveTo(sx, bb.y0);
+    ctx.lineTo(sx + (rng() - 0.5) * 4, bb.y1);
+    ctx.stroke();
+  }
 }
 
 function drawPitchedBuilding(
@@ -338,6 +502,7 @@ function drawPitchedBuilding(
   gy1: number,
   levels: number,
   rng: () => number,
+  burned = false,
 ): void {
   const x = gx0 * CELL_SIZE;
   const y = gy0 * CELL_SIZE;
@@ -352,17 +517,19 @@ function drawPitchedBuilding(
   ctx.fillRect(x - SUN.x * lift, y - SUN.y * lift, w, h);
   ctx.restore();
 
-  // 2. Wall block (eaves) — a slightly larger dark base the roof sits on.
-  ctx.fillStyle = "#5d5346";
+  // 2. Wall block (eaves) — a slightly larger dark base the roof sits on. A burned-out
+  // shell shows blackened, soot-stained walls instead.
+  ctx.fillStyle = burned ? "#332b25" : "#5d5346";
   ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
 
-  // 3. Pitched roof: ridge along the longer axis, two shaded faces.
+  // 3. Pitched roof: ridge along the longer axis, two shaded faces. Charred timber tones
+  // for a gutted house.
   const roofPalettes = [
     ["#9a4f3c", "#7c3e2e"], // red tile
     ["#7d7a73", "#5f5c55"], // grey slate
     ["#8a6b4a", "#6d5238"], // brown
   ];
-  const pal = roofPalettes[Math.floor(rng() * roofPalettes.length)];
+  const pal = burned ? ["#39322c", "#272320"] : roofPalettes[Math.floor(rng() * roofPalettes.length)];
   const inset = 1.5;
   const rx = x + inset;
   const ry = y + inset;
@@ -387,7 +554,7 @@ function drawPitchedBuilding(
       [rx, ry + rh],
     ]);
     roofLines(ctx, rx, ry, rw, rh, true);
-    ridge(ctx, rx, midY, rx + rw, midY);
+    if (!burned) ridge(ctx, rx, midY, rx + rw, midY);
   } else {
     // Vertical ridge.
     const midX = rx + rw / 2;
@@ -406,7 +573,17 @@ function drawPitchedBuilding(
       [midX, ry + rh],
     ]);
     roofLines(ctx, rx, ry, rw, rh, false);
-    ridge(ctx, midX, ry, midX, ry + rh);
+    if (!burned) ridge(ctx, midX, ry, midX, ry + rh);
+  }
+
+  // 3b. Gutted roof: punch collapse holes through to a dark interior, plus soot.
+  if (burned) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(rx, ry, rw, rh);
+    ctx.clip();
+    burnDamage(ctx, { x0: rx, y0: ry, x1: rx + rw, y1: ry + rh }, rng);
+    ctx.restore();
   }
 
   // 4. Eave outline.

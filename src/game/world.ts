@@ -31,6 +31,7 @@ export interface Soldier {
   ox: number;
   oy: number;
   facing: number;
+  gait: number; // small per-man speed multiplier so a squad doesn't march in lockstep
   // Combat.
   weapon: WeaponId;
   ammo: number;
@@ -325,6 +326,8 @@ export class World {
         ox: f.ox,
         oy: f.oy,
         facing: faction === "us" ? -Math.PI / 2 : Math.PI / 2,
+        gait: 0.9 + Math.random() * 0.22, // 0.90–1.12: each man's natural pace
+
         weapon,
         ammo: WEAPONS[weapon].ammo,
         status: "active",

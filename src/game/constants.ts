@@ -27,6 +27,14 @@ export const CASUALTY_SHOCK = 0.25; // morale hit when a nearby comrade falls
 export const LEADER_RADIUS = 8; // cells; leader steadies men within this
 export const SHOCK_RADIUS = 6; // cells; how far a casualty's shock spreads
 
+// --- Squad cohesion: a squad should move and arrive as one body, and any man left
+// behind should hurry back to the group instead of stranding himself. ---
+export const COHESION_NEAR = 2.2;  // cells from the squad's center before catch-up kicks in
+export const COHESION_GAIN = 0.45; // extra speed fraction per cell of lag beyond NEAR
+export const COHESION_MAX = 1.85;  // cap on the lagging-man catch-up multiplier
+export const COHESION_LEAD = 0.7;  // a man out front of the squad eases to this pace so they close up
+export const REGROUP_DIST = 4.5;   // an idle man this far from the squad re-paths to rejoin
+
 // --- Orders / stances (Phase 3) ---
 export const STANCE_SPEED = { move: 1, fast: 1.6, sneak: 0.5, defend: 0, ambush: 0 } as const;
 export const AMBUSH_RANGE = 9; // cells; ambushers hold fire until an enemy is this close

@@ -4,8 +4,13 @@ import { resolveFire } from "./combat.ts";
 import {
   BASE_MOVE_SPEED,
   BATTLE_TIME_S,
+  COHESION_GAIN,
+  COHESION_LEAD,
+  COHESION_MAX,
+  COHESION_NEAR,
   OBJECTIVE_CAPTURE_TIME,
   OBJECTIVE_HOLD_TO_WIN,
+  REGROUP_DIST,
   SIM_DT,
   SMOKE_BUILD,
   SMOKE_CAP,
@@ -18,6 +23,7 @@ import {
 } from "./constants.ts";
 import { Faction } from "./world.ts";
 import { updateMorale } from "./morale.ts";
+import { findPath, smoothPath } from "./pathfinding.ts";
 import { TERRAIN } from "./terrain.ts";
 import { updateVehicles } from "./vehicleSim.ts";
 import { updateVisibility } from "./visibility.ts";
@@ -99,6 +105,9 @@ function updateObjective(world: World, dt: number): void {
 }
 
 function moveSoldiers(world: World): void {
+  // Where each squad's body of men currently is — the rally point for cohesion.
+  const centers = teamCenters(world);
+
   for (const s of world.soldiers) {
     s.px = s.x;
     s.py = s.y;
@@ -123,12 +132,81 @@ function moveSoldiers(world: World): void {
         continue; // hug the ground; keep the order to resume once fire lifts
       case "routing":
         ensureFleeGoal(world, s);
-        advance(world, s, 1.25);
+        advance(world, s, 1.25 * s.gait);
         continue;
       default: {
-        // Pace set by the commanded stance, slowed if the man is shaken.
-        const mul = STANCE_SPEED[s.stance] * (s.state === "shaken" ? 0.7 : 1);
-        advance(world, s, mul);
+        // Pace set by the commanded stance and the man's own gait, slowed if shaken,
+        // then nudged by cohesion so the squad stays a single body on the move.
+        const mul = STANCE_SPEED[s.stance] * (s.state === "shaken" ? 0.7 : 1) * s.gait;
+        advance(world, s, mul * cohesionFactor(s, centers.get(s.teamId)));
+      }
+    }
+  }
+
+  regroupStragglers(world, centers);
+}
+
+interface Pt2 { x: number; y: number; }
+
+// Center of mass of each squad's still-standing men.
+function teamCenters(world: World): Map<number, Pt2> {
+  const acc = new Map<number, { x: number; y: number; n: number }>();
+  for (const s of world.soldiers) {
+    if (s.status !== "active") continue;
+    let a = acc.get(s.teamId);
+    if (!a) { a = { x: 0, y: 0, n: 0 }; acc.set(s.teamId, a); }
+    a.x += s.x;
+    a.y += s.y;
+    a.n++;
+  }
+  const out = new Map<number, Pt2>();
+  for (const [id, a] of acc) out.set(id, { x: a.x / a.n, y: a.y / a.n });
+  return out;
+}
+
+// Rubber-band a moving man to his squad: if the squad's center is ahead of him he's
+// lagging, so hurry up; if he's the one out front, ease off so the others close the gap.
+function cohesionFactor(s: Soldier, center: Pt2 | undefined): number {
+  if (!center || !s.path) return 1;
+  if (s.stance === "defend" || s.stance === "ambush") return 1; // held posture: don't shuffle
+  const toCx = center.x - s.x;
+  const toCy = center.y - s.y;
+  const d = Math.hypot(toCx, toCy);
+  if (d < COHESION_NEAR) return 1;
+  const wp = s.path[s.pathIndex];
+  if (!wp) return 1;
+  const hx = wp.cx + 0.5 - s.x;
+  const hy = wp.cy + 0.5 - s.y;
+  const hl = Math.hypot(hx, hy) || 1;
+  const dot = (toCx / d) * (hx / hl) + (toCy / d) * (hy / hl); // is the squad ahead of me?
+  if (dot > 0.1) return Math.min(COHESION_MAX, 1 + (d - COHESION_NEAR) * COHESION_GAIN);
+  if (dot < -0.1) return COHESION_LEAD;
+  return 1;
+}
+
+// Any man who has stopped moving but is stranded far from his squad re-paths to rejoin.
+// Held postures (Defend/Ambush), men firing in place, and the pinned/panicked are left
+// where they are — this only gathers up the genuinely-left-behind.
+function regroupStragglers(world: World, centers: Map<number, Pt2>): void {
+  for (const team of world.teams) {
+    const center = centers.get(team.id);
+    if (!center) continue;
+    for (const id of team.soldierIds) {
+      const s = world.soldier(id)!;
+      if (s.status !== "active" || s.path) continue;
+      if (s.stance === "defend" || s.stance === "ambush") continue;
+      if (s.fireCell || s.manualTargetId != null) continue;
+      if (s.state !== "steady" && s.state !== "shaken") continue;
+      if (Math.hypot(center.x - s.x, center.y - s.y) <= REGROUP_DIST) continue;
+
+      const gx = Math.round(center.x - 0.5 + s.ox * 0.6);
+      const gy = Math.round(center.y - 0.5 + s.oy * 0.6);
+      const goal = world.nearestPassable(gx, gy, { cx: Math.floor(center.x), cy: Math.floor(center.y) });
+      const start = { cx: Math.floor(s.x), cy: Math.floor(s.y) };
+      const raw = findPath(world.grid, start, goal);
+      if (raw && raw.length > 1) {
+        s.path = smoothPath(world.grid, raw);
+        s.pathIndex = 1;
       }
     }
   }

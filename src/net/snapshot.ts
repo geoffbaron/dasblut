@@ -173,7 +173,7 @@ function makeSoldier(id: number, teamId: number, faction: Faction): Soldier {
   const weapon: WeaponId = "rifle";
   return {
     id, teamId, faction, isLeader: false,
-    x: 0, y: 0, px: 0, py: 0, path: null, pathIndex: 0, ox: 0, oy: 0, facing: 0,
+    x: 0, y: 0, px: 0, py: 0, path: null, pathIndex: 0, ox: 0, oy: 0, facing: 0, gait: 1,
     weapon, ammo: WEAPONS[weapon].ammo, status: "active", training: 0.6, stance: "move",
     targetId: null, targetVehId: null, manualTargetId: null, fireCell: null, fireSmoke: false,
     ambushTimer: 0, fireCD: 0, firedTimer: 0, grenades: 0, grenadeCD: 0,

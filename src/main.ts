@@ -193,16 +193,23 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
     else forcesEl.textContent = `US ${mine} · AXIS ${enemyTotal}`;
 
     {
-      const ownerCls = world.objOwner === "us" ? "obj-us" : "obj-axis";
-      const ownerName = world.objOwner === "us" ? "US holds" : "Axis holds";
+      const objs = world.objectives;
+      const total = objs.length;
+      const usOwned = objs.filter((o) => o.owner === "us").length;
+      const contested = objs.some((o) => o.contested);
       let line: string;
-      if (world.objContested) line = `<span class="obj-contested">CONTESTED</span>`;
-      else if (world.objCapturing)
-        line = `<span class="obj-${world.objCapturing}">${world.objCapturing === "us" ? "US" : "Axis"} capturing… ${Math.round(world.objProgress * 100)}%</span>`;
-      else if (world.objOwner === "us")
+      if (world.usHoldsAll()) {
         line = `<span class="obj-hold">HOLD ${Math.ceil(world.objHoldTimer)} / ${OBJECTIVE_HOLD_TO_WIN}s</span>`;
-      else line = `<span class="${ownerCls}">${ownerName}</span>`;
-      objectiveEl.innerHTML = `<div class="obj-title">OBJECTIVE</div><div>${line}</div>`;
+      } else if (total === 1) {
+        const o = objs[0];
+        if (contested) line = `<span class="obj-contested">CONTESTED</span>`;
+        else if (o.capturing) line = `<span class="obj-${o.capturing}">${o.capturing === "us" ? "US" : "Axis"} capturing… ${Math.round(o.progress * 100)}%</span>`;
+        else line = `<span class="obj-axis">Axis holds</span>`;
+      } else {
+        const cls = usOwned > total - usOwned ? "obj-us" : "obj-axis";
+        line = `<span class="${cls}">US ${usOwned} / ${total}</span>` + (contested ? ` <span class="obj-contested">· contested</span>` : "");
+      }
+      objectiveEl.innerHTML = `<div class="obj-title">${total > 1 ? "OBJECTIVES" : "OBJECTIVE"}</div><div>${line}</div>`;
     }
 
     if (world.outcome) {
@@ -486,9 +493,9 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
 
 // === Host (US) / offline single-player =============================================
 
-async function startGame(map: GameMap) {
+async function startGame(map: GameMap, objectiveCount = 1) {
   const mount = document.getElementById("app")!;
-  const world = new World(map);
+  const world = new World(map, objectiveCount);
   updateVisibility(world, VIS_INTERVAL);
   const renderer = new Renderer();
   await renderer.init(mount, world);
@@ -502,7 +509,7 @@ async function startGame(map: GameMap) {
   let setupSent = false, netAccum = 0;
 
   let lastRenderTs = performance.now();
-  let prevObjOwner = world.objOwner;
+  let prevUsOwned = world.objectives.filter((o) => o.owner === "us").length;
   const loop = new GameLoop(
     () => step(world),
     (alpha) => {
@@ -517,7 +524,8 @@ async function startGame(map: GameMap) {
         if (netAccum >= 0.12) { net.sendSnapshot(encodeSnapshot(world)); netAccum = 0; }
       }
       sound.updateAmbient(dtSec, world.phase === "battle" && !world.outcome && !loop.paused);
-      if (world.objOwner !== prevObjOwner) { sound.playUI(world.objOwner === "us" ? "obj_capture" : "obj_lost"); prevObjOwner = world.objOwner; }
+      const usOwned = world.objectives.filter((o) => o.owner === "us").length;
+      if (usOwned !== prevUsOwned) { sound.playUI(usOwned > prevUsOwned ? "obj_capture" : "obj_lost"); prevUsOwned = usOwned; }
       hud.frame();
     },
   );

@@ -57,43 +57,40 @@ export function step(world: World): void {
   updateObjective(world, SIM_DT);
 
   if (!world.outcome) world.outcome = checkOutcome(world);
-  if (!world.outcome && world.time >= BATTLE_TIME_S) world.outcome = world.objOwner === "us" ? "win" : "lose";
+  // Time's up: the US must control EVERY objective by the deadline, else the Axis wins.
+  if (!world.outcome && world.time >= BATTLE_TIME_S) world.outcome = world.usHoldsAll() ? "win" : "lose";
 }
 
-// Capture-and-hold. A side "captures" the objective by being the only one with units
-// in the zone for OBJECTIVE_CAPTURE_TIME; the attacker (US) wins by holding it for
-// OBJECTIVE_HOLD_TO_WIN seconds. Elimination still ends it (see checkOutcome).
+// Capture-and-hold. A side captures an objective by being the only one with units in
+// its zone for OBJECTIVE_CAPTURE_TIME; the attacker (US) wins by controlling EVERY
+// objective at once for OBJECTIVE_HOLD_TO_WIN seconds. Elimination still ends it.
 function updateObjective(world: World, dt: number): void {
-  const o = world.objective;
-  const r2 = o.radius * o.radius;
-  let us = 0;
-  let axis = 0;
-  for (const s of world.soldiers) {
-    if (s.status !== "active") continue;
-    if ((s.x - o.cx - 0.5) ** 2 + (s.y - o.cy - 0.5) ** 2 <= r2) (s.faction === "us" ? us++ : axis++);
-  }
-  for (const v of world.vehicles) {
-    if (v.status === "ko") continue;
-    if ((v.x - o.cx - 0.5) ** 2 + (v.y - o.cy - 0.5) ** 2 <= r2) (v.faction === "us" ? (us += 2) : (axis += 2));
-  }
-
-  world.objContested = us > 0 && axis > 0;
-  const sole: Faction | null = us > 0 && axis === 0 ? "us" : axis > 0 && us === 0 ? "axis" : null;
-  world.objCapturing = sole && sole !== world.objOwner ? sole : null;
-
-  if (world.objCapturing) {
-    world.objProgress += dt / OBJECTIVE_CAPTURE_TIME;
-    if (world.objProgress >= 1) {
-      world.objOwner = world.objCapturing;
-      world.objProgress = 0;
-      world.objCapturing = null;
+  for (const o of world.objectives) {
+    const r2 = o.radius * o.radius;
+    let us = 0, axis = 0;
+    for (const s of world.soldiers) {
+      if (s.status !== "active") continue;
+      if ((s.x - o.cx - 0.5) ** 2 + (s.y - o.cy - 0.5) ** 2 <= r2) (s.faction === "us" ? us++ : axis++);
     }
-  } else if (!world.objContested) {
-    world.objProgress = Math.max(0, world.objProgress - dt / OBJECTIVE_CAPTURE_TIME);
+    for (const v of world.vehicles) {
+      if (v.status === "ko") continue;
+      if ((v.x - o.cx - 0.5) ** 2 + (v.y - o.cy - 0.5) ** 2 <= r2) (v.faction === "us" ? (us += 2) : (axis += 2));
+    }
+
+    o.contested = us > 0 && axis > 0;
+    const sole: Faction | null = us > 0 && axis === 0 ? "us" : axis > 0 && us === 0 ? "axis" : null;
+    o.capturing = sole && sole !== o.owner ? sole : null;
+
+    if (o.capturing) {
+      o.progress += dt / OBJECTIVE_CAPTURE_TIME;
+      if (o.progress >= 1) { o.owner = o.capturing; o.progress = 0; o.capturing = null; }
+    } else if (!o.contested) {
+      o.progress = Math.max(0, o.progress - dt / OBJECTIVE_CAPTURE_TIME);
+    }
   }
 
-  // The attacker holds to win; a recapture by the defender resets the clock.
-  if (world.objOwner === "us") {
+  // Hold ALL objectives to win; losing any one resets the clock.
+  if (world.usHoldsAll()) {
     world.objHoldTimer += dt;
     if (world.objHoldTimer >= OBJECTIVE_HOLD_TO_WIN && !world.outcome) world.outcome = "win";
   } else {

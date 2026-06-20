@@ -79,18 +79,17 @@ export async function generateMap(centerLat: number, centerLon: number, label: s
   if (buildings.length === 0 && areas.length < 2) scatterCover(grid, features);
 
   const spawns = generateSpawns(grid);
-  const objective = pickObjective(grid, features);
-  return { name: label, grid, features, spawns, objective };
+  const objectives = pickObjectives(grid, features);
+  return { name: label, grid, features, spawns, objectives };
 }
 
-// The victory location: the building whose centroid is closest to the map centre
-// (the "town square" heuristic). Falls back to the map centre if no buildings.
-// Snapped to passable ground.
-function pickObjective(grid: Grid, features: MapFeatures): Objective {
+// Up to three candidate victory locations across the contested middle band. The
+// primary is the "town square" (building centroid nearest the map centre); two more
+// are spread left and right of it. All snapped to passable ground and de-duped.
+function pickObjectives(grid: Grid, features: MapFeatures): Objective[] {
   const gx = grid.width / 2;
   const gy = grid.height / 2;
-  let tx = gx;
-  let ty = gy;
+  let tx = gx, ty = gy;
   if (features.buildings.length) {
     let bestD = Infinity;
     for (const b of features.buildings) {
@@ -100,8 +99,20 @@ function pickObjective(grid: Grid, features: MapFeatures): Objective {
       if (d < bestD) { bestD = d; tx = bx; ty = by; }
     }
   }
-  const c = nearestPassableCell(grid, Math.round(tx), Math.round(ty));
-  return { cx: c.cx, cy: c.cy, radius: OBJECTIVE_RADIUS };
+  const spread = grid.width * 0.28;
+  const wanted: { cx: number; cy: number }[] = [
+    { cx: Math.round(tx), cy: Math.round(ty) },           // center
+    { cx: Math.round(tx - spread), cy: Math.round(gy) },  // west
+    { cx: Math.round(tx + spread), cy: Math.round(gy) },  // east
+  ];
+  const out: Objective[] = [];
+  for (const w of wanted) {
+    const c = nearestPassableCell(grid, w.cx, w.cy);
+    // Keep them apart so capture zones don't fully overlap.
+    if (out.some((o) => Math.hypot(o.cx - c.cx, o.cy - c.cy) < OBJECTIVE_RADIUS)) continue;
+    out.push({ cx: c.cx, cy: c.cy, radius: OBJECTIVE_RADIUS });
+  }
+  return out.length ? out : [{ cx: Math.round(gx), cy: Math.round(gy), radius: OBJECTIVE_RADIUS }];
 }
 
 function nearestPassableCell(grid: Grid, cx: number, cy: number): { cx: number; cy: number } {

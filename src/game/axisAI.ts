@@ -12,10 +12,11 @@ export function commandAxis(world: World, dt: number): void {
   if (world.aiAccum < AI_INTERVAL) return;
   world.aiAccum = 0;
 
-  const o = world.objective;
-  const threatened = world.objOwner === "us" || world.objCapturing === "us" || world.objContested;
-  const threatChanged = threatened !== world.aiThreatPrev;
-  world.aiThreatPrev = threatened;
+  const objThreatened = (o: { owner: string; capturing: string | null; contested: boolean }) =>
+    o.owner === "us" || o.capturing === "us" || o.contested;
+  const anyThreat = world.objectives.some(objThreatened);
+  const threatChanged = anyThreat !== world.aiThreatPrev;
+  world.aiThreatPrev = anyThreat;
 
   const axisTeams = world.teams.filter((t) => t.faction === "axis");
   axisTeams.forEach((team, idx) => {
@@ -23,6 +24,9 @@ export function commandAxis(world: World, dt: number): void {
     if (men.length === 0) return;
     if (men.every((s) => s.state === "panicked" || s.state === "routing")) return; // broken — let them run
 
+    // Each squad garrisons one objective (round-robin across however many there are).
+    const o = world.objectives[idx % world.objectives.length];
+    const threatened = objThreatened(o);
     if (!team.post) team.post = postAround(world, o.cx, o.cy, o.radius, idx, axisTeams.length);
     const anchor = men[0];
     const goal: Cell = threatened ? { cx: o.cx, cy: o.cy } : team.post;
@@ -41,14 +45,16 @@ export function commandAxis(world: World, dt: number): void {
     }
   });
 
-  // Axis armor: fall back onto the objective when it's threatened, else hold near it.
+  // Axis armor: fall back onto the nearest threatened objective, else hold near one.
+  const vt = world.objectives.find(objThreatened) ?? world.objectives[0];
   for (const v of world.vehicles) {
-    if (v.faction !== "axis" || v.status === "ko") continue;
-    const d = Math.hypot(v.x - o.cx, v.y - o.cy);
+    if (v.faction !== "axis" || v.status === "ko" || !vt) continue;
+    const d = Math.hypot(v.x - vt.cx, v.y - vt.cy);
+    const threatened = objThreatened(vt);
     if (threatened && d > 6) {
-      if (threatChanged || !v.path) world.orderVehicleMove(v.id, { cx: o.cx, cy: o.cy }, false);
+      if (threatChanged || !v.path) world.orderVehicleMove(v.id, { cx: vt.cx, cy: vt.cy }, false);
     } else if (!threatened && d > 10 && !v.path) {
-      world.orderVehicleMove(v.id, nearestVehCell(world, o.cx, o.cy), false);
+      world.orderVehicleMove(v.id, nearestVehCell(world, vt.cx, vt.cy), false);
     }
   }
 }

@@ -1,4 +1,4 @@
-import { GameMap, MapFeatures, Objective, SquadSpawn } from "./gamemap.ts";
+import { GameMap, MapFeatures, SquadSpawn } from "./gamemap.ts";
 import { Grid } from "./grid.ts";
 import { Cell, findPath, smoothPath } from "./pathfinding.ts";
 import { vehicleCost, vehiclePassable } from "./terrain.ts";
@@ -72,6 +72,17 @@ export type EffectKind = "tracer" | "flash" | "hit" | "ap" | "spark" | "smoke" |
 
 // A burning smoke canister that emits into the smoke grid over its lifetime.
 export interface SmokeSource { cx: number; cy: number; t: number; }
+
+// Live capture-and-hold state for one objective.
+export interface ObjState {
+  cx: number;
+  cy: number;
+  radius: number;
+  owner: Faction; // who currently controls it
+  capturing: Faction | null; // who is in the middle of flipping it
+  progress: number; // 0..1 toward the capturing side taking it
+  contested: boolean; // both sides present
+}
 export interface Effect {
   kind: EffectKind;
   x0: number;
@@ -168,14 +179,10 @@ export class World {
   axisHuman = false;
   outcome: "win" | "lose" | null = null;
 
-  // Capture-and-hold objective. Starts under the defender (Axis); the attacker (US)
-  // wins by taking and holding it.
-  objective: Objective;
-  objOwner: Faction = "axis";
-  objCapturing: Faction | null = null;
-  objProgress = 0; // 0..1 toward flipping to the capturing side
-  objContested = false;
-  objHoldTimer = 0; // seconds the attacker has held it
+  // Capture-and-hold objectives (1-3). Each starts under the defender (Axis); the
+  // attacker (US) wins by controlling ALL of them at once for objHoldTimer seconds.
+  objectives: ObjState[] = [];
+  objHoldTimer = 0; // seconds the US has held EVERY objective simultaneously
 
   // Battle clock + enemy-AI throttle.
   aiAccum = 0;
@@ -205,11 +212,16 @@ export class World {
 
   readonly mapName: string;
 
-  constructor(map: GameMap) {
+  constructor(map: GameMap, objectiveCount = map.objectives.length) {
     this.mapName = map.name;
     this.grid = map.grid;
     this.features = map.features;
-    this.objective = map.objective;
+    // Use the first N candidate objectives; all start under the defender.
+    const n = Math.max(1, Math.min(objectiveCount, map.objectives.length));
+    this.objectives = map.objectives.slice(0, n).map((o) => ({
+      cx: o.cx, cy: o.cy, radius: o.radius,
+      owner: "axis", capturing: null, progress: 0, contested: false,
+    }));
     this.visGrid = new Uint8Array(this.grid.width * this.grid.height);
     this.buildDmg = new Float32Array(this.grid.width * this.grid.height);
     this.smokeGrid = new Float32Array(this.grid.width * this.grid.height);
@@ -221,6 +233,19 @@ export class World {
     for (const s of map.spawns.axis) this.spawnSquad(s, "axis", 0xc4514a, 0.6);
     for (const v of map.spawns.usVehicles) this.spawnVehicle(v.cls, v.cx, v.cy, v.facing);
     for (const v of map.spawns.axisVehicles) this.spawnVehicle(v.cls, v.cx, v.cy, v.facing);
+  }
+
+  /** True when the US controls every objective — the win/hold condition. */
+  usHoldsAll(): boolean {
+    return this.objectives.length > 0 && this.objectives.every((o) => o.owner === "us");
+  }
+
+  /** Center point of all objectives, for framing the camera. */
+  objectivesCentroid(): { cx: number; cy: number } {
+    const n = this.objectives.length || 1;
+    let cx = 0, cy = 0;
+    for (const o of this.objectives) { cx += o.cx; cy += o.cy; }
+    return { cx: cx / n, cy: cy / n };
   }
 
   private spawnVehicle(cls: VehicleClass, cx: number, cy: number, facing: number): void {

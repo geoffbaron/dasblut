@@ -29,9 +29,9 @@ export interface Weapon {
 }
 
 export const WEAPONS: Record<WeaponId, Weapon> = {
-  rifle: { id: "rifle", name: "Rifle", rangeCells: 36, rof: 0.8, accuracy: 0.5, suppression: 0.09, lethality: 0.6, ammo: 80, tracerRate: 0.5 },
-  smg:   { id: "smg",   name: "SMG",   rangeCells: 14, rof: 7,   accuracy: 0.2, suppression: 0.05, lethality: 0.45, ammo: 240, tracerRate: 0.25 },
-  lmg:   { id: "lmg",   name: "LMG",   rangeCells: 42, rof: 9,   accuracy: 0.17, suppression: 0.08, lethality: 0.5, ammo: 400, tracerRate: 0.3 },
+  rifle: { id: "rifle", name: "Rifle", rangeCells: 36, rof: 0.8, accuracy: 0.32, suppression: 0.09, lethality: 0.6, ammo: 80, tracerRate: 0.5 },
+  smg:   { id: "smg",   name: "SMG",   rangeCells: 14, rof: 7,   accuracy: 0.13, suppression: 0.05, lethality: 0.45, ammo: 240, tracerRate: 0.25 },
+  lmg:   { id: "lmg",   name: "LMG",   rangeCells: 42, rof: 9,   accuracy: 0.11, suppression: 0.08, lethality: 0.5, ammo: 400, tracerRate: 0.3 },
   // Anti-tank: short range, slow reload, few rounds, but deadly to armor — and far
   // more so against the flanks and rear than the frontal plate.
   bazooka:     { id: "bazooka",     name: "Bazooka",     rangeCells: 13, rof: 0.25, accuracy: 0.5, suppression: 0.04, lethality: 0.5, ammo: 6, tracerRate: 1, penetration: 90 },

@@ -61,7 +61,8 @@ export interface GameMap {
   grid: Grid;
   features: MapFeatures;
   spawns: Spawns;
-  objective: Objective;
+  // Candidate victory locations (1-3). The chosen count selects how many are used.
+  objectives: Objective[];
 }
 
 /** Axis-aligned rectangle footprint as a 4-corner polygon (cell coords). */

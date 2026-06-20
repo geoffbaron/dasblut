@@ -96,6 +96,10 @@
       }
       #menu button:hover { background: #34322a; }
       #menu button.primary { background: #5a4a22; border-color: #b89a4a; color: #fff3d6; }
+      #menu select {
+        font: inherit; font-size: 13px; color: #d8d2c2; background: #2a2820;
+        border: 1px solid #4a463c; border-radius: 5px; padding: 7px 10px; cursor: pointer;
+      }
       #map { flex: 1; min-height: 0; }
       #menu .foot { padding: 8px 18px; font-size: 11px; color: #6f6a5c; border-top: 1px solid #2e2b24; }
       .reticle {
@@ -216,6 +220,11 @@
       <div class="bar">
         <input id="search" type="text" placeholder="Search a place (e.g. Carentan, Bastogne, your street)…" />
         <button id="searchBtn">Search</button>
+        <select id="objCount" title="How many objectives to capture &amp; hold">
+          <option value="1">1 objective</option>
+          <option value="2">2 objectives</option>
+          <option value="3">3 objectives</option>
+        </select>
         <button id="deployBtn" class="primary">⚔ Deploy here</button>
         <button id="testBtn">Use test map</button>
       </div>

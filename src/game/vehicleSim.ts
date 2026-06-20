@@ -165,7 +165,7 @@ function mgShot(world: World, v: Vehicle, target: Soldier, def: (typeof VEHICLES
   const tcy = Math.floor(target.y);
   const cover = world.grid.inBounds(tcx, tcy) ? TERRAIN[world.grid.get(tcx, tcy)].cover : 0;
   addSuppression(target, def.mg.suppression);
-  let p = 0.45 * (1 - 0.5 * (d / def.mg.rangeCells)) * (1 - cover * 0.7);
+  let p = 0.3 * (1 - 0.5 * (d / def.mg.rangeCells)) * (1 - cover * 0.7);
   if (target.path) p *= 0.8;
   if (Math.random() < p && Math.random() < def.mg.lethality) killSoldier(world, target);
 }

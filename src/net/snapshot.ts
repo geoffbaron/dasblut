@@ -18,19 +18,21 @@ export interface Setup {
   h: number;
   cells: number[];
   features: MapFeatures;
-  objective: Objective;
+  objectives: Objective[];
   teams: SnapTeam[];
 }
 
 // Tight per-entity tuples keep snapshots small at ~8 Hz.
 type SnapSoldier = [id: number, f: number, x: number, y: number, fa: number, st: number, teamId: number, seen: number];
 type SnapVehicle = [id: number, f: number, x: number, y: number, fa: number, tu: number, st: number, cls: string, name: string];
+// Per-objective dynamic state, in objectives order: [owner, capturing, progress*100, contested].
+type SnapObj = [owner: number, capturing: number, progress: number, contested: number];
 
 export interface Snapshot {
   time: number;
   phase: number; // 0 deploy, 1 battle
   outcome: string; // "", "win", "lose"
-  oo: Faction; objCapturing: Faction | null; op: number; oct: number; oh: number;
+  O: SnapObj[]; oh: number; // objective states + the hold-all-to-win timer
   S: SnapSoldier[];
   V: SnapVehicle[];
   sm: number[]; // sparse smoke: [cellIndex, density*100, …] so both sides see screens
@@ -45,7 +47,7 @@ export function encodeSetup(world: World): Setup {
     h: world.grid.height,
     cells: Array.from(world.grid.cells),
     features: world.features,
-    objective: world.objective,
+    objectives: world.objectives.map((o) => ({ cx: o.cx, cy: o.cy, radius: o.radius })),
     teams: world.teams.map((t) => ({ id: t.id, name: t.name, faction: t.faction, kind: t.kind, color: t.color })),
   };
 }
@@ -62,11 +64,17 @@ export function encodeSnapshot(world: World): Snapshot {
   const sm: number[] = [];
   const g = world.smokeGrid;
   for (let i = 0; i < g.length; i++) if (g[i] > 0.05) { sm.push(i, Math.round(g[i] * 100)); }
+  const O: SnapObj[] = world.objectives.map((o) => [
+    o.owner === "us" ? 0 : 1,
+    o.capturing == null ? -1 : o.capturing === "us" ? 0 : 1,
+    Math.round(o.progress * 100),
+    o.contested ? 1 : 0,
+  ]);
   return {
     time: world.time,
     phase: world.phase === "deploy" ? 0 : 1,
     outcome: world.outcome ?? "",
-    oo: world.objOwner, objCapturing: world.objCapturing, op: world.objProgress, oct: world.objContested ? 1 : 0, oh: world.objHoldTimer,
+    O, oh: world.objHoldTimer,
     S, V, sm,
   };
 }
@@ -85,7 +93,7 @@ export function buildClientWorld(setup: Setup): World {
     name: setup.mapName,
     grid,
     features: setup.features,
-    objective: setup.objective,
+    objectives: setup.objectives,
     spawns: { us: [], axis: [], usVehicles: [], axisVehicles: [] },
   };
   const world = new World(map);
@@ -101,11 +109,16 @@ export function applySnapshot(world: World, snap: Snapshot): void {
   world.time = snap.time;
   world.phase = snap.phase === 0 ? "deploy" : "battle";
   world.outcome = snap.outcome === "" ? null : (snap.outcome as "win" | "lose");
-  world.objOwner = snap.oo;
-  world.objCapturing = snap.objCapturing;
-  world.objProgress = snap.op;
-  world.objContested = snap.oct === 1;
   world.objHoldTimer = snap.oh;
+  // Objectives keep their positions (from setup); only their dynamic state updates.
+  for (let i = 0; i < world.objectives.length && i < snap.O.length; i++) {
+    const [owner, cap, prog, cont] = snap.O[i];
+    const o = world.objectives[i];
+    o.owner = owner === 0 ? "us" : "axis";
+    o.capturing = cap === -1 ? null : cap === 0 ? "us" : "axis";
+    o.progress = prog / 100;
+    o.contested = cont === 1;
+  }
 
   // Index the previous soldiers so we can carry interpolation positions across frames.
   const prev = new Map<number, Soldier>();

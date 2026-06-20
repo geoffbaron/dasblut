@@ -183,8 +183,9 @@ export class Renderer {
   centerOnObjective(world: World): void {
     this.zoom = 1.0;
     const c = this.regionCenter();
-    this.camX = world.objective.cx * CELL_SIZE - c.x;
-    this.camY = world.objective.cy * CELL_SIZE - c.y;
+    const ctr = world.objectivesCentroid();
+    this.camX = ctr.cx * CELL_SIZE - c.x;
+    this.camY = ctr.cy * CELL_SIZE - c.y;
     this.applyCamera(world);
   }
 
@@ -465,40 +466,41 @@ export class Renderer {
 
   private drawObjective(world: World): void {
     const g = this.overlay;
-    const o = world.objective;
-    const cx = (o.cx + 0.5) * CELL_SIZE;
-    const cy = (o.cy + 0.5) * CELL_SIZE;
-    const col = world.objOwner === "us" ? 0x4f7fd1 : 0xc4514a;
+    const holdFrac = Math.min(1, world.objHoldTimer / OBJECTIVE_HOLD_TO_WIN);
+    for (const o of world.objectives) {
+      const cx = (o.cx + 0.5) * CELL_SIZE;
+      const cy = (o.cy + 0.5) * CELL_SIZE;
+      const col = o.owner === "us" ? 0x4f7fd1 : 0xc4514a;
 
-    // Capture zone — slightly more opaque so it punches through building rooftops.
-    g.circle(cx, cy, o.radius * CELL_SIZE).fill({ color: col, alpha: world.objContested ? 0.22 : 0.12 });
-    g.circle(cx, cy, o.radius * CELL_SIZE).stroke({ width: 3, color: col, alpha: 0.65 });
+      // Capture zone — slightly more opaque so it punches through building rooftops.
+      g.circle(cx, cy, o.radius * CELL_SIZE).fill({ color: col, alpha: o.contested ? 0.22 : 0.12 });
+      g.circle(cx, cy, o.radius * CELL_SIZE).stroke({ width: 3, color: col, alpha: 0.65 });
 
-    // Progress ring.
-    let frac = 0;
-    let arcCol = col;
-    if (world.objCapturing) {
-      frac = world.objProgress;
-      arcCol = world.objCapturing === "us" ? 0x4f7fd1 : 0xc4514a;
-    } else if (world.objOwner === "us") {
-      frac = Math.min(1, world.objHoldTimer / OBJECTIVE_HOLD_TO_WIN);
-      arcCol = 0x6fcf6f;
+      // Progress ring: capture progress while flipping, else the hold-to-win countdown
+      // on US-held objectives (green, shared across all of them).
+      let frac = 0;
+      let arcCol = col;
+      if (o.capturing) {
+        frac = o.progress;
+        arcCol = o.capturing === "us" ? 0x4f7fd1 : 0xc4514a;
+      } else if (o.owner === "us") {
+        frac = holdFrac;
+        arcCol = 0x6fcf6f;
+      }
+      if (frac > 0.001) {
+        // moveTo the arc's start first: without it PixiJS connects the previous path
+        // point to the arc start with a stray line (the "strange line" near the flag).
+        const a0 = -Math.PI / 2;
+        g.moveTo(cx + Math.cos(a0) * 18, cy + Math.sin(a0) * 18);
+        g.arc(cx, cy, 18, a0, a0 + frac * Math.PI * 2).stroke({ width: 4, color: arcCol, alpha: 0.95 });
+      }
+
+      // Flag — white halo on the pole so it reads against dark and light backgrounds.
+      g.moveTo(cx, cy + 8).lineTo(cx, cy - 26).stroke({ width: 5, color: 0xffffff, alpha: 0.6 });
+      g.moveTo(cx, cy + 8).lineTo(cx, cy - 26).stroke({ width: 2, color: 0x14140e, alpha: 0.9 });
+      g.poly([cx, cy - 26, cx + 18, cy - 20, cx, cy - 14]).fill({ color: col, alpha: 1 });
+      g.poly([cx, cy - 26, cx + 18, cy - 20, cx, cy - 14]).stroke({ width: 1.5, color: 0xffffff, alpha: 0.7 });
     }
-    if (frac > 0.001) {
-      // moveTo the arc's start first: without it PixiJS connects the previous path
-      // point to the arc start with a stray line (the "strange line" near the flag).
-      const a0 = -Math.PI / 2;
-      g.moveTo(cx + Math.cos(a0) * 18, cy + Math.sin(a0) * 18);
-      g.arc(cx, cy, 18, a0, a0 + frac * Math.PI * 2).stroke({ width: 4, color: arcCol, alpha: 0.95 });
-    }
-
-    // Flag — large enough to read over rooftops.
-    // White halo on the pole so it reads against both dark and light backgrounds.
-    g.moveTo(cx, cy + 8).lineTo(cx, cy - 26).stroke({ width: 5, color: 0xffffff, alpha: 0.6 });
-    g.moveTo(cx, cy + 8).lineTo(cx, cy - 26).stroke({ width: 2, color: 0x14140e, alpha: 0.9 });
-    // Flag body.
-    g.poly([cx, cy - 26, cx + 18, cy - 20, cx, cy - 14]).fill({ color: col, alpha: 1 });
-    g.poly([cx, cy - 26, cx + 18, cy - 20, cx, cy - 14]).stroke({ width: 1.5, color: 0xffffff, alpha: 0.7 });
   }
 
   private drawSoldiers(world: World, alpha: number): void {

@@ -33,6 +33,7 @@ export interface Snapshot {
   oo: Faction; objCapturing: Faction | null; op: number; oct: number; oh: number;
   S: SnapSoldier[];
   V: SnapVehicle[];
+  sm: number[]; // sparse smoke: [cellIndex, density*100, …] so both sides see screens
 }
 
 // --- host side ---
@@ -57,12 +58,16 @@ export function encodeSnapshot(world: World): Snapshot {
   const V: SnapVehicle[] = world.vehicles.map((v) => [
     v.id, v.faction === "us" ? 0 : 1, round2(v.x), round2(v.y), round2(v.facing), round2(v.turret), v.status === "ko" ? 1 : 0, v.cls, v.name,
   ]);
+  // Smoke is sparse (only a few dozen cells), so send just the lit cells.
+  const sm: number[] = [];
+  const g = world.smokeGrid;
+  for (let i = 0; i < g.length; i++) if (g[i] > 0.05) { sm.push(i, Math.round(g[i] * 100)); }
   return {
     time: world.time,
     phase: world.phase === "deploy" ? 0 : 1,
     outcome: world.outcome ?? "",
     oo: world.objOwner, objCapturing: world.objCapturing, op: world.objProgress, oct: world.objContested ? 1 : 0, oh: world.objHoldTimer,
-    S, V,
+    S, V, sm,
   };
 }
 
@@ -139,6 +144,11 @@ export function applySnapshot(world: World, snap: Snapshot): void {
   }
   world.vehicles = vehicles;
   setMap(world, "byVid", byVid);
+
+  // Rebuild the smoke grid from the sparse list so clients see the same screens.
+  world.smokeGrid.fill(0);
+  const sm = snap.sm;
+  if (sm) for (let k = 0; k < sm.length; k += 2) world.smokeGrid[sm[k]] = sm[k + 1] / 100;
 }
 
 // World keeps byId/byVid private; on the client we own the instance, so poke them.

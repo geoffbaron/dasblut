@@ -39,21 +39,24 @@ export type SfxId =
 // Source files dropped in are a smaller set than the event list, so several events
 // deliberately share a file (e.g. MG42 covers SMG/LMG/coax; the big design boom
 // covers the tank cannon, AT launches and brew-ups).
+// NOTE: filenames must not contain '#'. A '#' (even URL-encoded as %23) gets decoded
+// to a fragment by the static server and the file is served truncated → fails to
+// decode → silent. The '#'-named drop-ins were renamed to plain numbers.
 const RIFLE = "GUNRif-Single_rifle_gunshot-Elevenlabs.mp3";
-const MG42 = "WW2_MG42_machine_gun_#1-1781811071864.mp3";
+const MG42 = "WW2_MG42_machine_gun_1-1781811071864.mp3";
 const BIG_BOOM = "DSGNBoom-The_sound_of_a_singl-Elevenlabs.mp3";
-const TANK_BOOM = "large_loud_WWII_tank_#4-1781811223525.mp3";
+const TANK_BOOM = "large_loud_WWII_tank_4-1781811223525.mp3";
 const GRENADE = "EXPLReal-grenade_explosion-Elevenlabs.mp3";
 const MORTAR_FIRE = "WEAPSiege-mortar_firing_sound,-Elevenlabs.mp3";
 const GASP = "GOREMisc-Soldier_dying_gasp,_-Elevenlabs.mp3";
 const BAZOOKA_BLAST = "EXPLReal-bazooka_blast-Elevenlabs.mp3";
-const SWITCH = "electric_switch_flip_#1-1781840526177.mp3"; // UI select/order click
+const SWITCH = "electric_switch_flip_1-1781840526177.mp3"; // UI select/order click
 // German death-screams — used when an Axis soldier is killed.
 const SCREAMS = [
-  "dying_screaming_sayi_#1-1781820762926.mp3",
-  "dying_screaming_sayi_#2-1781820762927.mp3",
-  "dying_screaming_sayi_#3-1781820762927.mp3",
-  "dying_screaming_sayi_#4-1781820762927.mp3",
+  "dying_screaming_sayi_1-1781820762926.mp3",
+  "dying_screaming_sayi_2-1781820762927.mp3",
+  "dying_screaming_sayi_3-1781820762927.mp3",
+  "dying_screaming_sayi_4-1781820762927.mp3",
 ];
 // A separate scream for US deaths so the two sides sound distinct.
 const SCREAM_US = "HMNMisc-A_male_soldier_screa-Elevenlabs.mp3";
@@ -67,7 +70,7 @@ const AMBIENT = [
   "AEROMil-WW2_planes_in_distan-Elevenlabs.mp3",
   "GUNRif-distant_small_arms_f-Elevenlabs.mp3",
   "GUNRif-distant_small_arms_f-Elevenlabs (1).mp3",
-  "ambient_battle_dista_#1-1781828842109.mp3",
+  "ambient_battle_dista_1-1781828842109.mp3",
 ];
 
 const SFX_DEFS: Record<SfxId, { files: string[]; vol: number }> = {

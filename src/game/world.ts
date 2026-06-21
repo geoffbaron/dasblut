@@ -128,6 +128,7 @@ export interface Vehicle {
   seen: boolean;
   seenTimer: number;
   smokeCD: number; // emits smoke while burning
+  backoffCD: number; // throttle on the "reverse away from close infantry" reflex
 }
 
 const FORMATION: { ox: number; oy: number }[] = [
@@ -283,6 +284,7 @@ export class World {
       seen: false,
       seenTimer: 0,
       smokeCD: 0,
+      backoffCD: 0,
     };
     this.vehicles.push(v);
     this.byVid.set(v.id, v);

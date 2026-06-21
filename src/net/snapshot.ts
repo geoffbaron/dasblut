@@ -187,7 +187,7 @@ function makeVehicle(id: number, faction: Faction, cls: string, name: string): V
     x: 0, y: 0, px: 0, py: 0, facing: 0, turret: 0, path: null, pathIndex: 0,
     stance: "defend", status: "active", immobilized: false, crew: 5, apAmmo: 0, heAmmo: 0, mgAmmo: 0,
     targetVehId: null, targetInfId: null, manualVeh: null, manualInf: null, fireCell: null,
-    gunCD: 0, mgCD: 0, suppression: 0, seen: false, seenTimer: 0, smokeCD: 0,
+    gunCD: 0, mgCD: 0, suppression: 0, seen: false, seenTimer: 0, smokeCD: 0, backoffCD: 0,
   };
 }
 

@@ -1,8 +1,9 @@
 import { Application, Container, Graphics, Sprite, Texture } from "pixi.js";
-import { CELL_SIZE, OBJECTIVE_HOLD_TO_WIN } from "../game/constants.ts";
+import { CELL_SIZE, OBJECTIVE_HOLD_TO_WIN, SMOKE_LOS_BLOCK } from "../game/constants.ts";
 import { VEHICLES } from "../game/vehicleDefs.ts";
 import { MoraleState, World } from "../game/world.ts";
-import { Terrain } from "../game/terrain.ts";
+import { Terrain, TERRAIN } from "../game/terrain.ts";
+import { WEAPONS } from "../game/weapons.ts";
 import { BuildingArt, paintBattlefield } from "./paint.ts";
 import { makeCasualtyCanvas, makeSoldierArt } from "./soldierArt.ts";
 import { makeVehicleArt, VehicleArt } from "./vehicleArt.ts";
@@ -454,6 +455,17 @@ export class Renderer {
     const team = world.team(world.selectedTeamId);
     if (!team) return;
 
+    // A holding squad (Defend/Ambush) shows the ground each man can actually cover —
+    // the swept fans overlap into a brighter kill-zone where the squad's fire converges.
+    for (const id of team.soldierIds) {
+      const s = world.soldier(id);
+      if (!s || s.status !== "active") continue;
+      const w = WEAPONS[s.weapon];
+      if ((s.stance === "defend" || s.stance === "ambush") && !w.indirect && !s.path) {
+        this.drawSightFan(world, s.x, s.y, s.facing, w.rangeCells);
+      }
+    }
+
     for (const id of team.soldierIds) {
       const s = world.soldier(id);
       if (!s || s.status !== "active") continue;
@@ -659,28 +671,71 @@ export class Renderer {
       }
     }
 
-    // Morale-state pips above friendly soldiers (steady = no pip).
+    // Per-man status badges above friendly soldiers — the heart of the CC read. A
+    // legible morale icon (bar = suppressed-but-holding, triangle = broken/running)
+    // sits over the head; a small cover tick sits under the feet when he's in real
+    // cover. Steady men in the open get nothing, so the eye is drawn to what matters.
     for (const s of world.soldiers) {
       if (s.faction !== "us" || s.status !== "active") continue;
-      const color = pipColor(s.state);
-      if (color < 0) continue;
-      g.circle(s.x * CELL_SIZE, s.y * CELL_SIZE - 11, 2.2).fill({ color, alpha: 0.95 });
+      const ix = s.x * CELL_SIZE;
+      const iy = s.y * CELL_SIZE;
+      this.drawMoraleIcon(g, ix, iy, s.state);
+
+      const tcx = Math.floor(s.x), tcy = Math.floor(s.y);
+      const cover = world.grid.inBounds(tcx, tcy) ? TERRAIN[world.grid.get(tcx, tcy)].cover : 0;
+      if (cover >= 0.3) {
+        // A small shield-tick under the man: brighter the harder the cover.
+        const a = 0.35 + 0.4 * Math.min(1, (cover - 0.3) / 0.5);
+        g.moveTo(ix - 3.5, iy + 9).quadraticCurveTo(ix, iy + 12.5, ix + 3.5, iy + 9)
+          .stroke({ width: 1.4, color: 0x66c8b0, alpha: a });
+      }
     }
   }
-}
 
-function pipColor(state: MoraleState): number {
-  switch (state) {
-    case "shaken":
-      return 0xf0c040;
-    case "pinned":
-      return 0xe07a2a;
-    case "panicked":
-      return 0xd83a2a;
-    case "routing":
-      return 0xff2a1a;
-    default:
-      return -1;
+  // A morale badge above a soldier. Shaken/pinned read as a colored bar (he's pressed
+  // down but in place); panicked/routing read as a red triangle (he's broken and bolting).
+  // Each gets a thin dark backing so it stays legible over light roofs and snow.
+  private drawMoraleIcon(g: Graphics, ix: number, iy: number, state: MoraleState): void {
+    const y = iy - 12;
+    if (state === "shaken" || state === "pinned") {
+      const color = state === "shaken" ? 0xf0c040 : 0xe07a2a;
+      const w = state === "pinned" ? 5 : 4;
+      g.rect(ix - w / 2 - 0.6, y - 1.6, w + 1.2, 3.2).fill({ color: 0x14110b, alpha: 0.6 });
+      g.rect(ix - w / 2, y - 1, w, 2).fill({ color, alpha: 0.97 });
+    } else if (state === "panicked" || state === "routing") {
+      const color = state === "routing" ? 0xff2a1a : 0xd83a2a;
+      g.poly([ix, y - 3.4, ix - 3.2, y + 2.4, ix + 3.2, y + 2.4]).fill({ color: 0x14110b, alpha: 0.6 });
+      g.poly([ix, y - 2.4, ix - 2.4, y + 1.8, ix + 2.4, y + 1.8]).fill({ color, alpha: 0.97 });
+    }
+  }
+
+  // Effective line-of-sight fan for a defending/ambushing team's leader: march rays
+  // across the firing arc until terrain or smoke blocks them, then fill the swept area.
+  // Shows exactly the ground the team can cover from where it sits, CC's core planning aid.
+  private drawSightFan(world: World, originX: number, originY: number, facing: number, range: number): void {
+    const g = this.overlay;
+    const HALF_ARC = 0.95; // ~54° to each side
+    const RAYS = 30;
+    const STEP = 0.45; // cells per march step
+    const pts: number[] = [originX * CELL_SIZE, originY * CELL_SIZE];
+    for (let i = 0; i <= RAYS; i++) {
+      const ang = facing - HALF_ARC + (2 * HALF_ARC) * (i / RAYS);
+      const dx = Math.cos(ang), dy = Math.sin(ang);
+      let dist = range;
+      for (let t = STEP; t <= range; t += STEP) {
+        const cx = Math.floor(originX + dx * t), cy = Math.floor(originY + dy * t);
+        if (!world.grid.inBounds(cx, cy)) { dist = t; break; }
+        // The cell touching the shooter never blocks (the window/edge rule), so a man
+        // in a building still projects a fan out of his own walls.
+        if (t > 1.2) {
+          if (TERRAIN[world.grid.get(cx, cy)].blocksSight) { dist = t; break; }
+          if (world.smokeGrid[world.grid.idx(cx, cy)] >= SMOKE_LOS_BLOCK) { dist = t; break; }
+        }
+      }
+      pts.push((originX + dx * dist) * CELL_SIZE, (originY + dy * dist) * CELL_SIZE);
+    }
+    g.poly(pts).fill({ color: 0xffe27a, alpha: 0.07 });
+    g.poly(pts).stroke({ width: 1, color: 0xffe27a, alpha: 0.22 });
   }
 }
 

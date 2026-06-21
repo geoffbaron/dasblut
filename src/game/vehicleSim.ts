@@ -27,6 +27,7 @@ export function updateVehicles(world: World): void {
     v.suppression = Math.max(0, v.suppression - 0.2 * dt);
     acquire(world, v);
     aimAndFire(world, v, dt);
+    selfPreserve(world, v, dt);
     move(world, v, dt);
     // Run the engine loop whenever the hull actually shifted this step.
     const moved = (v.x - v.px) ** 2 + (v.y - v.py) ** 2 > 1e-7;
@@ -201,6 +202,39 @@ function move(world: World, v: Vehicle, dt: number): void {
   const mvx = v.x - v.px;
   const mvy = v.y - v.py;
   if (mvx * mvx + mvy * mvy > 1e-6) v.facing = rotateToward(v.facing, Math.atan2(mvy, mvx), def.hullTurn * dt);
+}
+
+// Tank terror, from the tank's side: a buttoned-up crew with enemy infantry right on
+// the hull — and no friendly infantry screening it — reverses out rather than sit
+// there to be grenaded. Only kicks in for an idle/holding tank (it won't override a
+// move order already in progress), so a parked Sherman swarmed by Grenadiers — or a
+// lone Panzer among GIs — backs off to where its gun can do the work safely.
+const THREAT_RANGE = 5; // enemy infantry this close are a tank-killing threat
+const SCREEN_RANGE = 6; // friendly infantry this close count as a screen
+const BACKOFF_DIST = 9; // cells to reverse when pulling out
+
+function selfPreserve(world: World, v: Vehicle, dt: number): void {
+  v.backoffCD = Math.max(0, v.backoffCD - dt);
+  if (v.immobilized || v.path || v.backoffCD > 0) return;
+
+  let ex = 0, ey = 0, threat = 0, screen = 0;
+  for (const s of world.soldiers) {
+    if (s.status !== "active") continue;
+    const d = Math.hypot(s.x - v.x, s.y - v.y);
+    if (s.faction === v.faction) {
+      if (d <= SCREEN_RANGE) screen++;
+    } else if (d <= THREAT_RANGE) {
+      threat++;
+      ex += v.x - s.x; // accumulate a vector pointing away from the threat
+      ey += v.y - s.y;
+    }
+  }
+  if (threat === 0 || threat <= screen) return; // not swarmed, or our infantry have it
+
+  const len = Math.hypot(ex, ey) || 1;
+  const gx = Math.round(v.x + (ex / len) * BACKOFF_DIST);
+  const gy = Math.round(v.y + (ey / len) * BACKOFF_DIST);
+  v.backoffCD = world.orderVehicleMove(v.id, { cx: gx, cy: gy }, false) ? 1.5 : 0.6;
 }
 
 function emitSmoke(world: World, v: Vehicle, dt: number): void {

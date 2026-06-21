@@ -63,18 +63,19 @@ export function resolveFire(world: World, dt: number): void {
       const d = Math.hypot(s.fireCell.cx + 0.5 - s.x, s.fireCell.cy + 0.5 - s.y);
       if (d < (w.minRangeCells ?? 0) || d > w.rangeCells) continue;
       s.fireCD -= dt * rateMul;
-      if (s.fireCD <= 0 && s.ammo > 0) {
-        s.ammo--;
-        s.firedTimer = 0.5;
-        if (s.fireSmoke) {
-          // One smoke shell per order — fire it, then the screen stands on its own.
+      if (s.fireSmoke) {
+        if (s.fireCD <= 0 && s.smokeAmmo > 0) {
+          s.smokeAmmo--;
+          s.firedTimer = 0.5;
           smokeShot(world, s);
           s.fireSmoke = false;
           s.fireCell = null;
-        } else {
-          s.fireCD += 1 / w.rof;
-          mortarShot(world, s);
         }
+      } else if (s.fireCD <= 0 && s.ammo > 0) {
+        s.ammo--;
+        s.firedTimer = 0.5;
+        s.fireCD += 1 / w.rof;
+        mortarShot(world, s);
       }
       continue;
     }

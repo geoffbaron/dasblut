@@ -43,6 +43,7 @@ export interface Soldier {
   manualTargetId: number | null; // player-designated focus-fire target
   fireCell: Cell | null; // player-designated area (suppressing) fire point
   fireSmoke: boolean; // when firing on fireCell, lay smoke instead of HE (mortars)
+  smokeAmmo: number; // smoke rounds remaining (mortars only)
   ambushTimer: number; // >0 → opening-volley bonus active
   fireCD: number; // seconds until the next shot is ready
   firedTimer: number; // >0 shortly after firing (muzzle flash / easier to spot)
@@ -338,6 +339,7 @@ export class World {
         manualTargetId: null,
         fireCell: null,
         fireSmoke: false,
+        smokeAmmo: WEAPONS[weapon].indirect ? 2 : 0,
         ambushTimer: 0,
         fireCD: Math.random() * 0.5,
         firedTimer: 0,
@@ -480,7 +482,7 @@ export class World {
     for (const id of team.soldierIds) {
       const s = this.soldier(id)!;
       if (s.status !== "active") continue;
-      if (WEAPONS[s.weapon].indirect) {
+      if (WEAPONS[s.weapon].indirect && s.smokeAmmo > 0) {
         s.path = null;
         s.manualTargetId = null;
         s.fireCell = cell;

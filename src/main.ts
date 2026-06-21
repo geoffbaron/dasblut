@@ -255,9 +255,14 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
     const casualties = team.soldierIds.length - live.length;
     const tags = (["steady", "shaken", "pinned", "panicked", "routing"] as const)
       .filter((st) => counts[st]).map((st) => `<span class="tag s-${st}">${counts[st]} ${st}</span>`).join("");
+    let ammoLine = "";
+    if (team.kind === "mortar") {
+      const tube = live.find((s) => WEAPONS[s.weapon].indirect);
+      if (tube) ammoLine = ` · HE ${tube.ammo} · Smoke ${tube.smokeAmmo}`;
+    }
     statusEl.innerHTML =
       `<div class="name">${team.name} <span class="dim">· ${live[0]?.stance ?? "move"}</span></div>` +
-      `<div class="dim">${live.length} effective · ${casualties} down</div><div class="row">${tags}</div>`;
+      `<div class="dim">${live.length} effective · ${casualties} down${ammoLine}</div><div class="row">${tags}</div>`;
   };
 
   // --- orders bar ---
@@ -422,9 +427,14 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
       let live = 0, moraleSum = 0, ammo = 0, ammoMax = 0;
       for (const id of team.soldierIds) {
         const s = world.soldier(id); if (!s) continue;
-        ammoMax += WEAPONS[s.weapon].ammo;
+        if (team.kind === "mortar") {
+          if (WEAPONS[s.weapon].indirect) { ammoMax += WEAPONS[s.weapon].ammo + 2; if (s.status === "active") ammo += s.ammo + s.smokeAmmo; }
+        } else {
+          ammoMax += WEAPONS[s.weapon].ammo;
+          if (s.status === "active") ammo += s.ammo;
+        }
         if (s.status !== "active") continue;
-        live++; moraleSum += s.morale; ammo += s.ammo;
+        live++; moraleSum += s.morale;
       }
       const total = team.soldierIds.length || 1;
       const morale = live ? moraleSum / live : 0;

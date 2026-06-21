@@ -3,7 +3,7 @@ import { CELL_SIZE, OBJECTIVE_HOLD_TO_WIN } from "../game/constants.ts";
 import { VEHICLES } from "../game/vehicleDefs.ts";
 import { MoraleState, World } from "../game/world.ts";
 import { Terrain } from "../game/terrain.ts";
-import { paintBattlefield, RoofTile } from "./paint.ts";
+import { BuildingArt, paintBattlefield } from "./paint.ts";
 import { makeCasualtyCanvas, makeSoldierArt } from "./soldierArt.ts";
 import { makeVehicleArt, VehicleArt } from "./vehicleArt.ts";
 import { sound } from "./sound.ts";
@@ -19,6 +19,7 @@ export class Renderer {
   private overlay = new Graphics();
   private vehicleLayer = new Container();
   private shadowLayer = new Container();
+  private floorLayer = new Container();
   private bodyLayer = new Container();
   private roofLayer = new Container();
   private smokeScreen = new Graphics();
@@ -43,10 +44,12 @@ export class Renderer {
     { shadow: Sprite; hull: Sprite; turret: Sprite; hullTex: Texture; wreckTex: Texture; wrecked: boolean }
   >();
   private vehArtByClass = new Map<string, VehicleArt>();
-  // Per-building roofs that fade out as units move inside to reveal the floor plan.
-  private roofs: { sprite: Sprite; tile: RoofTile; alpha: number }[] = [];
-  // cell index → roof index (+1), so we can tell which building a unit is standing in.
-  private cellRoof!: Int16Array;
+  // Per-building floor + roof sprites. The roof fades out (and the floor fades in) as a
+  // visible unit moves inside, revealing the plan; both reverse when the building empties.
+  private buildings: { floor: Sprite; roof: Sprite; alpha: number }[] = [];
+  // cell index → building index (+1), built from each building's exact footprint cells so
+  // overlapping bounding boxes can't reveal the wrong roof.
+  private cellBuilding!: Int16Array;
 
   async init(mount: HTMLElement, world: World): Promise<void> {
     await this.app.init({
@@ -62,14 +65,14 @@ export class Renderer {
     const bg = new Sprite(Texture.from(painted.canvas));
     bg.scale.set(painted.scale);
 
-    this.buildRoofs(world, painted.roofs);
+    this.buildBuildings(world, painted.buildings);
 
     // Soften the blocky cell edges of the fog shroud so it reads as a smooth haze.
     this.shroud.filters = [new BlurFilter({ strength: 10, quality: 3 })];
 
-    // Roofs sit above the unit bodies so a covered building hides the men inside,
-    // then fade away (drawRoofs) once a friendly or spotted unit moves in.
-    this.camera.addChild(bg, this.damageLayer, this.shroud, this.overlay, this.vehicleLayer, this.shadowLayer, this.bodyLayer, this.roofLayer, this.smokeScreen, this.fx);
+    // floorLayer sits just above the ground (hidden until revealed); roofLayer sits above
+    // the unit bodies so an intact roof hides the men — and the waypoint overlay — inside.
+    this.camera.addChild(bg, this.damageLayer, this.shroud, this.floorLayer, this.overlay, this.vehicleLayer, this.shadowLayer, this.bodyLayer, this.roofLayer, this.smokeScreen, this.fx);
     // selBox lives outside the camera so it stays in screen space.
     this.app.stage.addChild(this.camera, this.selBox);
 
@@ -80,44 +83,45 @@ export class Renderer {
     this.centerOn(world);
   }
 
-  // Lay out one sprite per building roof and index which roof covers each cell, so
-  // the per-frame fade can tell when a unit has stepped inside a given building.
-  private buildRoofs(world: World, tiles: RoofTile[]): void {
-    this.cellRoof = new Int16Array(world.grid.width * world.grid.height); // 0 = no roof
-    this.roofs = tiles.map((tile, i) => {
-      const sprite = new Sprite(Texture.from(tile.canvas));
-      sprite.position.set(tile.x, tile.y);
-      sprite.scale.set(tile.scale);
-      this.roofLayer.addChild(sprite);
-      for (let cy = tile.cellBox.y0; cy <= tile.cellBox.y1; cy++) {
-        for (let cx = tile.cellBox.x0; cx <= tile.cellBox.x1; cx++) {
-          if (world.grid.inBounds(cx, cy)) this.cellRoof[world.grid.idx(cx, cy)] = i + 1;
-        }
-      }
-      return { sprite, tile, alpha: 1 };
+  // Lay out a floor + roof sprite per building and index which building owns each cell
+  // (from its exact footprint mask), so the per-frame fade reveals exactly the building
+  // a unit has actually stepped into — no bounding-box overlap mix-ups.
+  private buildBuildings(world: World, arts: BuildingArt[]): void {
+    this.cellBuilding = new Int16Array(world.grid.width * world.grid.height); // 0 = none
+    this.buildings = arts.map((art, i) => {
+      const floor = new Sprite(Texture.from(art.floor.canvas));
+      floor.position.set(art.floor.x, art.floor.y);
+      floor.scale.set(art.floor.scale);
+      floor.alpha = 0;
+      this.floorLayer.addChild(floor);
+      const roof = new Sprite(Texture.from(art.roof.canvas));
+      roof.position.set(art.roof.x, art.roof.y);
+      roof.scale.set(art.roof.scale);
+      this.roofLayer.addChild(roof);
+      for (const idx of art.cells) this.cellBuilding[idx] = i + 1;
+      return { floor, roof, alpha: 1 }; // alpha = roof opacity (1 = closed)
     });
   }
 
-  // Fade a building's roof away while a visible unit occupies it (revealing the floor
-  // plan), and back in once everyone leaves. Smoothed so it eases rather than snaps.
-  private drawRoofs(world: World): void {
-    if (this.roofs.length === 0) return;
-    const occupied = new Uint8Array(this.roofs.length);
-    const mark = (cx: number, cy: number) => {
-      if (!world.grid.inBounds(cx, cy)) return;
-      const r = this.cellRoof[world.grid.idx(cx, cy)];
-      if (r > 0) occupied[r - 1] = 1;
-    };
+  // Fade a building's roof away (and its floor plan in) while a visible unit occupies it,
+  // and reverse once it empties. Smoothed so it eases rather than snaps.
+  private drawBuildings(world: World): void {
+    if (this.buildings.length === 0) return;
+    const occupied = new Uint8Array(this.buildings.length);
     for (const s of world.soldiers) {
       if (s.status === "dead") continue;
       if (!(this.revealAll || s.faction === "us" || s.seen)) continue;
-      mark(Math.floor(s.x), Math.floor(s.y));
+      const cx = Math.floor(s.x), cy = Math.floor(s.y);
+      if (!world.grid.inBounds(cx, cy)) continue;
+      const b = this.cellBuilding[world.grid.idx(cx, cy)];
+      if (b > 0) occupied[b - 1] = 1;
     }
-    for (let i = 0; i < this.roofs.length; i++) {
-      const r = this.roofs[i];
-      const target = occupied[i] ? 0.16 : 1;
-      r.alpha += (target - r.alpha) * 0.12;
-      r.sprite.alpha = r.alpha;
+    for (let i = 0; i < this.buildings.length; i++) {
+      const b = this.buildings[i];
+      const target = occupied[i] ? 0 : 1;
+      b.alpha += (target - b.alpha) * 0.12;
+      b.roof.alpha = b.alpha;
+      b.floor.alpha = 1 - b.alpha;
     }
   }
 
@@ -296,7 +300,7 @@ export class Renderer {
     this.drawOverlay(world);
     this.drawVehicles(world, alpha);
     this.drawSoldiers(world, alpha);
-    this.drawRoofs(world);
+    this.drawBuildings(world);
     this.drawSmoke(world);
     this.drawEffects(world);
   }

@@ -1,6 +1,7 @@
 import { BATTLEFIELD_H_M, BATTLEFIELD_W_M, METERS_PER_CELL, OBJECTIVE_RADIUS } from "./constants.ts";
 import { GameMap, MapFeatures, Objective, Pt, Spawns, SquadSpawn, VehicleSpawn } from "./gamemap.ts";
 import { Grid } from "./grid.ts";
+import { partitionInterior } from "./interiors.ts";
 import { isPassable, Terrain, vehiclePassable } from "./terrain.ts";
 
 // Turns a real-world location into a playable battlefield: fetch OpenStreetMap
@@ -256,8 +257,25 @@ function rasterizeBuilding(grid: Grid, poly: Pt[], features: MapFeatures): void 
     if (((cx * 7 + cy * 13) % 3) === 0) grid.set(cx, cy, Terrain.Window);
   }
 
+  // Interior partition walls (rooms) over the floor — bounded to the footprint so the
+  // straight splits stop at the irregular exterior walls.
+  let ix0 = Infinity, iy0 = Infinity, ix1 = -Infinity, iy1 = -Infinity;
+  for (const [cx, cy] of inside) {
+    if (cx < ix0) ix0 = cx; if (cx > ix1) ix1 = cx;
+    if (cy < iy0) iy0 = cy; if (cy > iy1) iy1 = cy;
+  }
+  if (ix1 - ix0 >= 5 || iy1 - iy0 >= 5) {
+    partitionInterior(grid, ix0, iy0, ix1, iy1, (ix0 * 73856093) ^ (iy0 * 19349663));
+  }
+
+  // Record the exact footprint (floor + walls + windows) for the renderer's masked
+  // floor/roof tiles and the reveal-on-entry test.
+  const cellSet = new Set<number>();
+  for (const [cx, cy] of inside) cellSet.add(grid.idx(cx, cy));
+  for (const [cx, cy] of walls) cellSet.add(grid.idx(cx, cy));
+
   const lvl = 1 + (inside.length > 30 ? 1 : 0);
-  features.buildings.push({ poly, levels: lvl });
+  features.buildings.push({ poly, levels: lvl, cells: [...cellSet] });
 }
 
 function rasterizeHedge(grid: Grid, line: Pt[], features: MapFeatures): void {

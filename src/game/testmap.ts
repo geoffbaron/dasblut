@@ -1,7 +1,7 @@
 import { OBJECTIVE_RADIUS } from "./constants.ts";
 import { GameMap, MapFeatures, rectPoly, Spawns } from "./gamemap.ts";
 import { Grid } from "./grid.ts";
-import { carveBuilding } from "./interiors.ts";
+import { carveBuilding, rectCells } from "./interiors.ts";
 import { Terrain } from "./terrain.ts";
 
 // A hand-authored Normandy-ish hamlet: a road through fields, a cluster of
@@ -15,7 +15,7 @@ export function buildTestMap(): GameMap {
     g.building(x0, y0, x1, y1); // walls for collision
     g.fillRect(x0 + 1, y0 + 1, x1 - 1, y1 - 1, Terrain.Floor); // cover-bearing interior
     carveBuilding(g, x0, y0, x1, y1); // rooms, doorways, windows
-    features.buildings.push({ poly: rectPoly(x0, y0, x1, y1), levels });
+    features.buildings.push({ poly: rectPoly(x0, y0, x1, y1), levels, cells: rectCells(g, x0, y0, x1, y1) });
   };
   const addHedge = (x0: number, y0: number, x1: number, y1: number) => {
     if (y0 === y1) g.hLine(Math.min(x0, x1), Math.max(x0, x1), y0, Terrain.Hedge);

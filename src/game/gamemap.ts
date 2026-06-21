@@ -13,6 +13,10 @@ export interface Pt {
 export interface Building {
   poly: Pt[]; // footprint corners in cell coordinates
   levels: number;
+  // Grid cell indices this building occupies (floor + walls + windows). The renderer
+  // paints the floor plan and the roof from this exact mask so the two always line up
+  // and the reveal-on-entry can tell precisely which building a unit is standing in.
+  cells: number[];
 }
 
 export interface HedgeSeg {

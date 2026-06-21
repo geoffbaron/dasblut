@@ -1,4 +1,4 @@
-import { Application, BlurFilter, Container, Graphics, Sprite, Texture } from "pixi.js";
+import { Application, Container, Graphics, Sprite, Texture } from "pixi.js";
 import { CELL_SIZE, OBJECTIVE_HOLD_TO_WIN } from "../game/constants.ts";
 import { VEHICLES } from "../game/vehicleDefs.ts";
 import { MoraleState, World } from "../game/world.ts";
@@ -15,7 +15,13 @@ export class Renderer {
   app = new Application();
   private camera = new Container();
   private damageLayer = new Graphics();
-  private shroud = new Graphics();
+  // Fog rendered as a 1-texel-per-cell sprite upscaled with linear smoothing — soft haze
+  // at any map size, unlike a blur-filtered Graphics which overflows the GPU's max
+  // texture size on large OSM towns and silently renders nothing.
+  private shroud = new Sprite();
+  private shroudCanvas!: HTMLCanvasElement;
+  private shroudCtx!: CanvasRenderingContext2D;
+  private shroudTex!: Texture;
   private overlay = new Graphics();
   private vehicleLayer = new Container();
   private shadowLayer = new Container();
@@ -67,12 +73,23 @@ export class Renderer {
 
     this.buildBuildings(world, painted.buildings);
 
-    // Soften the blocky cell edges of the fog shroud so it reads as a smooth haze.
-    this.shroud.filters = [new BlurFilter({ strength: 10, quality: 3 })];
+    // Fog haze: a tiny canvas (one texel per cell) drawn into by drawShroud, scaled up to
+    // map size with linear filtering so the cell edges blend into a soft haze.
+    this.shroudCanvas = document.createElement("canvas");
+    this.shroudCanvas.width = world.grid.width;
+    this.shroudCanvas.height = world.grid.height;
+    this.shroudCtx = this.shroudCanvas.getContext("2d")!;
+    this.shroudTex = Texture.from(this.shroudCanvas);
+    this.shroudTex.source.scaleMode = "linear";
+    this.shroud.texture = this.shroudTex;
+    this.shroud.scale.set(CELL_SIZE);
 
     // floorLayer sits just above the ground (hidden until revealed); roofLayer sits above
-    // the unit bodies so an intact roof hides the men — and the waypoint overlay — inside.
-    this.camera.addChild(bg, this.damageLayer, this.shroud, this.floorLayer, this.overlay, this.vehicleLayer, this.shadowLayer, this.bodyLayer, this.roofLayer, this.smokeScreen, this.fx);
+    // the unit bodies so an intact roof hides the men inside. The fog shroud, building
+    // damage, and the order overlay (waypoints, objectives, fire lines) sit ABOVE the
+    // roofs so fog still hides un-scouted buildings and your planned routes stay visible
+    // where they cross rooftops.
+    this.camera.addChild(bg, this.floorLayer, this.vehicleLayer, this.shadowLayer, this.bodyLayer, this.roofLayer, this.damageLayer, this.shroud, this.overlay, this.smokeScreen, this.fx);
     // selBox lives outside the camera so it stays in screen space.
     this.app.stage.addChild(this.camera, this.selBox);
 
@@ -389,24 +406,24 @@ export class Renderer {
   // Rebuild the fog shroud only when visibility actually changed.
   private drawShroud(world: World): void {
     // Client (German/spectator) views have no fog — the host owns visibility.
-    if (this.revealAll) { this.shroud.clear(); return; }
+    if (this.revealAll) { this.shroud.visible = false; return; }
+    this.shroud.visible = true;
     if (world.visVersion === this.shroudVersion) return;
     this.shroudVersion = world.visVersion;
-    const g = this.shroud;
-    g.clear();
     const grid = world.grid;
-    for (let cy = 0; cy < grid.height; cy++) {
-      let run = -1;
-      for (let cx = 0; cx <= grid.width; cx++) {
-        const hidden = cx < grid.width && world.visGrid[grid.idx(cx, cy)] === 0;
-        if (hidden && run < 0) run = cx;
-        else if (!hidden && run >= 0) {
-          g.rect(run * CELL_SIZE, cy * CELL_SIZE, (cx - run) * CELL_SIZE, CELL_SIZE);
-          run = -1;
-        }
+    const n = grid.width * grid.height;
+    const img = this.shroudCtx.createImageData(grid.width, grid.height);
+    const d = img.data;
+    for (let i = 0; i < n; i++) {
+      const o = i * 4;
+      if (world.visGrid[i] === 0) {
+        d[o] = 10; d[o + 1] = 10; d[o + 2] = 16; d[o + 3] = 130; // 0x0a0a10 @ ~0.5
+      } else {
+        d[o + 3] = 0; // seen — fully clear
       }
     }
-    g.fill({ color: 0x0a0a10, alpha: 0.5 });
+    this.shroudCtx.putImageData(img, 0, 0);
+    this.shroudTex.source.update();
   }
 
   private drawOverlay(world: World): void {

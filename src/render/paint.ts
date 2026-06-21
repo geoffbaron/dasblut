@@ -454,7 +454,7 @@ function paintBuilding(grid: Grid, b: Building): BuildingArt {
   }
   const seed = ((minCx * 92837) ^ (minCy * 689287)) >>> 0;
   const floor = paintFloorTile(grid, b.cells, minCx, minCy, maxCx, maxCy);
-  const roof = paintRoofTile(grid, b, minCx, minCy, maxCx, maxCy, mulberry32(seed));
+  const roof = paintRoofTile(b, minCx, minCy, maxCx, maxCy, mulberry32(seed));
   return { floor, roof, cells: b.cells };
 }
 
@@ -487,7 +487,7 @@ function paintFloorTile(grid: Grid, cells: number[], minCx: number, minCy: numbe
   return { canvas, x: x0, y: y0, scale: 1 / SS };
 }
 
-function paintRoofTile(grid: Grid, b: Building, minCx: number, minCy: number, maxCx: number, maxCy: number, rng: () => number): Tile {
+function paintRoofTile(b: Building, minCx: number, minCy: number, maxCx: number, maxCy: number, rng: () => number): Tile {
   const SS = 2;
   const M = CELL_SIZE; // margin for eave / chimney overhang
   const x0 = minCx * CELL_SIZE - M, y0 = minCy * CELL_SIZE - M;
@@ -503,7 +503,7 @@ function paintRoofTile(grid: Grid, b: Building, minCx: number, minCy: number, ma
   // Only small houses burn out, and rarely — a town shouldn't be a field of char.
   const burned = rng() < 0.1 && b.cells.length < 40;
   if (isRect) drawPitchedRoof(ctx, minCx, minCy, maxCx + 1, maxCy + 1, rng, burned);
-  else drawFlatRoof(ctx, grid, b, minCx, minCy, maxCx, maxCy, rng, burned);
+  else drawFlatRoof(ctx, b, rng, burned);
   return { canvas, x: x0, y: y0, scale: 1 / SS };
 }
 
@@ -608,14 +608,22 @@ function isExteriorWall(grid: Grid, cx: number, cy: number): boolean {
   return false;
 }
 
-// Irregular (OSM) footprints get a low-pitch hip roof, clipped to the exact cell mask
-// so the roof edge matches the floor below. A subtle directional gradient + tile rows
-// + ridge highlight give it the same 3D read as the pitched houses.
-function drawFlatRoof(ctx: CanvasRenderingContext2D, grid: Grid, b: Building, minCx: number, minCy: number, maxCx: number, maxCy: number, rng: () => number, burned: boolean): void {
-  const W = grid.width;
+// Irregular (OSM) footprints get a low-pitch hip roof, clipped to the smooth building
+// polygon (not the per-cell mask) so the roof edge reads clean instead of stair-stepped.
+// The floor plan below is a separate sprite that only shows once the roof has faded, so
+// the slight poly/cell mismatch at the rim is never visible.
+function drawFlatRoof(ctx: CanvasRenderingContext2D, b: Building, rng: () => number, burned: boolean): void {
+  const pts = b.poly.map((p) => [p.x * CELL_SIZE, p.y * CELL_SIZE] as [number, number]);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [x, y] of pts) {
+    if (x < x0) x0 = x; if (x > x1) x1 = x;
+    if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  const bb = { x0, y0, x1, y1 };
   const mask = new Path2D();
-  for (const idx of b.cells) mask.rect((idx % W) * CELL_SIZE, ((idx / W) | 0) * CELL_SIZE, CELL_SIZE, CELL_SIZE);
-  const bb = { x0: minCx * CELL_SIZE, y0: minCy * CELL_SIZE, x1: (maxCx + 1) * CELL_SIZE, y1: (maxCy + 1) * CELL_SIZE };
+  mask.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) mask.lineTo(pts[i][0], pts[i][1]);
+  mask.closePath();
   const pal = pickRoofPalette(rng, burned);
 
   ctx.save();

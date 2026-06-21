@@ -550,16 +550,36 @@ export class World {
     v.manualInf = null;
     v.fireCell = null;
     const opts = this.vehPathOpts();
-    const goal = this.nearestVehicleCell(target.cx, target.cy);
     const start: Cell = { cx: Math.floor(v.x), cy: Math.floor(v.y) };
-    const raw = findPath(this.grid, start, goal, opts);
-    if (raw && raw.length > 1) {
-      v.path = smoothPath(this.grid, raw, opts);
-      v.pathIndex = 1;
-      return true;
+    // A click can land on a building/woods/water. Try the nearest drivable cells in
+    // expanding rings until one actually routes — so the tank pulls up next to the
+    // target instead of silently refusing the order and looking "stuck".
+    for (const goal of this.vehicleGoalCandidates(target.cx, target.cy)) {
+      const raw = findPath(this.grid, start, goal, opts);
+      if (raw && raw.length > 1) {
+        v.path = smoothPath(this.grid, raw, opts);
+        v.pathIndex = 1;
+        return true;
+      }
     }
     v.path = null;
     return false;
+  }
+
+  // Drivable goal cells near a click, nearest first, so orderVehicleMove can retry until
+  // it finds one the tank can actually reach.
+  private vehicleGoalCandidates(cx: number, cy: number): Cell[] {
+    const out: Cell[] = [];
+    const R = 18;
+    const consider = (x: number, y: number) => {
+      if (this.grid.inBounds(x, y) && vehiclePassable(this.grid.get(x, y))) out.push({ cx: x, cy: y });
+    };
+    consider(cx, cy);
+    for (let r = 1; r <= R && out.length < 24; r++) {
+      for (let dx = -r; dx <= r; dx++) { consider(cx + dx, cy - r); consider(cx + dx, cy + r); }
+      for (let dy = -r + 1; dy <= r - 1; dy++) { consider(cx - r, cy + dy); consider(cx + r, cy + dy); }
+    }
+    return out;
   }
 
   orderVehiclePosture(vid: number): void {
@@ -600,20 +620,6 @@ export class World {
     v.fireCell = { cx: Math.floor(x), cy: Math.floor(y) };
     v.manualVeh = null;
     v.manualInf = null;
-  }
-
-  private nearestVehicleCell(cx: number, cy: number): Cell {
-    if (this.grid.inBounds(cx, cy) && vehiclePassable(this.grid.get(cx, cy))) return { cx, cy };
-    for (let r = 1; r <= 5; r++) {
-      for (let dy = -r; dy <= r; dy++) {
-        for (let dx = -r; dx <= r; dx++) {
-          const nx = cx + dx;
-          const ny = cy + dy;
-          if (this.grid.inBounds(nx, ny) && vehiclePassable(this.grid.get(nx, ny))) return { cx: nx, cy: ny };
-        }
-      }
-    }
-    return { cx, cy };
   }
 
   nearestSpottedEnemy(s: Soldier): Soldier | null {

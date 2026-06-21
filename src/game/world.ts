@@ -76,6 +76,17 @@ export type EffectKind = "tracer" | "flash" | "hit" | "ap" | "spark" | "smoke" |
 // A burning smoke canister that emits into the smoke grid over its lifetime.
 export interface SmokeSource { cx: number; cy: number; t: number; }
 
+// A grenade in flight: thrown toward a (scattered) landing point, it arcs for `fuse`
+// seconds and only then detonates — so the burst is synced to where and when it lands,
+// not to the throw. An anti-tank bundle carries the id of the tank it's meant for.
+export interface PendingGrenade {
+  x: number;
+  y: number;
+  fuse: number;
+  faction: Faction;
+  tankId: number | null;
+}
+
 // Live capture-and-hold state for one objective.
 export interface ObjState {
   cx: number;
@@ -171,6 +182,8 @@ export class World {
   teams: Team[] = [];
   vehicles: Vehicle[] = [];
   effects: Effect[] = [];
+  // Grenades mid-flight, detonated when their fuse runs out (see updateGrenades).
+  pendingGrenades: PendingGrenade[] = [];
   time = 0;
   phase: "deploy" | "battle" = "deploy";
   // Deployment zones (in grid cells): US south band, Axis north band.

@@ -5,7 +5,7 @@ import { hasLOS } from "./los.ts";
 import { isHardSurface, TERRAIN } from "./terrain.ts";
 import { knockOut, resolveArmorHit } from "./vehicleCombat.ts";
 import { WEAPONS } from "./weapons.ts";
-import { Soldier, Vehicle, World } from "./world.ts";
+import { Faction, PendingGrenade, Soldier, Vehicle, World } from "./world.ts";
 import { sound } from "../render/sound.ts";
 import type { SfxId } from "../render/sound.ts";
 
@@ -252,14 +252,50 @@ function tryThrowGrenade(world: World, s: Soldier): void {
 }
 
 function throwGrenade(world: World, s: Soldier, tx: number, ty: number): void {
-  sound.play("explosion", tx, ty);
-  world.effects.push({ kind: "lob", x0: s.x, y0: s.y, x1: tx, y1: ty, ttl: 0.5, maxTtl: 0.5 });
-  world.effects.push({ kind: "hit", x0: tx, y0: ty, x1: tx, y1: ty, ttl: 0.3 });
-  damageBuildings(world, Math.floor(tx), Math.floor(ty), GRENADE_RADIUS, 0.7);
+  // A grenade thrown by hand is imprecise: it scatters more the farther it's lobbed
+  // and the greener the thrower, so a long toss can land wide and waste itself. The
+  // aimpoint is offset randomly within a disc that grows with range.
+  const dist = Math.hypot(tx - s.x, ty - s.y);
+  const scatter = (0.35 + dist * 0.24) * (1.3 - 0.5 * s.training);
+  const a = Math.random() * Math.PI * 2;
+  const r = scatter * Math.sqrt(Math.random()); // uniform over the scatter disc
+  scheduleGrenade(world, s.x, s.y, tx + Math.cos(a) * r, ty + Math.sin(a) * r, s.faction, null, dist);
+}
 
+// Loft a grenade from (sx,sy) to its landing point: show it arc, and queue the
+// detonation for the instant it lands. Flight time grows with range so a long throw
+// visibly hangs in the air before it bursts.
+function scheduleGrenade(world: World, sx: number, sy: number, lx: number, ly: number, faction: Faction, tankId: number | null, dist: number): void {
+  const flight = 0.4 + dist * 0.08;
+  world.effects.push({ kind: "lob", x0: sx, y0: sy, x1: lx, y1: ly, ttl: flight, maxTtl: flight });
+  world.pendingGrenades.push({ x: lx, y: ly, fuse: flight, faction, tankId });
+}
+
+// Advance every grenade in flight and detonate each as its fuse expires. Called once
+// per sim step so the burst lands exactly where (and when) the thrown grenade does.
+export function updateGrenades(world: World, dt: number): void {
+  const g = world.pendingGrenades;
+  let w = 0;
+  for (let i = 0; i < g.length; i++) {
+    g[i].fuse -= dt;
+    if (g[i].fuse > 0) { g[w++] = g[i]; continue; }
+    detonateGrenade(world, g[i]);
+  }
+  g.length = w;
+}
+
+function detonateGrenade(world: World, g: PendingGrenade): void {
+  grenadeBurst(world, g.x, g.y);
+  // Anti-tank bundle: resolve against the tank it was placed on, if it's still alive.
+  if (g.tankId != null) {
+    const v = world.vehicle(g.tankId);
+    if (v && v.status !== "ko") resolveTankGrenade(world, v);
+    return;
+  }
+  damageBuildings(world, Math.floor(g.x), Math.floor(g.y), GRENADE_RADIUS, 0.7);
   for (const e of world.soldiers) {
-    if (e.faction === s.faction || e.status !== "active") continue;
-    const d = Math.hypot(e.x - tx, e.y - ty);
+    if (e.faction === g.faction || e.status !== "active") continue;
+    const d = Math.hypot(e.x - g.x, e.y - g.y);
     if (d > GRENADE_RADIUS) continue;
     const falloff = 1 - d / GRENADE_RADIUS;
     // Frag ignores small-arms cover — the whole point of grenading a holed-up man.
@@ -270,6 +306,17 @@ function throwGrenade(world: World, s: Soldier, tx: number, ty: number): void {
       addSuppression(e, 0.5 * falloff);
     }
   }
+}
+
+// A hand-grenade burst: a hard flash, a fireball, an expanding shock puff and a gout
+// of smoke — an unmistakable crump right where the grenade comes down.
+function grenadeBurst(world: World, x: number, y: number): void {
+  sound.play("explosion", x, y);
+  world.effects.push({ kind: "flash", x0: x, y0: y, x1: x, y1: y, ttl: 0.12 });
+  world.effects.push({ kind: "fire", x0: x, y0: y, x1: x, y1: y, ttl: 0.4 });
+  world.effects.push({ kind: "fire", x0: x + (Math.random() - 0.5) * 0.5, y0: y + (Math.random() - 0.5) * 0.5, x1: x, y1: y, ttl: 0.26 });
+  world.effects.push({ kind: "hit", x0: x, y0: y, x1: x, y1: y, ttl: 0.32 });
+  world.effects.push({ kind: "smoke", x0: x, y0: y, x1: 0, y1: 0, ttl: 1.1, maxTtl: 1.1 });
 }
 
 // Nearest live enemy tank within `range` cells and in line of sight — the candidate
@@ -288,15 +335,17 @@ function nearestEnemyVehicle(world: World, s: Soldier, range: number): Vehicle |
   return best;
 }
 
-// A grenade bundle on a tank: it lands on the deck or under the tracks, so most of
+// A grenade bundle aimed at a tank: lofted onto the deck/tracks at point-blank, so it
+// barely scatters. It arcs across and detonates on the hull (see resolveTankGrenade).
+function grenadeTank(world: World, s: Soldier, v: Vehicle): void {
+  const dist = Math.hypot(v.x - s.x, v.y - s.y);
+  scheduleGrenade(world, s.x, s.y, v.x, v.y, s.faction, v.id, dist);
+}
+
+// The bundle going off on a tank: it lands on the deck or under the tracks, so most of
 // the time it breaks a track (immobilize) or shakes the crew; now and then it cooks
 // off something vital and knocks the tank out. Deliberately far weaker than rocket AT.
-function grenadeTank(world: World, s: Soldier, v: Vehicle): void {
-  sound.play("explosion", v.x, v.y);
-  world.effects.push({ kind: "lob", x0: s.x, y0: s.y, x1: v.x, y1: v.y, ttl: 0.5, maxTtl: 0.5 });
-  world.effects.push({ kind: "fire", x0: v.x, y0: v.y, x1: v.x, y1: v.y, ttl: 0.35 });
-  world.effects.push({ kind: "hit", x0: v.x, y0: v.y, x1: v.x, y1: v.y, ttl: 0.3 });
-
+function resolveTankGrenade(world: World, v: Vehicle): void {
   const r = Math.random();
   if (r < 0.08) {
     knockOut(world, v);

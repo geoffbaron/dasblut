@@ -1,6 +1,6 @@
 import { acquireTargets, ensureFleeGoal } from "./ai.ts";
 import { commandAxis } from "./axisAI.ts";
-import { resolveFire } from "./combat.ts";
+import { resolveFire, updateGrenades } from "./combat.ts";
 import {
   BASE_MOVE_SPEED,
   BATTLE_TIME_S,
@@ -57,6 +57,7 @@ export function step(world: World): void {
   if (!world.axisHuman) commandAxis(world, SIM_DT); // a human German commander replaces the AI
   acquireTargets(world);
   resolveFire(world, SIM_DT);
+  updateGrenades(world, SIM_DT); // detonate grenades whose fuse has run out
   updateVehicles(world);
   updateMorale(world, SIM_DT);
   moveSoldiers(world);

@@ -464,7 +464,10 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
   const inputSide: Faction = side ?? "axis";
   const onSel = () => {
     armed = "move";
-    if (canCommand) sound.playUI("ui_select");
+    // Only click when the user actually selected a unit — not when deselecting
+    // (right-click) or dragging an empty selection box.
+    const hasSel = world.selectedTeamId != null || world.selectedVehicleId != null || world.selectedTeamIds.size > 0;
+    if (canCommand && hasSel) sound.playUI("ui_select");
     updateOrdersBar(); refreshStatus(); refreshRoster();
   };
   const onBox = (sx0: number, sy0: number, sx1: number, sy1: number) => {

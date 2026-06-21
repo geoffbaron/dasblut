@@ -470,19 +470,31 @@ function paintFloorTile(grid: Grid, cells: number[], minCx: number, minCy: numbe
   ctx.scale(SS, SS);
   ctx.translate(-x0, -y0);
   const fRng = mulberry32((((minCx + 7) * 40503) ^ ((minCy + 13) * 12289)) >>> 0);
-  // Floorboards first, then walls over them, then windows, then a little furniture.
+  // 1. Floorboards under every interior cell — including under interior partition walls,
+  //    so rooms read as open floor split by thin dividers rather than a maze of blocks.
   for (const idx of cells) {
-    const t = grid.cells[idx];
-    if (t === Terrain.Floor || t === Terrain.Window) drawFloorCell(ctx, grid, idx % W, (idx / W) | 0);
+    const t = grid.cells[idx], cx = idx % W, cy = (idx / W) | 0;
+    if (t === Terrain.Floor || t === Terrain.Window || (t === Terrain.Wall && !isExteriorWall(grid, cx, cy))) {
+      drawFloorCell(ctx, grid, cx, cy);
+    }
   }
+  // 2. Solid stone only for the outer perimeter walls.
   for (const idx of cells) {
-    if (grid.cells[idx] === Terrain.Wall) drawWallCell(ctx, grid, idx % W, (idx / W) | 0);
+    const cx = idx % W, cy = (idx / W) | 0;
+    if (grid.cells[idx] === Terrain.Wall && isExteriorWall(grid, cx, cy)) drawWallCell(ctx, cx, cy);
   }
+  // 3. Interior walls as thin partition bars over the floor.
+  for (const idx of cells) {
+    const cx = idx % W, cy = (idx / W) | 0;
+    if (grid.cells[idx] === Terrain.Wall && !isExteriorWall(grid, cx, cy)) drawInteriorWall(ctx, grid, cx, cy);
+  }
+  // 4. Windows punched through the perimeter.
   for (const idx of cells) {
     if (grid.cells[idx] === Terrain.Window) drawWindowCell(ctx, idx % W, (idx / W) | 0);
   }
+  // 5. A sparse scatter of furniture.
   for (const idx of cells) {
-    if (grid.cells[idx] === Terrain.Floor && fRng() < 0.08) drawFurniture(ctx, idx % W, (idx / W) | 0, fRng);
+    if (grid.cells[idx] === Terrain.Floor && fRng() < 0.05) drawFurniture(ctx, idx % W, (idx / W) | 0, fRng);
   }
   return { canvas, x: x0, y: y0, scale: 1 / SS };
 }
@@ -547,12 +559,10 @@ function drawFloorCell(ctx: CanvasRenderingContext2D, grid: Grid, cx: number, cy
   if (grid.get(cx, cy + 1) === Terrain.Wall) ctx.fillRect(x, y + CELL_SIZE - 2, CELL_SIZE, 2);
 }
 
-// Wall cells get a beveled stone block; perimeter walls are thicker/darker than
-// interior partitions so rooms read clearly from above.
-function drawWallCell(ctx: CanvasRenderingContext2D, grid: Grid, cx: number, cy: number): void {
+// Perimeter wall: a beveled stone block forming the building's solid outer shell.
+function drawWallCell(ctx: CanvasRenderingContext2D, cx: number, cy: number): void {
   const x = cx * CELL_SIZE, y = cy * CELL_SIZE;
-  const ext = isExteriorWall(grid, cx, cy);
-  ctx.fillStyle = ext ? "#6b6157" : "#7b7165";
+  ctx.fillStyle = "#6b6157";
   ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
   // Bevel: top-left catches the light, bottom-right falls into shadow.
   ctx.fillStyle = "rgba(255,250,240,0.12)";
@@ -561,6 +571,29 @@ function drawWallCell(ctx: CanvasRenderingContext2D, grid: Grid, cx: number, cy:
   ctx.fillStyle = "rgba(0,0,0,0.3)";
   ctx.fillRect(x, y + CELL_SIZE - 1.3, CELL_SIZE, 1.3);
   ctx.fillRect(x + CELL_SIZE - 1.3, y, 1.3, CELL_SIZE);
+}
+
+// Interior partition: a thin plaster bar drawn along the wall's run (over the floor that
+// was already painted under it), so rooms read open instead of as solid blocks. Bars in
+// adjacent cells share the same offset, so a partition reads as one continuous wall.
+function drawInteriorWall(ctx: CanvasRenderingContext2D, grid: Grid, cx: number, cy: number): void {
+  const x = cx * CELL_SIZE, y = cy * CELL_SIZE;
+  const isW = (a: number, b: number) => grid.get(a, b) === Terrain.Wall;
+  const horiz = isW(cx - 1, cy) || isW(cx + 1, cy);
+  const vert = isW(cx, cy - 1) || isW(cx, cy + 1);
+  const th = CELL_SIZE * 0.32;
+  const off = (CELL_SIZE - th) / 2;
+  const bar = (rx: number, ry: number, rw: number, rh: number) => {
+    ctx.fillStyle = "rgba(0,0,0,0.22)";
+    ctx.fillRect(rx + 1, ry + 1, rw, rh); // soft drop shadow for depth
+    ctx.fillStyle = "#9b8f7c"; // plaster
+    ctx.fillRect(rx, ry, rw, rh);
+    ctx.fillStyle = "rgba(255,250,240,0.14)"; // top-edge highlight
+    ctx.fillRect(rx, ry, rw, 1);
+  };
+  if (horiz) bar(x, y + off, CELL_SIZE, th);
+  if (vert) bar(x + off, y, th, CELL_SIZE);
+  if (!horiz && !vert) bar(x + off, y + off, th, th); // isolated stub
 }
 
 // A window: a small recessed pane set into the wall, not a full-cell glass block.
@@ -582,19 +615,50 @@ function drawWindowCell(ctx: CanvasRenderingContext2D, cx: number, cy: number): 
   ctx.stroke();
 }
 
-// One piece of furniture in a room cell — a table, bed, or crate.
+// One piece of furniture in a room cell — a table, bed, or crate, drawn so it reads as
+// an object rather than a featureless block.
 function drawFurniture(ctx: CanvasRenderingContext2D, cx: number, cy: number, rng: () => number): void {
   const x = cx * CELL_SIZE, y = cy * CELL_SIZE;
-  const w = CELL_SIZE * (0.4 + rng() * 0.4);
-  const h = CELL_SIZE * (0.4 + rng() * 0.4);
-  const ox = x + (CELL_SIZE - w) / 2, oy = y + (CELL_SIZE - h) / 2;
-  ctx.fillStyle = "rgba(10,8,5,0.3)"; // shadow
-  ctx.fillRect(ox + 1.5, oy + 1.5, w, h);
-  ctx.fillStyle = `hsl(28, 22%, ${22 + rng() * 14}%)`; // dark wood
-  ctx.fillRect(ox, oy, w, h);
-  ctx.strokeStyle = "rgba(0,0,0,0.4)";
-  ctx.lineWidth = 0.6;
-  ctx.strokeRect(ox, oy, w, h);
+  const kind = rng();
+  if (kind < 0.4) {
+    // Table: a wood top with a darker inset, a slight gap from the cell edge.
+    const w = CELL_SIZE * 0.62, h = CELL_SIZE * 0.46;
+    const ox = x + (CELL_SIZE - w) / 2, oy = y + (CELL_SIZE - h) / 2;
+    shadowRect(ctx, ox, oy, w, h);
+    ctx.fillStyle = "#6e4f31";
+    ctx.fillRect(ox, oy, w, h);
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    ctx.fillRect(ox + 1.5, oy + 1.5, w - 3, h - 3);
+  } else if (kind < 0.72) {
+    // Bed: a frame with a pale pillow at one end.
+    const w = CELL_SIZE * 0.5, h = CELL_SIZE * 0.74;
+    const ox = x + (CELL_SIZE - w) / 2, oy = y + (CELL_SIZE - h) / 2;
+    shadowRect(ctx, ox, oy, w, h);
+    ctx.fillStyle = "#7a5a3c"; // frame
+    ctx.fillRect(ox, oy, w, h);
+    ctx.fillStyle = "#9a8f7e"; // blanket
+    ctx.fillRect(ox + 1, oy + h * 0.28, w - 2, h * 0.7 - 1);
+    ctx.fillStyle = "#cfc6b6"; // pillow
+    ctx.fillRect(ox + 1.5, oy + 1.5, w - 3, h * 0.24);
+  } else {
+    // Crate: a small boxy chest with a plank line.
+    const s = CELL_SIZE * 0.42;
+    const ox = x + (CELL_SIZE - s) / 2, oy = y + (CELL_SIZE - s) / 2;
+    shadowRect(ctx, ox, oy, s, s);
+    ctx.fillStyle = "#5d4a32";
+    ctx.fillRect(ox, oy, s, s);
+    ctx.strokeStyle = "rgba(0,0,0,0.35)";
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(ox, oy + s / 2);
+    ctx.lineTo(ox + s, oy + s / 2);
+    ctx.stroke();
+  }
+}
+
+function shadowRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
+  ctx.fillStyle = "rgba(8,6,4,0.3)";
+  ctx.fillRect(x + 1.5, y + 1.5, w, h);
 }
 
 // A wall cell is "exterior" when an orthogonal neighbour is outside the building

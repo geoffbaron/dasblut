@@ -224,6 +224,7 @@ export class SoundManager {
 
   // Play a UI sound (not positional).
   playUI(id: SfxId) {
+    if (SFX_DEFS[id].vol <= 0) return; // vol 0 = intentionally silent (e.g. ui_order) — no synth fallback either
     const howl = this.pickHowl(id);
     if (howl) {
       const sid = howl.play();

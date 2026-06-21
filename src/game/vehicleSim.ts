@@ -25,6 +25,7 @@ export function updateVehicles(world: World): void {
     v.px = v.x;
     v.py = v.y;
     v.suppression = Math.max(0, v.suppression - 0.2 * dt);
+    woundSmoke(world, v, dt); // a hurt-but-running tank trails smoke so its state shows
     acquire(world, v);
     aimAndFire(world, v, dt);
     selfPreserve(world, v, dt);
@@ -242,6 +243,20 @@ function emitSmoke(world: World, v: Vehicle, dt: number): void {
   if (v.smokeCD <= 0) {
     v.smokeCD = 0.35;
     world.effects.push({ kind: "smoke", x0: v.x + (Math.random() - 0.5) * 0.5, y0: v.y, x1: 0, y1: 0, ttl: 2.2, maxTtl: 2.2 });
+  }
+}
+
+// A tank that's been hurt but is still fighting — a broken track or a lost crewman —
+// trails a thin wisp of smoke. It's a persistent, at-a-glance "this one is damaged" cue
+// so the player can see their AT fire is telling, short of a full brew-up.
+function woundSmoke(world: World, v: Vehicle, dt: number): void {
+  const def = VEHICLES[v.cls];
+  const hurt = v.immobilized || v.crew < def.crew;
+  if (!hurt) return;
+  v.smokeCD -= dt;
+  if (v.smokeCD <= 0) {
+    v.smokeCD = 0.9; // sparser/thinner than a wreck's billowing column
+    world.effects.push({ kind: "smoke", x0: v.x + (Math.random() - 0.5) * 0.4, y0: v.y, x1: 0, y1: 0, ttl: 1.4, maxTtl: 1.4 });
   }
 }
 

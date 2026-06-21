@@ -22,16 +22,30 @@ export function resolveArmorHit(
   const effPen = penetration * (1 - 0.3 * Math.min(1, dist / range));
 
   if (effPen * (0.8 + Math.random() * 0.4) < armor) {
-    // Bounce — a spark and a rattled crew, no real harm.
+    // Bounce — sparks skip off the plate and the crew is rattled, but no real harm.
+    // Reads as a hard "clang, no effect" so the player learns the shot didn't bite.
     sound.play("ricochet", target.x, target.y);
-    world.effects.push({ kind: "spark", x0: target.x, y0: target.y, x1: target.x, y1: target.y, ttl: 0.18 });
+    world.effects.push({ kind: "spark", x0: target.x, y0: target.y, x1: target.x, y1: target.y, ttl: 0.22 });
+    for (let i = 0; i < 3; i++) {
+      const a = Math.random() * Math.PI * 2, len = 0.8 + Math.random() * 1.4;
+      world.effects.push({ kind: "ricochet", x0: target.x, y0: target.y, x1: target.x + Math.cos(a) * len, y1: target.y + Math.sin(a) * len, ttl: 0.16 });
+    }
     target.suppression = Math.min(1, target.suppression + 0.12);
     return;
   }
 
-  // Penetration. How bad depends on a roll, weighted toward the wicked.
+  // Penetration — an unmistakable strike: a white flash, fireball, sparks and a gout
+  // of smoke, so the player sees plainly that this one went through.
   sound.play("tank_hit", target.x, target.y);
-  world.effects.push({ kind: "fire", x0: target.x, y0: target.y, x1: target.x, y1: target.y, ttl: 0.35 });
+  world.effects.push({ kind: "flash", x0: target.x, y0: target.y, x1: target.x, y1: target.y, ttl: 0.14 });
+  world.effects.push({ kind: "fire", x0: target.x, y0: target.y, x1: target.x, y1: target.y, ttl: 0.45 });
+  world.effects.push({ kind: "fire", x0: target.x, y0: target.y, x1: target.x, y1: target.y, ttl: 0.28 });
+  world.effects.push({ kind: "hit", x0: target.x, y0: target.y, x1: target.x, y1: target.y, ttl: 0.3 });
+  world.effects.push({ kind: "smoke", x0: target.x, y0: target.y, x1: 0, y1: 0, ttl: 1.4, maxTtl: 1.4 });
+  for (let i = 0; i < 4; i++) {
+    const a = Math.random() * Math.PI * 2, len = 1 + Math.random() * 1.8;
+    world.effects.push({ kind: "ricochet", x0: target.x, y0: target.y, x1: target.x + Math.cos(a) * len, y1: target.y + Math.sin(a) * len, ttl: 0.18 });
+  }
   const r = Math.random();
   if (r < 0.3) {
     knockOut(world, target);

@@ -41,6 +41,7 @@ export interface Soldier {
   targetId: number | null;
   targetVehId: number | null; // AT men engage enemy armor
   manualTargetId: number | null; // player-designated focus-fire target
+  manualVehId: number | null; // player-designated enemy tank for AT men to engage
   fireCell: Cell | null; // player-designated area (suppressing) fire point
   fireSmoke: boolean; // when firing on fireCell, lay smoke instead of HE (mortars)
   smokeAmmo: number; // smoke rounds remaining (mortars only)
@@ -339,6 +340,7 @@ export class World {
         targetId: null,
         targetVehId: null,
         manualTargetId: null,
+        manualVehId: null,
         fireCell: null,
         fireSmoke: false,
         smokeAmmo: WEAPONS[weapon].indirect ? 2 : 0,
@@ -404,6 +406,7 @@ export class World {
       s.fleeGoal = null;
       s.stance = stance;
       s.manualTargetId = null;
+      s.manualVehId = null;
       s.fireCell = null;
       s.fireSmoke = false;
       const goal = this.nearestPassable(target.cx + s.ox, target.cy + s.oy, target);
@@ -435,6 +438,7 @@ export class World {
       s.fleeGoal = null;
       s.stance = stance;
       s.manualTargetId = null;
+      s.manualVehId = null;
       s.fireCell = null;
       s.fireSmoke = false;
       const enemy = this.nearestSpottedEnemy(s);
@@ -450,6 +454,7 @@ export class World {
       const s = this.soldier(id)!;
       if (s.status !== "active") continue;
       s.manualTargetId = enemyId;
+      s.manualVehId = null;
       s.fireCell = null;
       s.fireSmoke = false;
       if (s.stance === "sneak" || s.stance === "ambush") s.stance = "defend";
@@ -465,11 +470,42 @@ export class World {
       if (s.status !== "active") continue;
       s.path = null;
       s.manualTargetId = null;
+      s.manualVehId = null;
       s.fireCell = cell;
       s.fireSmoke = false;
       if (s.stance === "sneak" || s.stance === "ambush") s.stance = "defend";
       s.facing = Math.atan2(cell.cy + 0.5 - s.y, cell.cx + 0.5 - s.x);
     }
+  }
+
+  /**
+   * Point a team's anti-tank men at a specific enemy tank. They lock onto it and fire
+   * the instant it's in range with line of sight (the combat step enforces both), so the
+   * player can call the shot before it closes. Returns false if the team has no AT men,
+   * so the UI can fall back to area fire. The rest of the squad just faces the threat.
+   */
+  orderFireVehicle(teamId: number, vehId: number): boolean {
+    const team = this.team(teamId);
+    if (!team) return false;
+    const veh = this.vehicle(vehId);
+    let anyAT = false;
+    for (const id of team.soldierIds) {
+      const s = this.soldier(id)!;
+      if (s.status !== "active") continue;
+      s.fireCell = null;
+      s.fireSmoke = false;
+      s.manualTargetId = null;
+      if (WEAPONS[s.weapon].penetration != null) {
+        s.path = null;
+        s.manualVehId = vehId;
+        if (s.stance === "sneak" || s.stance === "ambush") s.stance = "defend";
+        anyAT = true;
+      } else {
+        s.manualVehId = null;
+      }
+      if (veh) s.facing = Math.atan2(veh.y - s.y, veh.x - s.x);
+    }
+    return anyAT;
   }
 
   /**
@@ -508,6 +544,7 @@ export class World {
       if (s.status !== "active") continue;
       s.fireCell = null;
       s.manualTargetId = null;
+      s.manualVehId = null;
       s.fireSmoke = false;
     }
   }

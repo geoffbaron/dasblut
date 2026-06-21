@@ -93,6 +93,7 @@ const SIDE_LABEL: Record<Faction, string> = { us: "US", axis: "AXIS" };
 interface Issuer {
   move(teamId: number, cell: Cell, stance: Stance): boolean;
   fireUnit(teamId: number, enemyId: number): void;
+  fireVehicle(teamId: number, vehId: number): boolean;
   areaFire(teamId: number, cell: Cell): void;
   smoke(teamId: number, cell: Cell): boolean;
   ceaseFire(teamId: number): void;
@@ -106,6 +107,7 @@ function localIssuer(world: World): Issuer {
   return {
     move: (t, c, s) => world.orderMove(t, c, s),
     fireUnit: (t, e) => world.orderFireUnit(t, e),
+    fireVehicle: (t, v) => world.orderFireVehicle(t, v),
     areaFire: (t, c) => world.orderAreaFire(t, c),
     smoke: (t, c) => world.orderSmoke(t, c),
     ceaseFire: (t) => world.orderCeaseFire(t),
@@ -121,6 +123,7 @@ function netIssuer(): Issuer {
   return {
     move: (teamId, cell, s) => { if (ok()) net.sendAxisOrder({ kind: s === "fast" ? "fast" : s === "sneak" ? "sneak" : "move", teamId, cell }); return ok(); },
     fireUnit: (teamId, enemyId) => { if (ok()) net.sendAxisOrder({ kind: "fire", teamId, enemyId }); },
+    fireVehicle: () => false, // Axis fields no AT teams — never invoked from a client
     areaFire: (teamId, cell) => { if (ok()) net.sendAxisOrder({ kind: "fire", teamId, cell }); },
     smoke: (teamId, cell) => { if (ok()) net.sendAxisOrder({ kind: "smoke", teamId, cell }); return ok(); },
     ceaseFire: (teamId) => { if (ok()) net.sendAxisOrder({ kind: "defend", teamId }); }, // cease-fire doubles as defend
@@ -230,6 +233,7 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
       const v = world.vehicle(world.selectedVehicleId)!;
       const tags: string[] = [];
       if (v.status === "ko") tags.push(`<span class="tag s-routing">knocked out</span>`);
+      else if (v.immobilized) tags.push(`<span class="tag s-pinned">immobilized</span>`);
       statusEl.innerHTML =
         `<div class="name">${v.name} <span class="dim">· ${v.status === "ko" ? "wreck" : v.stance}</span></div>` +
         `<div class="dim">crew ${v.crew} · AP ${v.apAmmo} · HE ${v.heAmmo}</div>` +
@@ -335,8 +339,14 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
         }
         issuer.areaFire(primary, cell);
       } else {
+        // Clicking an enemy tank sends the squad's AT men after it (real armor
+        // engagement); clicking an enemy soldier focus-fires him; otherwise it's
+        // suppressing area fire on the ground.
+        const tank = world.vehicles.find((v) => v.faction === enemy && v.status !== "ko" && v.seen && Math.hypot(v.x - x, v.y - y) < 2);
         const foe = world.soldiers.find((s) => s.faction === enemy && s.status === "active" && s.seen && Math.hypot(s.x - x, s.y - y) < 1.4);
-        if (foe) issuer.fireUnit(primary, foe.id);
+        if (tank && issuer.fireVehicle(primary, tank.id)) {
+          // AT men locked on — done.
+        } else if (foe) issuer.fireUnit(primary, foe.id);
         else issuer.areaFire(primary, cell);
       }
     } else {

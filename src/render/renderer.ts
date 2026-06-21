@@ -510,10 +510,13 @@ export class Renderer {
       if (team.faction !== "us") continue;
       const lead = world.soldier(team.leaderId) ?? world.soldier(team.soldierIds[0]);
       if (!lead || lead.status !== "active") continue;
-      const order = team.soldierIds.map((id) => world.soldier(id)).find((s) => s?.manualTargetId != null || s?.fireCell);
+      const order = team.soldierIds.map((id) => world.soldier(id)).find((s) => s?.manualTargetId != null || s?.manualVehId != null || s?.fireCell);
       if (!order) continue;
       const bright = team.id === sel;
-      if (order.manualTargetId != null) {
+      if (order.manualVehId != null) {
+        const tv = world.vehicle(order.manualVehId);
+        if (tv && tv.status !== "ko" && tv.seen) marker(lead.x, lead.y, tv.x, tv.y, bright);
+      } else if (order.manualTargetId != null) {
         const t = world.soldier(order.manualTargetId);
         if (t && t.status === "active" && t.seen) marker(lead.x, lead.y, t.x, t.y, bright);
       } else if (order.fireCell) {

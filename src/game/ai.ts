@@ -32,9 +32,21 @@ export function acquireTargets(world: World): void {
     const scy = Math.floor(s.y);
 
     // AT specialists hunt armor: engage the nearest spotted enemy tank in range/LOS.
-    // When none is near, they hold their few rounds rather than waste them on infantry.
+    // A player-designated tank takes priority and is held even slightly out of range —
+    // the combat step won't loose a rocket until it's actually in range with LOS, so the
+    // crew tracks it and fires the moment it closes. When none is designated and none is
+    // near, they hold their few rounds rather than waste them on infantry.
     if (w.penetration != null) {
       s.targetId = null;
+      if (s.manualVehId != null) {
+        const tv = world.vehicle(s.manualVehId);
+        if (tv && tv.status !== "ko") {
+          s.targetVehId = tv.id;
+          if (!s.path) s.facing = Math.atan2(tv.y - s.y, tv.x - s.x);
+          continue;
+        }
+        s.manualVehId = null; // it's dead/gone — release the lock and auto-hunt
+      }
       s.targetVehId = acquireVehicle(world, s, w.rangeCells);
       continue;
     }

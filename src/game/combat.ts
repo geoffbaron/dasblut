@@ -45,12 +45,18 @@ export function resolveFire(world: World, dt: number): void {
             s.ammo--;
             s.firedTimer = 0.6;
             sound.play(s.weapon as SfxId, s.x, s.y);
-            bazookaEffect(world, s.x, s.y, veh.x, veh.y);
+            bazookaLaunch(world, s.x, s.y, veh.x, veh.y);
             let hit = w.accuracy * (1 - 0.3 * (d / w.rangeCells)) * (veh.path ? 0.75 : 1);
             hit *= 1 - s.suppression * 0.6;
             hit *= 0.7 + 0.3 * s.training;
-            if (Math.random() < Math.max(0.05, Math.min(0.95, hit)))
+            if (Math.random() < Math.max(0.05, Math.min(0.95, hit))) {
+              // A solid strike on the hull — resolveArmorHit shows the result
+              // (bounce spark vs penetration fireball) and applies the damage.
+              world.effects.push({ kind: "flash", x0: veh.x, y0: veh.y, x1: veh.x, y1: veh.y, ttl: 0.12 });
               resolveArmorHit(world, veh, w.penetration, s.x, s.y, d, w.rangeCells);
+            } else {
+              bazookaMiss(world, veh.x, veh.y);
+            }
           }
         }
       }
@@ -349,24 +355,39 @@ function fireShot(world: World, s: Soldier, target: Soldier, dist: number): void
   }
 }
 
-// A bazooka/Panzerfaust rocket: muzzle flash and a back-blast plume behind the
-// firer, a bright rocket streak downrange, then a fiery burst at the target so the
-// shot reads clearly even when it bounces off armor.
-function bazookaEffect(world: World, sx: number, sy: number, tx: number, ty: number): void {
+// The launch and flight of a bazooka/Panzerfaust rocket: a hard muzzle flash, a
+// back-blast plume behind the firer, a thick bright rocket streak downrange, and a
+// stuttering smoke trail along its path — so every shot is an unmistakable event.
+// The impact itself is shown by resolveArmorHit (on a strike) or bazookaMiss (a miss).
+function bazookaLaunch(world: World, sx: number, sy: number, tx: number, ty: number): void {
   const ang = Math.atan2(ty - sy, tx - sx);
-  // Back-blast: smoke kicked out behind the launcher.
-  const bx = sx - Math.cos(ang) * 1.2;
-  const by = sy - Math.sin(ang) * 1.2;
-  world.effects.push({ kind: "flash", x0: sx, y0: sy, x1: sx, y1: sy, ttl: 0.1 });
-  world.effects.push({ kind: "smoke", x0: bx, y0: by, x1: 0, y1: 0, ttl: 0.9, maxTtl: 0.9 });
-  // Rocket streak in flight.
-  world.effects.push({ kind: "ap", x0: sx, y0: sy, x1: tx, y1: ty, ttl: 0.14 });
-  // Impact burst.
-  world.effects.push({ kind: "flash", x0: tx, y0: ty, x1: tx, y1: ty, ttl: 0.1 });
-  world.effects.push({ kind: "fire", x0: tx, y0: ty, x1: tx, y1: ty, ttl: 0.4 });
-  world.effects.push({ kind: "hit", x0: tx, y0: ty, x1: tx, y1: ty, ttl: 0.3 });
-  world.effects.push({ kind: "smoke", x0: tx, y0: ty, x1: 0, y1: 0, ttl: 1.1, maxTtl: 1.1 });
-  sound.play("explosion", tx, ty);
+  // Back-blast: a plume of smoke kicked out behind the launcher.
+  const bx = sx - Math.cos(ang) * 1.3;
+  const by = sy - Math.sin(ang) * 1.3;
+  world.effects.push({ kind: "flash", x0: sx, y0: sy, x1: sx, y1: sy, ttl: 0.16 });
+  world.effects.push({ kind: "smoke", x0: bx, y0: by, x1: 0, y1: 0, ttl: 1.2, maxTtl: 1.2 });
+  // Bright rocket streak in flight.
+  world.effects.push({ kind: "ap", x0: sx, y0: sy, x1: tx, y1: ty, ttl: 0.2 });
+  // Smoke trail puffs along the flight path — the rocket's signature.
+  const segs = 5;
+  for (let i = 1; i <= segs; i++) {
+    const t = i / (segs + 1);
+    const px = sx + (tx - sx) * t;
+    const py = sy + (ty - sy) * t;
+    world.effects.push({ kind: "smoke", x0: px, y0: py, x1: 0, y1: 0, ttl: 0.45 + t * 0.4, maxTtl: 0.9 });
+  }
+}
+
+// A clean miss: the rocket goes wide or long and bursts on the ground short of / past
+// the tank, with no armor effect — so a miss looks distinctly different from a strike.
+function bazookaMiss(world: World, tx: number, ty: number): void {
+  const mx = tx + (Math.random() - 0.5) * 2.6;
+  const my = ty + (Math.random() - 0.5) * 2.6;
+  sound.play("explosion", mx, my);
+  world.effects.push({ kind: "flash", x0: mx, y0: my, x1: mx, y1: my, ttl: 0.1 });
+  world.effects.push({ kind: "fire", x0: mx, y0: my, x1: mx, y1: my, ttl: 0.3 });
+  world.effects.push({ kind: "hit", x0: mx, y0: my, x1: mx, y1: my, ttl: 0.3 });
+  world.effects.push({ kind: "smoke", x0: mx, y0: my, x1: 0, y1: 0, ttl: 1.0, maxTtl: 1.0 });
 }
 
 // Some rounds spit off the ground/cover where a tracer lands: a quick bright spark

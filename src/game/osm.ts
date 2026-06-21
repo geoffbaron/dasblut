@@ -246,6 +246,16 @@ function rasterizeBuilding(grid: Grid, poly: Pt[], features: MapFeatures): void 
   // Guarantee at least one way in even if nothing touched open ground directly.
   if (doors.length === 0 && walls.length) grid.set(walls[0][0], walls[0][1], Terrain.Floor);
 
+  // Windows: dot the remaining outward-facing walls so infantry can climb in and
+  // fire out. Skip cells next to a door or another window so they stay spaced.
+  for (const [cx, cy] of cands) {
+    if (grid.get(cx, cy) !== Terrain.Wall) continue; // became a door
+    const nearWindow = [[cx - 1, cy], [cx + 1, cy], [cx, cy - 1], [cx, cy + 1]]
+      .some(([nx, ny]) => grid.inBounds(nx, ny) && grid.get(nx, ny) === Terrain.Window);
+    if (nearWindow) continue;
+    if (((cx * 7 + cy * 13) % 3) === 0) grid.set(cx, cy, Terrain.Window);
+  }
+
   const lvl = 1 + (inside.length > 30 ? 1 : 0);
   features.buildings.push({ poly, levels: lvl });
 }

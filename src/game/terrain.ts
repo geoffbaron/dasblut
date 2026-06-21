@@ -12,6 +12,7 @@ export enum Terrain {
   Rubble,
   Hedge, // bocage-style cover line, passable but slow
   Floor, // building interior — strong cover, occupants fire out the windows
+  Window, // building window — infantry climb through (slow); fire & sight pass, vehicles can't
 }
 
 export interface TerrainDef {
@@ -37,6 +38,7 @@ export const TERRAIN: Record<Terrain, TerrainDef> = {
   [Terrain.Rubble]: { name: "Rubble",      color: 0x57514a, moveCost: 1.6,      cover: 0.45, concealment: 0.4,  blocksSight: false },
   [Terrain.Hedge]:  { name: "Hedge",       color: 0x445a30, moveCost: 1.8,      cover: 0.5,  concealment: 0.55, blocksSight: true  },
   [Terrain.Floor]:  { name: "Building",    color: 0x6a5d4a, moveCost: 1,        cover: 0.6,  concealment: 0.5,  blocksSight: false },
+  [Terrain.Window]: { name: "Window",      color: 0x6a5d4a, moveCost: 2.5,      cover: 0.45, concealment: 0.4,  blocksSight: false },
 };
 
 export function isPassable(t: Terrain): boolean {
@@ -46,7 +48,7 @@ export function isPassable(t: Terrain): boolean {
 // Vehicles can't enter woods, water, or buildings; they crush hedges (slowly) and
 // race down roads. Used for vehicle pathfinding.
 export function vehiclePassable(t: Terrain): boolean {
-  return t !== Terrain.Woods && t !== Terrain.Water && t !== Terrain.Wall && t !== Terrain.Floor;
+  return t !== Terrain.Woods && t !== Terrain.Water && t !== Terrain.Wall && t !== Terrain.Floor && t !== Terrain.Window;
 }
 
 export function vehicleCost(t: Terrain): number {

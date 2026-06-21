@@ -3,7 +3,7 @@ import { CELL_SIZE, OBJECTIVE_HOLD_TO_WIN } from "../game/constants.ts";
 import { VEHICLES } from "../game/vehicleDefs.ts";
 import { MoraleState, World } from "../game/world.ts";
 import { Terrain } from "../game/terrain.ts";
-import { paintBattlefield } from "./paint.ts";
+import { paintBattlefield, RoofTile } from "./paint.ts";
 import { makeCasualtyCanvas, makeSoldierArt } from "./soldierArt.ts";
 import { makeVehicleArt, VehicleArt } from "./vehicleArt.ts";
 import { sound } from "./sound.ts";
@@ -20,6 +20,7 @@ export class Renderer {
   private vehicleLayer = new Container();
   private shadowLayer = new Container();
   private bodyLayer = new Container();
+  private roofLayer = new Container();
   private smokeScreen = new Graphics();
   private fx = new Graphics();
   // Screen-space drag-select box drawn on top of everything, outside the camera.
@@ -42,6 +43,10 @@ export class Renderer {
     { shadow: Sprite; hull: Sprite; turret: Sprite; hullTex: Texture; wreckTex: Texture; wrecked: boolean }
   >();
   private vehArtByClass = new Map<string, VehicleArt>();
+  // Per-building roofs that fade out as units move inside to reveal the floor plan.
+  private roofs: { sprite: Sprite; tile: RoofTile; alpha: number }[] = [];
+  // cell index → roof index (+1), so we can tell which building a unit is standing in.
+  private cellRoof!: Int16Array;
 
   async init(mount: HTMLElement, world: World): Promise<void> {
     await this.app.init({
@@ -57,10 +62,14 @@ export class Renderer {
     const bg = new Sprite(Texture.from(painted.canvas));
     bg.scale.set(painted.scale);
 
+    this.buildRoofs(world, painted.roofs);
+
     // Soften the blocky cell edges of the fog shroud so it reads as a smooth haze.
     this.shroud.filters = [new BlurFilter({ strength: 10, quality: 3 })];
 
-    this.camera.addChild(bg, this.damageLayer, this.shroud, this.overlay, this.vehicleLayer, this.shadowLayer, this.bodyLayer, this.smokeScreen, this.fx);
+    // Roofs sit above the unit bodies so a covered building hides the men inside,
+    // then fade away (drawRoofs) once a friendly or spotted unit moves in.
+    this.camera.addChild(bg, this.damageLayer, this.shroud, this.overlay, this.vehicleLayer, this.shadowLayer, this.bodyLayer, this.roofLayer, this.smokeScreen, this.fx);
     // selBox lives outside the camera so it stays in screen space.
     this.app.stage.addChild(this.camera, this.selBox);
 
@@ -69,6 +78,47 @@ export class Renderer {
     this.buildUnitSprites(world);
     this.buildVehicleSprites(world);
     this.centerOn(world);
+  }
+
+  // Lay out one sprite per building roof and index which roof covers each cell, so
+  // the per-frame fade can tell when a unit has stepped inside a given building.
+  private buildRoofs(world: World, tiles: RoofTile[]): void {
+    this.cellRoof = new Int16Array(world.grid.width * world.grid.height); // 0 = no roof
+    this.roofs = tiles.map((tile, i) => {
+      const sprite = new Sprite(Texture.from(tile.canvas));
+      sprite.position.set(tile.x, tile.y);
+      sprite.scale.set(tile.scale);
+      this.roofLayer.addChild(sprite);
+      for (let cy = tile.cellBox.y0; cy <= tile.cellBox.y1; cy++) {
+        for (let cx = tile.cellBox.x0; cx <= tile.cellBox.x1; cx++) {
+          if (world.grid.inBounds(cx, cy)) this.cellRoof[world.grid.idx(cx, cy)] = i + 1;
+        }
+      }
+      return { sprite, tile, alpha: 1 };
+    });
+  }
+
+  // Fade a building's roof away while a visible unit occupies it (revealing the floor
+  // plan), and back in once everyone leaves. Smoothed so it eases rather than snaps.
+  private drawRoofs(world: World): void {
+    if (this.roofs.length === 0) return;
+    const occupied = new Uint8Array(this.roofs.length);
+    const mark = (cx: number, cy: number) => {
+      if (!world.grid.inBounds(cx, cy)) return;
+      const r = this.cellRoof[world.grid.idx(cx, cy)];
+      if (r > 0) occupied[r - 1] = 1;
+    };
+    for (const s of world.soldiers) {
+      if (s.status === "dead") continue;
+      if (!(this.revealAll || s.faction === "us" || s.seen)) continue;
+      mark(Math.floor(s.x), Math.floor(s.y));
+    }
+    for (let i = 0; i < this.roofs.length; i++) {
+      const r = this.roofs[i];
+      const target = occupied[i] ? 0.16 : 1;
+      r.alpha += (target - r.alpha) * 0.12;
+      r.sprite.alpha = r.alpha;
+    }
   }
 
   private buildVehicleSprites(world: World): void {
@@ -246,6 +296,7 @@ export class Renderer {
     this.drawOverlay(world);
     this.drawVehicles(world, alpha);
     this.drawSoldiers(world, alpha);
+    this.drawRoofs(world);
     this.drawSmoke(world);
     this.drawEffects(world);
   }

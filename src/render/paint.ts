@@ -38,6 +38,18 @@ const GROUND: Partial<Record<Terrain, [RGB, RGB]>> = {
 export interface PaintedMap {
   canvas: HTMLCanvasElement;
   scale: number; // multiply canvas px by this to get logical (CSS) px
+  roofs: RoofTile[]; // per-building roof sprites the renderer fades to reveal interiors
+}
+
+// A single building's roof, painted into its own little canvas so the renderer can
+// lay it over the units and fade it out when a unit moves inside — revealing the
+// floor plan painted into the static ground below.
+export interface RoofTile {
+  canvas: HTMLCanvasElement;
+  x: number; // logical-px position of the canvas top-left in map space
+  y: number;
+  scale: number; // multiply canvas px by this to get logical px
+  cellBox: { x0: number; y0: number; x1: number; y1: number }; // footprint cell bounds (inclusive)
 }
 
 export function paintBattlefield(grid: Grid, features: MapFeatures): PaintedMap {
@@ -115,12 +127,16 @@ export function paintBattlefield(grid: Grid, features: MapFeatures): PaintedMap 
   drawRubble(ctx, grid, rng);
   // Bocage hedgerows.
   for (const h of features.hedges) drawHedge(ctx, h, rng);
-  // Buildings: cast shadow → walls → pitched roof.
-  for (const b of features.buildings) drawBuilding(ctx, b, rng);
+  // Buildings, part 1: cast shadows + the interior floor plan, painted into the
+  // static ground. Roofs (part 2) are returned separately so they can lift away.
+  drawFloorPlans(ctx, grid, features, rng);
   // Global grade: soft vignette.
   drawVignette(ctx, mapW, mapH);
 
-  return { canvas, scale: 1 / SS };
+  // Buildings, part 2: each roof on its own canvas, positioned in map space.
+  const roofs = features.buildings.map((b) => paintRoof(b));
+
+  return { canvas, scale: 1 / SS, roofs };
 }
 
 // ---------------------------------------------------------------------------
@@ -410,27 +426,179 @@ const ROOF_PALETTES = [
   ["#8a6b4a", "#6d5238"], // brown
 ];
 
-// Axis-aligned rectangles get the nice pitched roof; arbitrary OSM footprints get a
-// flat, shaded roof with a cast shadow — both read clearly as buildings from above.
-function drawBuilding(ctx: CanvasRenderingContext2D, b: Building, rng: () => number): void {
-  // Roughly a third of the houses have been gutted by fire — a war has rolled through.
-  const burned = rng() < 0.3;
-  const rect = asAxisRect(b.poly);
-  if (rect) drawPitchedBuilding(ctx, rect.x0, rect.y0, rect.x1, rect.y1, b.levels, rng, burned);
-  else drawFlatBuilding(ctx, b.poly, b.levels, rng, burned);
+// --- building interiors (floor plans) painted into the static ground ---
+
+// Paint every building's cast shadow, then the floor plan (floorboards, walls,
+// doorways, windows, a little furniture) read straight from the terrain grid, so
+// host and network clients render identical interiors from the synced cells.
+function drawFloorPlans(ctx: CanvasRenderingContext2D, grid: Grid, features: MapFeatures, rng: () => number): void {
+  for (const b of features.buildings) drawBuildingShadow(ctx, b);
+  // Floorboards under every interior (Floor) and window cell.
+  for (let cy = 0; cy < grid.height; cy++) {
+    for (let cx = 0; cx < grid.width; cx++) {
+      const t = grid.get(cx, cy);
+      if (t === Terrain.Floor || t === Terrain.Window) drawFloorCell(ctx, cx, cy, rng);
+    }
+  }
+  // Walls (perimeter + interior partitions) over the floor.
+  for (let cy = 0; cy < grid.height; cy++) {
+    for (let cx = 0; cx < grid.width; cx++) {
+      if (grid.get(cx, cy) === Terrain.Wall) drawWallCell(ctx, grid, cx, cy);
+    }
+  }
+  // Windows punched through the wall line.
+  for (let cy = 0; cy < grid.height; cy++) {
+    for (let cx = 0; cx < grid.width; cx++) {
+      if (grid.get(cx, cy) === Terrain.Window) drawWindowCell(ctx, cx, cy);
+    }
+  }
+  // A scatter of furniture so revealed rooms aren't bare boxes.
+  drawFurniture(ctx, grid, rng);
 }
 
-function drawFlatBuilding(ctx: CanvasRenderingContext2D, poly: Pt[], levels: number, rng: () => number, burned = false): void {
-  const pts = poly.map((p) => [p.x * CELL_SIZE, p.y * CELL_SIZE] as [number, number]);
-  const lift = 3 + levels * 2.5;
-  const pal = burned ? ["#3c352f", "#2a2521"] : ROOF_PALETTES[Math.floor(rng() * ROOF_PALETTES.length)];
-
-  // Cast shadow.
+function drawBuildingShadow(ctx: CanvasRenderingContext2D, b: Building): void {
+  const lift = 3 + b.levels * 2.5;
   ctx.save();
   ctx.filter = "blur(4px)";
   ctx.fillStyle = "rgba(15,15,12,0.4)";
-  poly2(ctx, pts.map(([x, y]) => [x - SUN.x * lift, y - SUN.y * lift] as [number, number]));
+  const rect = asAxisRect(b.poly);
+  if (rect) {
+    const x = rect.x0 * CELL_SIZE, y = rect.y0 * CELL_SIZE;
+    ctx.fillRect(x - SUN.x * lift, y - SUN.y * lift, (rect.x1 - rect.x0) * CELL_SIZE, (rect.y1 - rect.y0) * CELL_SIZE);
+  } else {
+    const pts = b.poly.map((p) => [p.x * CELL_SIZE, p.y * CELL_SIZE] as [number, number]);
+    poly2(ctx, pts.map(([x, y]) => [x - SUN.x * lift, y - SUN.y * lift] as [number, number]));
+  }
   ctx.restore();
+}
+
+function drawFloorCell(ctx: CanvasRenderingContext2D, cx: number, cy: number, rng: () => number): void {
+  const x = cx * CELL_SIZE, y = cy * CELL_SIZE;
+  ctx.fillStyle = `hsl(34, 24%, ${30 + rng() * 8}%)`; // worn floorboards
+  ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+  // Plank seams.
+  ctx.strokeStyle = "rgba(30,22,14,0.3)";
+  ctx.lineWidth = 0.5;
+  for (let ly = y + 4; ly < y + CELL_SIZE; ly += 5) {
+    ctx.beginPath();
+    ctx.moveTo(x, ly);
+    ctx.lineTo(x + CELL_SIZE, ly);
+    ctx.stroke();
+  }
+}
+
+// Wall cells get a beveled stone block; perimeter walls are thicker/darker than
+// interior partitions so rooms read clearly from above.
+function drawWallCell(ctx: CanvasRenderingContext2D, grid: Grid, cx: number, cy: number): void {
+  const x = cx * CELL_SIZE, y = cy * CELL_SIZE;
+  const ext = isExteriorWall(grid, cx, cy);
+  ctx.fillStyle = ext ? "#6b6157" : "#7b7165";
+  ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+  // Bevel: top-left catches the light, bottom-right falls into shadow.
+  ctx.fillStyle = "rgba(255,250,240,0.12)";
+  ctx.fillRect(x, y, CELL_SIZE, 1.3);
+  ctx.fillRect(x, y, 1.3, CELL_SIZE);
+  ctx.fillStyle = "rgba(0,0,0,0.3)";
+  ctx.fillRect(x, y + CELL_SIZE - 1.3, CELL_SIZE, 1.3);
+  ctx.fillRect(x + CELL_SIZE - 1.3, y, 1.3, CELL_SIZE);
+}
+
+// A window: the wall block with a glazed opening and a simple mullion cross.
+function drawWindowCell(ctx: CanvasRenderingContext2D, cx: number, cy: number): void {
+  const x = cx * CELL_SIZE, y = cy * CELL_SIZE;
+  ctx.fillStyle = "#6b6157"; // wall surround
+  ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+  const m = CELL_SIZE * 0.2;
+  ctx.fillStyle = "#241d16"; // frame
+  ctx.fillRect(x + m, y + m, CELL_SIZE - 2 * m, CELL_SIZE - 2 * m);
+  ctx.fillStyle = "rgba(150,182,205,0.62)"; // glass
+  ctx.fillRect(x + m + 1, y + m + 1, CELL_SIZE - 2 * m - 2, CELL_SIZE - 2 * m - 2);
+  ctx.strokeStyle = "rgba(36,29,22,0.9)"; // mullion cross
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(x + CELL_SIZE / 2, y + m);
+  ctx.lineTo(x + CELL_SIZE / 2, y + CELL_SIZE - m);
+  ctx.moveTo(x + m, y + CELL_SIZE / 2);
+  ctx.lineTo(x + CELL_SIZE - m, y + CELL_SIZE / 2);
+  ctx.stroke();
+}
+
+// Sparse furniture (tables, beds, crates) cast into the rooms for grit.
+function drawFurniture(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number): void {
+  for (let cy = 0; cy < grid.height; cy++) {
+    for (let cx = 0; cx < grid.width; cx++) {
+      if (grid.get(cx, cy) !== Terrain.Floor) continue;
+      if (rng() > 0.07) continue;
+      const x = cx * CELL_SIZE, y = cy * CELL_SIZE;
+      const w = CELL_SIZE * (0.4 + rng() * 0.4);
+      const h = CELL_SIZE * (0.4 + rng() * 0.4);
+      const ox = x + (CELL_SIZE - w) / 2, oy = y + (CELL_SIZE - h) / 2;
+      ctx.fillStyle = "rgba(10,8,5,0.3)"; // shadow
+      ctx.fillRect(ox + 1.5, oy + 1.5, w, h);
+      ctx.fillStyle = `hsl(28, 22%, ${20 + rng() * 14}%)`; // dark wood
+      ctx.fillRect(ox, oy, w, h);
+      ctx.strokeStyle = "rgba(0,0,0,0.4)";
+      ctx.lineWidth = 0.6;
+      ctx.strokeRect(ox, oy, w, h);
+    }
+  }
+}
+
+// A wall cell is "exterior" when an orthogonal neighbour is outside the building
+// (not Wall/Floor/Window) or off the map — those face the world and cast windows.
+function isExteriorWall(grid: Grid, cx: number, cy: number): boolean {
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+    if (!grid.inBounds(cx + dx, cy + dy)) return true;
+    const t = grid.get(cx + dx, cy + dy);
+    if (t !== Terrain.Wall && t !== Terrain.Floor && t !== Terrain.Window) return true;
+  }
+  return false;
+}
+
+// --- roofs: each building's roof on its own canvas, positioned in map space ---
+
+function paintRoof(b: Building): RoofTile {
+  const SS = 2;
+  const xs = b.poly.map((p) => p.x);
+  const ys = b.poly.map((p) => p.y);
+  const minXc = Math.min(...xs), maxXc = Math.max(...xs);
+  const minYc = Math.min(...ys), maxYc = Math.max(...ys);
+  const M = CELL_SIZE; // margin for eaves / chimney overhang
+  const ox = minXc * CELL_SIZE - M;
+  const oy = minYc * CELL_SIZE - M;
+  const w = (maxXc - minXc) * CELL_SIZE + 2 * M;
+  const h = (maxYc - minYc) * CELL_SIZE + 2 * M;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(w * SS);
+  canvas.height = Math.ceil(h * SS);
+  const ctx = canvas.getContext("2d")!;
+  ctx.scale(SS, SS);
+  ctx.translate(-ox, -oy); // draw in absolute map coords, captured into the tile
+  const rng = mulberry32(((Math.round(minXc) * 92837) ^ (Math.round(minYc) * 689287)) >>> 0);
+  drawRoof(ctx, b, rng);
+  return {
+    canvas,
+    x: ox,
+    y: oy,
+    scale: 1 / SS,
+    cellBox: { x0: Math.floor(minXc), y0: Math.floor(minYc), x1: Math.ceil(maxXc) - 1, y1: Math.ceil(maxYc) - 1 },
+  };
+}
+
+// Axis-aligned rectangles get the nice pitched roof; arbitrary OSM footprints get a
+// flat, shaded roof — both read clearly as buildings from above. No cast shadow here;
+// that lives on the ground so it stays put when the roof fades.
+function drawRoof(ctx: CanvasRenderingContext2D, b: Building, rng: () => number): void {
+  // Roughly a third of the houses have been gutted by fire — a war has rolled through.
+  const burned = rng() < 0.3;
+  const rect = asAxisRect(b.poly);
+  if (rect) drawPitchedRoof(ctx, rect.x0, rect.y0, rect.x1, rect.y1, rng, burned);
+  else drawFlatRoof(ctx, b.poly, rng, burned);
+}
+
+function drawFlatRoof(ctx: CanvasRenderingContext2D, poly: Pt[], rng: () => number, burned = false): void {
+  const pts = poly.map((p) => [p.x * CELL_SIZE, p.y * CELL_SIZE] as [number, number]);
+  const pal = burned ? ["#3c352f", "#2a2521"] : ROOF_PALETTES[Math.floor(rng() * ROOF_PALETTES.length)];
 
   // Roof, shaded by a top-left light.
   const bb = bbox(pts);
@@ -494,13 +662,12 @@ function burnDamage(ctx: CanvasRenderingContext2D, bb: { x0: number; y0: number;
   }
 }
 
-function drawPitchedBuilding(
+function drawPitchedRoof(
   ctx: CanvasRenderingContext2D,
   gx0: number,
   gy0: number,
   gx1: number,
   gy1: number,
-  levels: number,
   rng: () => number,
   burned = false,
 ): void {
@@ -508,14 +675,6 @@ function drawPitchedBuilding(
   const y = gy0 * CELL_SIZE;
   const w = (gx1 - gx0) * CELL_SIZE;
   const h = (gy1 - gy0) * CELL_SIZE;
-  const lift = 3 + levels * 2.5; // taller buildings → longer shadow
-
-  // 1. Cast shadow, softened.
-  ctx.save();
-  ctx.filter = "blur(4px)";
-  ctx.fillStyle = "rgba(15,15,12,0.4)";
-  ctx.fillRect(x - SUN.x * lift, y - SUN.y * lift, w, h);
-  ctx.restore();
 
   // 2. Wall block (eaves) — a slightly larger dark base the roof sits on. A burned-out
   // shell shows blackened, soot-stained walls instead.

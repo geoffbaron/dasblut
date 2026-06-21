@@ -91,16 +91,33 @@ export function smoothPath(grid: Grid, path: Cell[], opts: PathOpts = {}): Cell[
   return result;
 }
 
-// Supercover DDA: checks every cell the line from a→b passes through.
+// True integer supercover: walks every cell the segment a→b touches, and at a
+// diagonal crossing refuses to squeeze between two blocked cells — mirroring the
+// corner rule findPath uses. The old round-based sampler skipped the flanking
+// cells at a corner, so a smoothed straight line could clip a building wall and
+// leave units jittering as they were snapped back out. This fixes that.
 function lineClear(a: Cell, b: Cell, passable: (cx: number, cy: number) => boolean): boolean {
-  const dx = b.cx - a.cx;
-  const dy = b.cy - a.cy;
-  const steps = Math.max(Math.abs(dx), Math.abs(dy));
-  if (steps === 0) return true;
-  for (let i = 1; i <= steps; i++) {
-    const cx = Math.round(a.cx + (dx * i) / steps);
-    const cy = Math.round(a.cy + (dy * i) / steps);
-    if (!passable(cx, cy)) return false;
+  let x = a.cx;
+  let y = a.cy;
+  const nx = Math.abs(b.cx - a.cx);
+  const ny = Math.abs(b.cy - a.cy);
+  const signX = b.cx > a.cx ? 1 : -1;
+  const signY = b.cy > a.cy ? 1 : -1;
+  if (!passable(x, y)) return false;
+  let ix = 0;
+  let iy = 0;
+  while (ix < nx || iy < ny) {
+    const decision = (1 + 2 * ix) * ny - (1 + 2 * iy) * nx;
+    if (decision === 0) {
+      // Exact diagonal crossing — both flanking cells must be open, like A*.
+      if (!passable(x + signX, y) || !passable(x, y + signY)) return false;
+      x += signX; y += signY; ix++; iy++;
+    } else if (decision < 0) {
+      x += signX; ix++;
+    } else {
+      y += signY; iy++;
+    }
+    if (!passable(x, y)) return false;
   }
   return true;
 }

@@ -83,9 +83,12 @@ function acquireVehicle(world: World, s: Soldier, range: number): number | null 
   const scx = Math.floor(s.x);
   const scy = Math.floor(s.y);
   for (const v of world.vehicles) {
-    if (v.faction === s.faction || v.status === "ko" || !v.seen) continue;
+    if (v.faction === s.faction || v.status === "ko") continue;
     const d = (v.x - s.x) ** 2 + (v.y - s.y) ** 2;
     if (d > bestD) continue;
+    // An AT man engages any enemy tank he can personally see in range — he trusts his
+    // own eyes (LOS), not just the squad's shared spotting flag, so he never holds a
+    // clean shot at armour bearing down on him.
     if (!hasLOS(world.grid, scx, scy, Math.floor(v.x), Math.floor(v.y), world.smokeGrid)) continue;
     best = v;
     bestD = d;

@@ -1,6 +1,6 @@
 import { AI_INTERVAL } from "./constants.ts";
 import { Cell } from "./pathfinding.ts";
-import { isPassable, vehiclePassable } from "./terrain.ts";
+import { isPassable, TERRAIN, vehiclePassable } from "./terrain.ts";
 import { Soldier, World } from "./world.ts";
 
 // Objective-aware enemy command, run on a throttle. The Axis garrisons the victory
@@ -27,6 +27,7 @@ export function commandAxis(world: World, dt: number): void {
     // Each squad garrisons one objective (round-robin across however many there are).
     const o = world.objectives[idx % world.objectives.length];
     const threatened = objThreatened(o);
+    const lost = o.owner === "us"; // the flag has actually fallen — retake it now
     if (!team.post) team.post = postAround(world, o.cx, o.cy, o.radius, idx, axisTeams.length);
     const anchor = men[0];
     const goal: Cell = threatened ? { cx: o.cx, cy: o.cy } : team.post;
@@ -36,9 +37,10 @@ export function commandAxis(world: World, dt: number): void {
 
     if (d > 4) {
       // March to the post / counterattack the flag. Push on even if engaged when the
-      // objective is under threat; otherwise don't yank a squad out of a firefight.
+      // objective is under threat; a lost flag is rushed (Fast) regardless of contact.
       if (threatChanged || !moving || (threatened && !movingToward(men, goal))) {
-        if (!engaged || threatened) world.orderMove(team.id, goal, "move");
+        if (lost) world.orderMove(team.id, goal, "fast");
+        else if (!engaged || threatened) world.orderMove(team.id, goal, "move");
       }
     } else if (!defending(men)) {
       world.orderPosture(team.id, "defend");
@@ -71,21 +73,29 @@ function movingToward(men: Soldier[], goal: Cell): boolean {
   return Math.hypot(end.cx - goal.cx, end.cy - goal.cy) < 6;
 }
 
-// A defensive slot on a ring just outside the capture edge, spread by squad index,
-// snapped to passable ground (often a building or street near the flag).
+// A defensive slot on a ring just outside the capture edge, spread by squad index.
+// Rather than the first passable cell, defenders pick the best *cover* within a short
+// search window — a building, wall or treeline near the flag — so they hole up instead
+// of standing in the open, exactly as a defender should in Close Combat.
 function postAround(world: World, cx: number, cy: number, radius: number, idx: number, n: number): Cell {
   const ang = (idx / Math.max(1, n)) * Math.PI * 2 - Math.PI / 2;
   const r = radius + 2;
   const tx = Math.round(cx + Math.cos(ang) * r);
   const ty = Math.round(cy + Math.sin(ang) * r);
-  for (let s = 0; s < 30; s++) {
-    const rr = s;
-    for (let dy = -rr; dy <= rr; dy++)
-      for (let dx = -rr; dx <= rr; dx++)
-        if (world.grid.inBounds(tx + dx, ty + dy) && isPassable(world.grid.get(tx + dx, ty + dy)))
-          return { cx: tx + dx, cy: ty + dy };
+  let best: Cell | null = null;
+  let bestScore = -Infinity;
+  for (let dy = -4; dy <= 4; dy++) {
+    for (let dx = -4; dx <= 4; dx++) {
+      const x = tx + dx, y = ty + dy;
+      if (!world.grid.inBounds(x, y)) continue;
+      const t = world.grid.get(x, y);
+      if (!isPassable(t)) continue;
+      // Favour hard cover and concealment; lightly prefer staying near the ring point.
+      const score = TERRAIN[t].cover * 1.6 + TERRAIN[t].concealment * 0.6 - Math.hypot(dx, dy) * 0.05;
+      if (score > bestScore) { bestScore = score; best = { cx: x, cy: y }; }
+    }
   }
-  return { cx, cy };
+  return best ?? { cx, cy };
 }
 
 function nearestVehCell(world: World, cx: number, cy: number): Cell {

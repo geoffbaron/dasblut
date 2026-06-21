@@ -50,7 +50,7 @@ const GRENADE = "EXPLReal-grenade_explosion-Elevenlabs.mp3";
 const MORTAR_FIRE = "WEAPSiege-mortar_firing_sound,-Elevenlabs.mp3";
 const GASP = "GOREMisc-Soldier_dying_gasp,_-Elevenlabs.mp3";
 const BAZOOKA_BLAST = "EXPLReal-bazooka_blast-Elevenlabs.mp3";
-const SWITCH = "electric_switch_flip_1-1781840526177.mp3"; // UI select/order click
+const SWITCH = "UIMvmt-puzzle_UI_tab_switch-Elevenlabs.mp3"; // UI select/order click
 // German death-screams — used when an Axis soldier is killed.
 const SCREAMS = [
   "dying_screaming_sayi_1-1781820762926.mp3",

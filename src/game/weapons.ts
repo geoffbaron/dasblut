@@ -29,13 +29,13 @@ export interface Weapon {
 }
 
 export const WEAPONS: Record<WeaponId, Weapon> = {
-  rifle: { id: "rifle", name: "Rifle", rangeCells: 36, rof: 0.8, accuracy: 0.32, suppression: 0.09, lethality: 0.6, ammo: 80, tracerRate: 0.5 },
-  smg:   { id: "smg",   name: "SMG",   rangeCells: 14, rof: 7,   accuracy: 0.13, suppression: 0.05, lethality: 0.45, ammo: 240, tracerRate: 0.25 },
-  lmg:   { id: "lmg",   name: "LMG",   rangeCells: 42, rof: 9,   accuracy: 0.11, suppression: 0.08, lethality: 0.5, ammo: 400, tracerRate: 0.3 },
+  rifle: { id: "rifle", name: "Rifle", rangeCells: 36, rof: 0.8, accuracy: 0.21, suppression: 0.09, lethality: 0.6, ammo: 80, tracerRate: 0.5 },
+  smg:   { id: "smg",   name: "SMG",   rangeCells: 14, rof: 7,   accuracy: 0.085, suppression: 0.05, lethality: 0.45, ammo: 240, tracerRate: 0.25 },
+  lmg:   { id: "lmg",   name: "LMG",   rangeCells: 42, rof: 9,   accuracy: 0.072, suppression: 0.08, lethality: 0.5, ammo: 400, tracerRate: 0.3 },
   // Anti-tank: short range, slow reload, few rounds, but deadly to armor — and far
   // more so against the flanks and rear than the frontal plate.
-  bazooka:     { id: "bazooka",     name: "Bazooka",     rangeCells: 13, rof: 0.25, accuracy: 0.5, suppression: 0.04, lethality: 0.5, ammo: 6, tracerRate: 1, penetration: 90 },
-  panzerfaust: { id: "panzerfaust", name: "Panzerfaust", rangeCells: 8,  rof: 0.2,  accuracy: 0.55, suppression: 0.04, lethality: 0.5, ammo: 3, tracerRate: 1, penetration: 115 },
+  bazooka:     { id: "bazooka",     name: "Bazooka",     rangeCells: 13, rof: 0.25, accuracy: 0.42, suppression: 0.04, lethality: 0.5, ammo: 6, tracerRate: 1, penetration: 90 },
+  panzerfaust: { id: "panzerfaust", name: "Panzerfaust", rangeCells: 8,  rof: 0.2,  accuracy: 0.46, suppression: 0.04, lethality: 0.5, ammo: 3, tracerRate: 1, penetration: 115 },
   // Light mortar: indirect HE. Lobs over walls and hedges onto a designated patch,
   // heavy on suppression with a real casualty radius. Slow, finite bombs, and blind
   // up close — it needs the player to call the shot.

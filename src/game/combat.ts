@@ -3,9 +3,9 @@ import { damageBuildings } from "./buildingDamage.ts";
 import { AMBUSH_ACC_MULT, AREA_FIRE_RADIUS, SMOKE_INITIAL } from "./constants.ts";
 import { hasLOS } from "./los.ts";
 import { TERRAIN } from "./terrain.ts";
-import { resolveArmorHit } from "./vehicleCombat.ts";
+import { knockOut, resolveArmorHit } from "./vehicleCombat.ts";
 import { WEAPONS } from "./weapons.ts";
-import { Soldier, World } from "./world.ts";
+import { Soldier, Vehicle, World } from "./world.ts";
 import { sound } from "../render/sound.ts";
 import type { SfxId } from "../render/sound.ts";
 
@@ -200,13 +200,27 @@ const GRENADE_RANGE = 6; // cells (~12 m) — throwing distance
 const GRENADE_RADIUS = 1.8; // blast radius in cells
 const GRENADE_COOLDOWN = 3.5; // seconds between throws per man
 const GRENADE_POINT_BLANK = 3.5; // within this, lob one even at an exposed enemy
+const TANK_GRENADE_RANGE = 4; // must get close to put a bundle on the deck/tracks
 
 // Look for a nearby visible enemy and, if he's in cover (where rifle fire is wasted)
 // or simply close enough, lob a grenade at him. Grenades ignore cover (that's their
-// job) and crack the building they land in.
+// job) and crack the building they land in. A tank that has driven in among the
+// infantry is the bigger threat — men will spend a grenade on its deck/tracks first.
 function tryThrowGrenade(world: World, s: Soldier): void {
   if (s.grenades <= 0 || s.grenadeCD > 0) return;
   if (s.suppression > 0.6) return; // too pinned to pop up and throw
+
+  // Tank-killing with hand grenades: only at point-blank, where a man can reach the
+  // engine deck or run a bundle under the tracks. Far weaker than a Panzerfaust, but
+  // it's why armor should never wade into infantry alone (CC's "tank terror").
+  const veh = nearestEnemyVehicle(world, s, TANK_GRENADE_RANGE);
+  if (veh) {
+    s.grenades--;
+    s.grenadeCD = GRENADE_COOLDOWN;
+    s.firedTimer = 0.5;
+    grenadeTank(world, s, veh);
+    return;
+  }
 
   let target: Soldier | null = null;
   let bestD = GRENADE_RANGE;
@@ -249,6 +263,47 @@ function throwGrenade(world: World, s: Soldier, tx: number, ty: number): void {
     } else {
       addSuppression(e, 0.5 * falloff);
     }
+  }
+}
+
+// Nearest live enemy tank within `range` cells and in line of sight — the candidate
+// for a close-in grenade attack.
+function nearestEnemyVehicle(world: World, s: Soldier, range: number): Vehicle | null {
+  let best: Vehicle | null = null;
+  let bestD = range;
+  for (const v of world.vehicles) {
+    if (v.faction === s.faction || v.status === "ko") continue;
+    const d = Math.hypot(v.x - s.x, v.y - s.y);
+    if (d > bestD) continue;
+    if (!hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), Math.floor(v.x), Math.floor(v.y), world.smokeGrid)) continue;
+    best = v;
+    bestD = d;
+  }
+  return best;
+}
+
+// A grenade bundle on a tank: it lands on the deck or under the tracks, so most of
+// the time it breaks a track (immobilize) or shakes the crew; now and then it cooks
+// off something vital and knocks the tank out. Deliberately far weaker than rocket AT.
+function grenadeTank(world: World, s: Soldier, v: Vehicle): void {
+  sound.play("explosion", v.x, v.y);
+  world.effects.push({ kind: "lob", x0: s.x, y0: s.y, x1: v.x, y1: v.y, ttl: 0.5, maxTtl: 0.5 });
+  world.effects.push({ kind: "fire", x0: v.x, y0: v.y, x1: v.x, y1: v.y, ttl: 0.35 });
+  world.effects.push({ kind: "hit", x0: v.x, y0: v.y, x1: v.x, y1: v.y, ttl: 0.3 });
+
+  const r = Math.random();
+  if (r < 0.08) {
+    knockOut(world, v);
+  } else if (r < 0.33) {
+    v.immobilized = true;
+    v.path = null;
+    v.suppression = Math.min(1, v.suppression + 0.4);
+  } else if (r < 0.5) {
+    v.crew = Math.max(0, v.crew - 1);
+    v.suppression = Math.min(1, v.suppression + 0.4);
+    if (v.crew <= 0) knockOut(world, v);
+  } else {
+    v.suppression = Math.min(1, v.suppression + 0.5);
   }
 }
 

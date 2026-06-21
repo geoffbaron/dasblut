@@ -45,6 +45,13 @@ export function isPassable(t: Terrain): boolean {
   return TERRAIN[t].moveCost !== Infinity;
 }
 
+// Hard surfaces — paving, stone, masonry, rubble — that a round can spark and
+// ricochet off. Soil, grass, hedges and water just absorb the round (no spark), and
+// neither does flesh, which is why a man hit in the open never throws a ricochet.
+export function isHardSurface(t: Terrain): boolean {
+  return t === Terrain.Road || t === Terrain.Wall || t === Terrain.Rubble || t === Terrain.Floor || t === Terrain.Window;
+}
+
 // Vehicles can't enter woods, water, or buildings; they crush hedges (slowly) and
 // race down roads. Used for vehicle pathfinding.
 export function vehiclePassable(t: Terrain): boolean {

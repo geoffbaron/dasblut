@@ -2,7 +2,7 @@ import { addSuppression, killSoldier, woundSoldier } from "./casualty.ts";
 import { damageBuildings } from "./buildingDamage.ts";
 import { AMBUSH_ACC_MULT, AREA_FIRE_RADIUS, SMOKE_INITIAL } from "./constants.ts";
 import { hasLOS } from "./los.ts";
-import { TERRAIN } from "./terrain.ts";
+import { isHardSurface, TERRAIN } from "./terrain.ts";
 import { knockOut, resolveArmorHit } from "./vehicleCombat.ts";
 import { WEAPONS } from "./weapons.ts";
 import { Soldier, Vehicle, World } from "./world.ts";
@@ -390,9 +390,13 @@ function bazookaMiss(world: World, tx: number, ty: number): void {
   world.effects.push({ kind: "smoke", x0: mx, y0: my, x1: 0, y1: 0, ttl: 1.0, maxTtl: 1.0 });
 }
 
-// Some rounds spit off the ground/cover where a tracer lands: a quick bright spark
-// streak shooting away in a random direction, with the occasional audible zing.
+// Some rounds spit off a hard surface where a tracer lands: a quick bright spark
+// streak shooting away in a random direction, with the occasional audible zing. Only
+// stone, brick, paving and rubble spark — a round that strikes soil, grass or a man
+// just thuds in, so infantry hit in the open never throw a ricochet.
 export function spawnRicochet(world: World, x: number, y: number): void {
+  const cx = Math.floor(x), cy = Math.floor(y);
+  if (!world.grid.inBounds(cx, cy) || !isHardSurface(world.grid.get(cx, cy))) return;
   if (Math.random() > 0.22) return; // only a fraction of tracers kick off
   const a = Math.random() * Math.PI * 2;
   const len = 1.2 + Math.random() * 2.2;

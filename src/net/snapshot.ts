@@ -65,7 +65,7 @@ export function encodeSnapshot(world: World): Snapshot {
   const g = world.smokeGrid;
   for (let i = 0; i < g.length; i++) if (g[i] > 0.05) { sm.push(i, Math.round(g[i] * 100)); }
   const O: SnapObj[] = world.objectives.map((o) => [
-    o.owner === "us" ? 0 : 1,
+    o.owner === "us" ? 0 : o.owner === "axis" ? 1 : 2, // 2 = neutral
     o.capturing == null ? -1 : o.capturing === "us" ? 0 : 1,
     Math.round(o.progress * 100),
     o.contested ? 1 : 0,
@@ -114,7 +114,7 @@ export function applySnapshot(world: World, snap: Snapshot): void {
   for (let i = 0; i < world.objectives.length && i < snap.O.length; i++) {
     const [owner, cap, prog, cont] = snap.O[i];
     const o = world.objectives[i];
-    o.owner = owner === 0 ? "us" : "axis";
+    o.owner = owner === 0 ? "us" : owner === 1 ? "axis" : "neutral";
     o.capturing = cap === -1 ? null : cap === 0 ? "us" : "axis";
     o.progress = prog / 100;
     o.contested = cont === 1;

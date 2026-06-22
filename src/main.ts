@@ -3,7 +3,7 @@ import { BATTLE_TIME_S, OBJECTIVE_HOLD_TO_WIN, SPEED_STEPS, VIS_INTERVAL } from 
 import { GameMap } from "./game/gamemap.ts";
 import { step } from "./game/sim.ts";
 import { Cell } from "./game/pathfinding.ts";
-import { Faction, GameMode, Stance, World } from "./game/world.ts";
+import { DEFAULT_SETUP, Faction, GameSetup, Stance, World } from "./game/world.ts";
 import { WEAPONS } from "./game/weapons.ts";
 import { VEHICLES } from "./game/vehicleDefs.ts";
 import { updateVisibility } from "./game/visibility.ts";
@@ -171,8 +171,8 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
     document.body.appendChild(badge);
   }
 
-  // The deploy bar + launch belong to the local attacker, who controls the battle phase.
-  if (opts.local && side === world.attacker) {
+  // The deploy bar + launch belong to the local human player, who starts the battle.
+  if (opts.local && side === world.player) {
     deployBar.style.display = "flex";
     launchBtn.addEventListener("click", () => {
       world.phase = "battle";
@@ -185,7 +185,7 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
   if (!canCommand) { ordersBar.style.display = "none"; rosterEl.style.display = "none"; }
 
   const inDeployZone = (cy: number): boolean =>
-    side === world.attacker ? cy >= world.deployY0Atk : cy < world.deployY1Def;
+    side === world.southFaction ? cy >= world.deploySouthY0 : cy < world.deployNorthY1;
 
   // --- force tracker / objective / selection / banner ---
   const refreshStatus = () => {
@@ -201,31 +201,32 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
     {
       const objs = world.objectives;
       const total = objs.length;
-      const atkOwned = objs.filter((o) => o.owner === world.attacker).length;
+      const holder = world.objAllOwner();
       const contested = objs.some((o) => o.contested);
-      const atkLabel = SIDE_LABEL[world.attacker];
-      const defLabel = SIDE_LABEL[world.defender];
+      const myOwned = objs.filter((o) => o.owner === world.player).length;
+      const foe = world.aiFaction;
       let line: string;
-      if (world.attackerHoldsAll()) {
-        line = `<span class="obj-hold">HOLD ${Math.ceil(world.objHoldTimer)} / ${OBJECTIVE_HOLD_TO_WIN}s</span>`;
+      if (holder && world.roleOf(holder) === "attack") {
+        const c = holder === world.player ? "hold" : holder;
+        line = `<span class="obj-${c}">${SIDE_LABEL[holder]} HOLD ${Math.ceil(world.objHoldTimer)} / ${OBJECTIVE_HOLD_TO_WIN}s</span>`;
       } else if (total === 1) {
         const o = objs[0];
         if (contested) line = `<span class="obj-contested">CONTESTED</span>`;
         else if (o.capturing) line = `<span class="obj-${o.capturing}">${SIDE_LABEL[o.capturing as Faction]} capturing… ${Math.round(o.progress * 100)}%</span>`;
-        else line = `<span class="obj-${world.defender}">${defLabel} holds</span>`;
+        else if (o.owner === "neutral") line = `<span class="obj-contested">UP FOR GRABS</span>`;
+        else line = `<span class="obj-${o.owner}">${SIDE_LABEL[o.owner as Faction]} holds</span>`;
       } else {
-        const cls = atkOwned > total - atkOwned ? `obj-${world.attacker}` : `obj-${world.defender}`;
-        line = `<span class="${cls}">${atkLabel} ${atkOwned} / ${total}</span>` + (contested ? ` <span class="obj-contested">· contested</span>` : "");
+        const cls = myOwned >= total - myOwned ? `obj-${world.player}` : `obj-${foe}`;
+        line = `<span class="${cls}">${SIDE_LABEL[world.player]} ${myOwned} / ${total}</span>` + (contested ? ` <span class="obj-contested">· contested</span>` : "");
       }
       objectiveEl.innerHTML = `<div class="obj-title">${total > 1 ? "OBJECTIVES" : "OBJECTIVE"}</div><div>${line}</div>`;
     }
 
     if (world.outcome) {
       bannerEl.style.display = "flex";
-      // win/lose meaning flips for the Axis commander.
-      const isAttacker = side === world.attacker;
-      const iWon = isAttacker ? world.outcome === "win" : world.outcome === "lose";
-      bannerBig.textContent = iWon ? (isAttacker ? "OBJECTIVE SECURED" : "POSITION HELD") : (isAttacker ? "ATTACK REPULSED" : "POSITION OVERRUN");
+      const iWon = world.outcome === "win"; // outcome is already player-relative
+      const amDefender = world.roleOf(world.player) === "defend";
+      bannerBig.textContent = iWon ? (amDefender ? "POSITION HELD" : "OBJECTIVE SECURED") : (amDefender ? "POSITION OVERRUN" : "ATTACK REPULSED");
       bannerBig.style.color = iWon ? "#9fcf6f" : "#e0533a";
       bannerSub.textContent = iWon ? "The field is yours." : "The battle is lost.";
     }
@@ -552,23 +553,23 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
 
 // === Host (US) / offline single-player =============================================
 
-async function startGame(map: GameMap, objectiveCount = 1, mode: GameMode = "axis-attacks") {
+async function startGame(map: GameMap, objectiveCount = 1, setup: GameSetup = DEFAULT_SETUP) {
   const mount = document.getElementById("app")!;
-  const world = new World(map, objectiveCount, mode);
+  const world = new World(map, objectiveCount, setup);
   updateVisibility(world, VIS_INTERVAL);
   const renderer = new Renderer();
   await renderer.init(mount, world);
   (window as { __game?: unknown }).__game = { world, renderer };
 
-  const hud = installHUD(world, renderer, { side: world.attacker, local: true });
+  const hud = installHUD(world, renderer, { side: world.player, local: true });
 
-  // Multiplayer host: apply relayed orders; disable the defender AI while a human is in.
+  // Multiplayer host: apply relayed orders; disable the AI side while a human is in.
   onAxisOrderHost = (o) => applyAxisOrder(world, o);
-  onGermanPresentHost = (present) => { world.axisHuman = present; world.defenderHuman = present; };
+  onGermanPresentHost = (present) => { world.aiHuman = present; };
   let setupSent = false, netAccum = 0;
 
   let lastRenderTs = performance.now();
-  let prevAtkOwned = world.objectives.filter((o) => o.owner === world.attacker).length;
+  let prevAtkOwned = world.objectives.filter((o) => o.owner === world.player).length;
   const loop = new GameLoop(
     () => step(world),
     (alpha) => {
@@ -583,7 +584,7 @@ async function startGame(map: GameMap, objectiveCount = 1, mode: GameMode = "axi
         if (netAccum >= 0.12) { net.sendSnapshot(encodeSnapshot(world)); netAccum = 0; }
       }
       sound.updateAmbient(dtSec, world.phase === "battle" && !world.outcome && !loop.paused);
-      const atkOwned = world.objectives.filter((o) => o.owner === world.attacker).length;
+      const atkOwned = world.objectives.filter((o) => o.owner === world.player).length;
       if (atkOwned !== prevAtkOwned) { sound.playUI(atkOwned > prevAtkOwned ? "obj_capture" : "obj_lost"); prevAtkOwned = atkOwned; }
       hud.frame();
     },

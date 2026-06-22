@@ -220,14 +220,26 @@
       <div class="bar">
         <input id="search" type="text" placeholder="Search a place (e.g. Carentan, Bastogne, your street)…" />
         <button id="searchBtn">Search</button>
-        <select id="gameMode" title="Which side do you command?">
-          <option value="axis-attacks">Play as Axis (attack)</option>
-          <option value="us-attacks">Play as US (attack)</option>
+        <select id="gameMode" title="Who attacks and who defends?">
+          <option value="axis-attacks">Axis attacks · US defends</option>
+          <option value="us-attacks">US attacks · Axis defends</option>
+          <option value="meeting-axis">Meeting — both attack (play Axis)</option>
+          <option value="meeting-us">Meeting — both attack (play US)</option>
         </select>
         <select id="objCount" title="How many objectives to capture &amp; hold">
           <option value="1">1 objective</option>
           <option value="2">2 objectives</option>
           <option value="3">3 objectives</option>
+        </select>
+        <select id="usTanks" title="US tanks">
+          <option value="1">US: 1 tank</option>
+          <option value="2">US: 2 tanks</option>
+          <option value="3">US: 3 tanks</option>
+        </select>
+        <select id="axisTanks" title="Axis tanks">
+          <option value="1">Axis: 1 tank</option>
+          <option value="2">Axis: 2 tanks</option>
+          <option value="3">Axis: 3 tanks</option>
         </select>
         <button id="deployBtn" class="primary">⚔ Deploy here</button>
         <button id="testBtn">Use test map</button>

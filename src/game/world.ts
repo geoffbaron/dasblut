@@ -92,7 +92,7 @@ export interface ObjState {
   cx: number;
   cy: number;
   radius: number;
-  owner: Faction; // who currently controls it
+  owner: Faction | "neutral"; // who currently controls it ("neutral" = up for grabs)
   capturing: Faction | null; // who is in the middle of flipping it
   progress: number; // 0..1 toward the capturing side taking it
   contested: boolean; // both sides present
@@ -175,7 +175,23 @@ function squadLoadout(kind: SquadKind, count: number, faction: Faction): WeaponI
   return out;
 }
 
-export type GameMode = "us-attacks" | "axis-attacks";
+export type Role = "attack" | "defend";
+
+// How a battle is configured: who the human commands, each side's role (attack the
+// objectives or defend them), and how many tanks each side fields (1-3).
+export interface GameSetup {
+  player: Faction;
+  usRole: Role;
+  axisRole: Role;
+  usTanks: number;
+  axisTanks: number;
+}
+
+export const DEFAULT_SETUP: GameSetup = {
+  player: "axis", usRole: "defend", axisRole: "attack", usTanks: 1, axisTanks: 1,
+};
+
+function other(f: Faction): Faction { return f === "us" ? "axis" : "us"; }
 
 export class World {
   grid: Grid;
@@ -188,28 +204,30 @@ export class World {
   pendingGrenades: PendingGrenade[] = [];
   time = 0;
   phase: "deploy" | "battle" = "deploy";
-  // Which faction is the human attacker, and which defends (AI or second human).
-  mode: GameMode = "axis-attacks";
-  attacker: Faction = "axis";
-  defender: Faction = "us";
-  // Deployment zones (in grid cells): attacker gets the south band, defender the north.
-  deployY0Atk: number = 0;  // attacker zone: rows deployY0Atk..grid.height-1
-  deployY1Def: number = 0;  // defender zone: rows 0..deployY1Def-1
-  // Legacy aliases so existing code still compiles
-  get deployY0Us(): number { return this.attacker === "us" ? this.deployY0Atk : this.deployY1Def; }
-  get deployY1Axis(): number { return this.attacker === "axis" ? this.deployY0Atk : this.deployY1Def; }
+  // The human commands `player`; the AI commands `aiFaction`. Each side either attacks
+  // (advance & take the objectives) or defends (hold them). Both can attack (a meeting
+  // engagement over a neutral objective).
+  player: Faction = "axis";
+  aiFaction: Faction = "us";
+  usRole: Role = "defend";
+  axisRole: Role = "attack";
+  // The faction deploying along the south edge; the other deploys north.
+  southFaction: Faction = "axis";
+  // Deployment bands (grid rows): south band [deploySouthY0, height), north [0, deployNorthY1).
+  deploySouthY0 = 0;
+  deployNorthY1 = 0;
   selectedTeamId: number | null = null;
   selectedTeamIds: Set<number> = new Set();
   selectedVehicleId: number | null = null;
-  // When a human opponent is commanding the defender, suppress the defender AI.
-  axisHuman = false;
-  defenderHuman = false;
+  // A human opponent (multiplayer) commands the AI side → suppress the AI.
+  aiHuman = false;
   outcome: "win" | "lose" | null = null;
 
   // Capture-and-hold objectives (1-3). Each starts under the defender; the
   // attacker wins by controlling ALL of them at once for objHoldTimer seconds.
   objectives: ObjState[] = [];
-  objHoldTimer = 0; // seconds the attacker has held EVERY objective simultaneously
+  objHoldTimer = 0; // seconds the current holder has held EVERY objective simultaneously
+  holdFaction: Faction | null = null; // which attacker the hold timer is counting for
 
   // Battle clock + enemy-AI throttle.
   aiAccum = 0;
@@ -239,43 +257,84 @@ export class World {
 
   readonly mapName: string;
 
-  constructor(map: GameMap, objectiveCount = map.objectives.length, mode: GameMode = "axis-attacks") {
+  constructor(map: GameMap, objectiveCount = map.objectives.length, setup: GameSetup = DEFAULT_SETUP) {
     this.mapName = map.name;
     this.grid = map.grid;
     this.features = map.features;
-    this.mode = mode;
-    this.attacker = mode === "us-attacks" ? "us" : "axis";
-    this.defender = mode === "us-attacks" ? "axis" : "us";
-    // Use the first N candidate objectives; all start under the defender.
+    this.player = setup.player;
+    this.aiFaction = other(setup.player);
+    this.usRole = setup.usRole;
+    this.axisRole = setup.axisRole;
+    // The lone attacker takes the south edge; in a meeting (both attack) the US holds
+    // the south by convention (its historical line of advance).
+    this.southFaction =
+      setup.usRole === "attack" && setup.axisRole === "defend" ? "us"
+      : setup.axisRole === "attack" && setup.usRole === "defend" ? "axis"
+      : "us";
+    const northFaction = other(this.southFaction);
+
+    // The defender owns the objectives at the start; a meeting starts them neutral.
+    const startOwner: Faction | "neutral" =
+      setup.usRole === "defend" && setup.axisRole === "attack" ? "us"
+      : setup.axisRole === "defend" && setup.usRole === "attack" ? "axis"
+      : "neutral";
     const n = Math.max(1, Math.min(objectiveCount, map.objectives.length));
     this.objectives = map.objectives.slice(0, n).map((o) => ({
       cx: o.cx, cy: o.cy, radius: o.radius,
-      owner: this.defender, capturing: null, progress: 0, contested: false,
+      owner: startOwner, capturing: null, progress: 0, contested: false,
     }));
     this.visGrid = new Uint8Array(this.grid.width * this.grid.height);
     this.buildDmg = new Float32Array(this.grid.width * this.grid.height);
     this.smokeGrid = new Float32Array(this.grid.width * this.grid.height);
-    // Deployment zones: attacker gets the south 25%, defender the north 25%.
-    this.deployY0Atk  = Math.floor(this.grid.height * 0.75);
-    this.deployY1Def  = Math.ceil(this.grid.height  * 0.25);
+    this.deploySouthY0 = Math.floor(this.grid.height * 0.75);
+    this.deployNorthY1 = Math.ceil(this.grid.height * 0.25);
 
-    // The attacker uses the south spawn *positions* and the defender the north ones.
-    // map.spawns.us is always south, map.spawns.axis is always north. The *faction*
-    // assigned to each position set depends on the mode.
-    const atkColor = this.attacker === "us" ? 0x4f7fd1 : 0xc4514a;
-    const defColor = this.defender === "us" ? 0x4f7fd1 : 0xc4514a;
-    for (const s of map.spawns.us) this.spawnSquad(s, this.attacker, atkColor, 0.65);
-    for (const s of map.spawns.axis) this.spawnSquad(s, this.defender, defColor, 0.6);
-    for (const v of map.spawns.usVehicles) this.spawnVehicle(v.cls, v.cx, v.cy, v.facing);
-    for (const v of map.spawns.axisVehicles) this.spawnVehicle(v.cls, v.cx, v.cy, v.facing);
+    // map.spawns.us is always the south positions, map.spawns.axis the north ones; the
+    // faction occupying each depends on who's attacking from where.
+    const colorOf = (f: Faction) => (f === "us" ? 0x4f7fd1 : 0xc4514a);
+    const trainOf = (f: Faction) => (this.roleOf(f) === "attack" ? 0.65 : 0.6);
+    for (const s of map.spawns.us) this.spawnSquad(s, this.southFaction, colorOf(this.southFaction), trainOf(this.southFaction));
+    for (const s of map.spawns.axis) this.spawnSquad(s, northFaction, colorOf(northFaction), trainOf(northFaction));
+
+    // Tanks: each side's own class, count from the setup, clustered at its band anchor.
+    const southAnchor = map.spawns.usVehicles[0] ?? { cx: (this.grid.width / 2) | 0, cy: this.grid.height - 5 };
+    const northAnchor = map.spawns.axisVehicles[0] ?? { cx: (this.grid.width / 2) | 0, cy: 5 };
+    this.spawnTanks(this.southFaction, this.southFaction === "us" ? setup.usTanks : setup.axisTanks, southAnchor.cx, southAnchor.cy, -Math.PI / 2);
+    this.spawnTanks(northFaction, northFaction === "us" ? setup.usTanks : setup.axisTanks, northAnchor.cx, northAnchor.cy, Math.PI / 2);
   }
 
-  /** True when the attacker controls every objective — the win/hold condition. */
-  attackerHoldsAll(): boolean {
-    return this.objectives.length > 0 && this.objectives.every((o) => o.owner === this.attacker);
+  roleOf(f: Faction): Role { return f === "us" ? this.usRole : this.axisRole; }
+
+  /** The faction that owns EVERY objective right now, or null if mixed/neutral. */
+  objAllOwner(): Faction | null {
+    if (this.objectives.length === 0) return null;
+    const first = this.objectives[0].owner;
+    if (first === "neutral") return null;
+    return this.objectives.every((o) => o.owner === first) ? (first as Faction) : null;
   }
-  /** @deprecated Use attackerHoldsAll(). Kept for compatibility. */
-  usHoldsAll(): boolean { return this.attackerHoldsAll(); }
+  /** True when the human player controls every objective. */
+  playerHoldsAll(): boolean { return this.objAllOwner() === this.player; }
+
+  // Spawn `count` tanks of the faction's class, clustered around (cx,cy) on drivable
+  // ground, all facing the given heading.
+  private spawnTanks(faction: Faction, count: number, cx: number, cy: number, facing: number): void {
+    const cls: VehicleClass = faction === "us" ? "sherman" : "panzer4";
+    const n = Math.max(1, Math.min(3, count));
+    for (let i = 0; i < n; i++) {
+      const off = i === 0 ? 0 : (i % 2 === 1 ? 1 : -1) * Math.ceil(i / 2) * 3;
+      const cell = this.nearestVehicleCell(cx + off, cy);
+      this.spawnVehicle(cls, cell.cx, cell.cy, facing);
+    }
+  }
+
+  private nearestVehicleCell(cx: number, cy: number): { cx: number; cy: number } {
+    for (let r = 0; r < 24; r++)
+      for (let dy = -r; dy <= r; dy++)
+        for (let dx = -r; dx <= r; dx++)
+          if (this.grid.inBounds(cx + dx, cy + dy) && vehiclePassable(this.grid.get(cx + dx, cy + dy)))
+            return { cx: cx + dx, cy: cy + dy };
+    return { cx, cy };
+  }
 
   /** Center point of all objectives, for framing the camera. */
   objectivesCentroid(): { cx: number; cy: number } {
@@ -362,14 +421,14 @@ export class World {
         pathIndex: 0,
         ox: f.ox,
         oy: f.oy,
-        facing: faction === this.attacker ? -Math.PI / 2 : Math.PI / 2,
+        facing: faction === this.southFaction ? -Math.PI / 2 : Math.PI / 2,
         gait: 0.9 + Math.random() * 0.22, // 0.90–1.12: each man's natural pace
 
         weapon,
         ammo: WEAPONS[weapon].ammo,
         status: "active",
         training,
-        stance: faction === this.defender ? "defend" : "move",
+        stance: this.roleOf(faction) === "defend" ? "defend" : "move",
         targetId: null,
         targetVehId: null,
         manualTargetId: null,

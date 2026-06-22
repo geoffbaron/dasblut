@@ -3,65 +3,65 @@ import { Cell } from "./pathfinding.ts";
 import { isPassable, TERRAIN, vehiclePassable } from "./terrain.ts";
 import { Soldier, World } from "./world.ts";
 
-// Objective-aware defender AI, run on a throttle. Whichever faction is the defender
-// garrisons the objectives, holds under a Defend posture, and counterattacks the
-// moment the attacker threatens or takes one. Works for both "us-attacks" and
-// "axis-attacks" modes — the faction it controls is world.defender.
-export function commandDefender(world: World, dt: number): void {
+// The computer commander, run on a throttle. It controls world.aiFaction and simply
+// tries to own and hold every objective: it advances on (or counterattacks toward) any
+// objective it doesn't control or that's being contested, and holds the rest from good
+// cover. This single behaviour covers all three roles — a defender garrisons and
+// retakes lost ground; an attacker (or a meeting-engagement AI over a neutral flag)
+// pushes forward. Per-soldier firing is still handled by the combat AI.
+export function commandAI(world: World, dt: number): void {
   world.aiAccum += dt;
   if (world.aiAccum < AI_INTERVAL) return;
   world.aiAccum = 0;
 
-  const atk = world.attacker;
-  const def = world.defender;
-  const objThreatened = (o: { owner: string; capturing: string | null; contested: boolean }) =>
-    o.owner === atk || o.capturing === atk || o.contested;
-  const anyThreat = world.objectives.some(objThreatened);
-  const threatChanged = anyThreat !== world.aiThreatPrev;
-  world.aiThreatPrev = anyThreat;
+  const ai = world.aiFaction;
+  const foe = ai === "us" ? "axis" : "us";
+  // An objective needs attention if the AI doesn't hold it, or the enemy is on/taking it.
+  const needs = (o: { owner: string; capturing: string | null; contested: boolean }) =>
+    o.owner !== ai || o.capturing === foe || o.contested;
+  const anyNeed = world.objectives.some(needs);
+  const changed = anyNeed !== world.aiThreatPrev;
+  world.aiThreatPrev = anyNeed;
 
-  const defTeams = world.teams.filter((t) => t.faction === def);
-  defTeams.forEach((team, idx) => {
+  const aiTeams = world.teams.filter((t) => t.faction === ai);
+  aiTeams.forEach((team, idx) => {
     const men = team.soldierIds.map((id) => world.soldier(id)!).filter((s) => s.status === "active");
     if (men.length === 0) return;
     if (men.every((s) => s.state === "panicked" || s.state === "routing")) return;
 
     const o = world.objectives[idx % world.objectives.length];
-    const threatened = objThreatened(o);
-    const lost = o.owner === atk;
-    if (!team.post) team.post = postAround(world, o.cx, o.cy, o.radius, idx, defTeams.length);
+    const wants = needs(o);
+    const lost = o.owner === foe; // enemy actually holds it — rush to retake
+    if (!team.post) team.post = postAround(world, o.cx, o.cy, o.radius, idx, aiTeams.length);
     const anchor = men[0];
-    const goal: Cell = threatened ? { cx: o.cx, cy: o.cy } : team.post;
+    const goal: Cell = wants ? { cx: o.cx, cy: o.cy } : team.post;
     const d = Math.hypot(anchor.x - goal.cx, anchor.y - goal.cy);
     const moving = men.some((s) => s.path);
     const engaged = men.some((s) => s.targetId != null);
 
     if (d > 4) {
-      if (threatChanged || !moving || (threatened && !movingToward(men, goal))) {
+      if (changed || !moving || (wants && !movingToward(men, goal))) {
         if (lost) world.orderMove(team.id, goal, "fast");
-        else if (!engaged || threatened) world.orderMove(team.id, goal, "move");
+        else if (!engaged || wants) world.orderMove(team.id, goal, "move");
       }
     } else if (!defending(men)) {
       world.orderPosture(team.id, "defend");
     }
   });
 
-  // Defender armor: fall back onto the nearest threatened objective, else hold near one.
-  const vt = world.objectives.find(objThreatened) ?? world.objectives[0];
+  // AI armor: push onto the nearest objective that needs taking, else hold near one.
+  const vt = world.objectives.find(needs) ?? world.objectives[0];
   for (const v of world.vehicles) {
-    if (v.faction !== def || v.status === "ko" || !vt) continue;
+    if (v.faction !== ai || v.status === "ko" || !vt) continue;
     const d = Math.hypot(v.x - vt.cx, v.y - vt.cy);
-    const threatened = objThreatened(vt);
-    if (threatened && d > 6) {
-      if (threatChanged || !v.path) world.orderVehicleMove(v.id, { cx: vt.cx, cy: vt.cy }, false);
-    } else if (!threatened && d > 10 && !v.path) {
+    const wants = needs(vt);
+    if (wants && d > 6) {
+      if (changed || !v.path) world.orderVehicleMove(v.id, { cx: vt.cx, cy: vt.cy }, false);
+    } else if (!wants && d > 10 && !v.path) {
       world.orderVehicleMove(v.id, nearestVehCell(world, vt.cx, vt.cy), false);
     }
   }
 }
-
-// Legacy export name — some call sites may still use it.
-export const commandAxis = commandDefender;
 
 function defending(men: Soldier[]): boolean {
   return men.every((s) => s.stance === "defend" && !s.path);

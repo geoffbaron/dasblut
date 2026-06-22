@@ -128,7 +128,7 @@ export class Renderer {
     const occupied = new Uint8Array(this.buildings.length);
     for (const s of world.soldiers) {
       if (s.status === "dead") continue;
-      if (!(this.revealAll || s.faction === world.attacker || s.seen)) continue;
+      if (!(this.revealAll || s.faction === world.player || s.seen)) continue;
       const cx = Math.floor(s.x), cy = Math.floor(s.y);
       if (!world.grid.inBounds(cx, cy)) continue;
       const b = this.cellBuilding[world.grid.idx(cx, cy)];
@@ -344,7 +344,7 @@ export class Renderer {
   private drawVehicles(world: World, alpha: number): void {
     for (const v of world.vehicles) {
       const sp = this.ensureVehicleSprite(v);
-      const shown = this.revealAll || v.faction === world.attacker || v.seen;
+      const shown = this.revealAll || v.faction === world.player || v.seen;
       sp.hull.visible = shown;
       sp.shadow.visible = shown && v.status !== "ko";
       sp.turret.visible = shown && v.status !== "ko";
@@ -507,7 +507,7 @@ export class Renderer {
     };
 
     for (const team of world.teams) {
-      if (team.faction !== world.attacker) continue;
+      if (team.faction !== world.player) continue;
       const lead = world.soldier(team.leaderId) ?? world.soldier(team.soldierIds[0]);
       if (!lead || lead.status !== "active") continue;
       const order = team.soldierIds.map((id) => world.soldier(id)).find((s) => s?.manualTargetId != null || s?.manualVehId != null || s?.fireCell);
@@ -525,7 +525,7 @@ export class Renderer {
     }
 
     for (const v of world.vehicles) {
-      if (v.faction !== world.attacker || v.status === "ko") continue;
+      if (v.faction !== world.player || v.status === "ko") continue;
       const bright = v.id === selV;
       const tv = v.manualVeh != null ? world.vehicle(v.manualVeh) : null;
       const ti = v.manualInf != null ? world.soldier(v.manualInf) : null;
@@ -539,18 +539,19 @@ export class Renderer {
     const g = this.overlay;
     const mw = world.grid.width * CELL_SIZE;
     const mh = world.grid.height * CELL_SIZE;
-    const atkCol = world.attacker === "us" ? 0x4f7fd1 : 0xc4514a;
-    const defCol = world.defender === "us" ? 0x4f7fd1 : 0xc4514a;
+    const northFaction = world.southFaction === "us" ? "axis" : "us";
+    const southCol = world.southFaction === "us" ? 0x4f7fd1 : 0xc4514a;
+    const northCol = northFaction === "us" ? 0x4f7fd1 : 0xc4514a;
 
-    // Attacker zone — south band.
-    const atkY = world.deployY0Atk * CELL_SIZE;
-    g.rect(0, atkY, mw, mh - atkY).fill({ color: atkCol, alpha: 0.14 });
-    g.moveTo(0, atkY).lineTo(mw, atkY).stroke({ width: 3, color: atkCol, alpha: 0.7 });
+    // South band — the faction deploying along the bottom edge.
+    const sY = world.deploySouthY0 * CELL_SIZE;
+    g.rect(0, sY, mw, mh - sY).fill({ color: southCol, alpha: 0.14 });
+    g.moveTo(0, sY).lineTo(mw, sY).stroke({ width: 3, color: southCol, alpha: 0.7 });
 
-    // Defender zone — north band.
-    const defY = world.deployY1Def * CELL_SIZE;
-    g.rect(0, 0, mw, defY).fill({ color: defCol, alpha: 0.14 });
-    g.moveTo(0, defY).lineTo(mw, defY).stroke({ width: 3, color: defCol, alpha: 0.7 });
+    // North band — the faction deploying along the top edge.
+    const nY = world.deployNorthY1 * CELL_SIZE;
+    g.rect(0, 0, mw, nY).fill({ color: northCol, alpha: 0.14 });
+    g.moveTo(0, nY).lineTo(mw, nY).stroke({ width: 3, color: northCol, alpha: 0.7 });
   }
 
   private drawObjective(world: World): void {
@@ -559,7 +560,7 @@ export class Renderer {
     for (const o of world.objectives) {
       const cx = (o.cx + 0.5) * CELL_SIZE;
       const cy = (o.cy + 0.5) * CELL_SIZE;
-      const col = o.owner === "us" ? 0x4f7fd1 : 0xc4514a;
+      const col = o.owner === "us" ? 0x4f7fd1 : o.owner === "axis" ? 0xc4514a : 0xbfb38a;
 
       // Capture zone — slightly more opaque so it punches through building rooftops.
       g.circle(cx, cy, o.radius * CELL_SIZE).fill({ color: col, alpha: o.contested ? 0.22 : 0.12 });
@@ -572,7 +573,7 @@ export class Renderer {
       if (o.capturing) {
         frac = o.progress;
         arcCol = o.capturing === "us" ? 0x4f7fd1 : 0xc4514a;
-      } else if (o.owner === world.attacker) {
+      } else if (o.owner === world.player) {
         frac = holdFrac;
         arcCol = 0x6fcf6f;
       }
@@ -597,7 +598,7 @@ export class Renderer {
       const sp = this.ensureSoldierSprite(world, s);
 
       // Enemies are only drawn while spotted; corpses linger until LOS is lost.
-      const shown = this.revealAll || s.faction === world.attacker || s.seen;
+      const shown = this.revealAll || s.faction === world.player || s.seen;
       sp.body.visible = shown;
       sp.shadow.visible = shown && s.status === "active";
       if (!shown) continue;
@@ -681,7 +682,7 @@ export class Renderer {
     // sits over the head; a small cover tick sits under the feet when he's in real
     // cover. Steady men in the open get nothing, so the eye is drawn to what matters.
     for (const s of world.soldiers) {
-      if (s.faction !== world.attacker || s.status !== "active") continue;
+      if (s.faction !== world.player || s.status !== "active") continue;
       const ix = s.x * CELL_SIZE;
       const iy = s.y * CELL_SIZE;
       this.drawMoraleIcon(g, ix, iy, s.state);

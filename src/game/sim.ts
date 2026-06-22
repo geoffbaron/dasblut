@@ -1,5 +1,5 @@
 import { acquireTargets, ensureFleeGoal } from "./ai.ts";
-import { commandDefender } from "./axisAI.ts";
+import { commandAI } from "./axisAI.ts";
 import { resolveFire, updateGrenades } from "./combat.ts";
 import {
   BASE_MOVE_SPEED,
@@ -54,7 +54,7 @@ export function step(world: World): void {
     world.visAccum = 0;
   }
 
-  if (!world.defenderHuman) commandDefender(world, SIM_DT); // a human opponent replaces the AI
+  if (!world.aiHuman) commandAI(world, SIM_DT); // a human opponent replaces the AI
   acquireTargets(world);
   resolveFire(world, SIM_DT);
   updateGrenades(world, SIM_DT); // detonate grenades whose fuse has run out
@@ -64,8 +64,31 @@ export function step(world: World): void {
   updateObjective(world, SIM_DT);
 
   if (!world.outcome) world.outcome = checkOutcome(world);
-  // Time's up: the US must control EVERY objective by the deadline, else the Axis wins.
-  if (!world.outcome && world.time >= BATTLE_TIME_S) world.outcome = world.attackerHoldsAll() ? "win" : "lose";
+  // Time's up. An attacker that doesn't hold all objectives by the deadline has failed;
+  // a defender that still denies them has held. The winner is resolved relative to the
+  // human player.
+  if (!world.outcome && world.time >= BATTLE_TIME_S) world.outcome = timeoutOutcome(world);
+}
+
+// Who wins if the clock runs out: whoever holds every objective wins outright; if nobody
+// does, the defending side has held (denial). In a meeting (both attack, no defender)
+// the side holding more objectives wins, ties going to the AI. Expressed as the human's
+// result.
+function timeoutOutcome(world: World): "win" | "lose" {
+  const holder = world.objAllOwner();
+  let winner: Faction;
+  if (holder) {
+    winner = holder;
+  } else if (world.roleOf("us") === "defend") {
+    winner = "us";
+  } else if (world.roleOf("axis") === "defend") {
+    winner = "axis";
+  } else {
+    let us = 0, axis = 0;
+    for (const o of world.objectives) { if (o.owner === "us") us++; else if (o.owner === "axis") axis++; }
+    winner = us > axis ? "us" : axis > us ? "axis" : world.aiFaction;
+  }
+  return winner === world.player ? "win" : "lose";
 }
 
 // Capture-and-hold. A side captures an objective by being the only one with units in
@@ -86,6 +109,7 @@ function updateObjective(world: World, dt: number): void {
 
     o.contested = us > 0 && axis > 0;
     const sole: Faction | null = us > 0 && axis === 0 ? "us" : axis > 0 && us === 0 ? "axis" : null;
+    // A sole presence captures from anyone who isn't them (including a neutral flag).
     o.capturing = sole && sole !== o.owner ? sole : null;
 
     if (o.capturing) {
@@ -96,11 +120,18 @@ function updateObjective(world: World, dt: number): void {
     }
   }
 
-  // Hold ALL objectives to win; losing any one resets the clock.
-  if (world.attackerHoldsAll()) {
+  // An ATTACKING side that holds EVERY objective for the hold time wins. Defenders win
+  // by denial at the timeout, not by sitting on what they started with — so the timer
+  // only runs for an attacker. Losing any objective resets it.
+  const holder = world.objAllOwner();
+  if (holder && world.roleOf(holder) === "attack") {
+    if (world.holdFaction !== holder) { world.holdFaction = holder; world.objHoldTimer = 0; }
     world.objHoldTimer += dt;
-    if (world.objHoldTimer >= OBJECTIVE_HOLD_TO_WIN && !world.outcome) world.outcome = "win";
+    if (world.objHoldTimer >= OBJECTIVE_HOLD_TO_WIN && !world.outcome) {
+      world.outcome = holder === world.player ? "win" : "lose";
+    }
   } else {
+    world.holdFaction = null;
     world.objHoldTimer = 0;
   }
 }
@@ -303,7 +334,10 @@ function checkOutcome(world: World): "win" | "lose" | null {
     if (v.faction === "us") us++;
     else axis++;
   }
-  if (axis === 0) return "win";
-  if (us === 0) return "lose";
+  // Eliminating the human's enemy is a win; being wiped out is a loss.
+  const playerCount = world.player === "us" ? us : axis;
+  const enemyCount = world.player === "us" ? axis : us;
+  if (enemyCount === 0) return "win";
+  if (playerCount === 0) return "lose";
   return null;
 }

@@ -2,10 +2,10 @@ import { Grid } from "./grid.ts";
 import { Terrain, isPassable } from "./terrain.ts";
 
 // Procedural building interiors. A building starts as a hollow Wall ring with a
-// Floor fill; this turns the empty box into a believable floor plan — interior
-// partition walls carve out 2-4 rooms joined by doorways, the perimeter gets a
-// couple of exterior doors onto passable ground, and the remaining outer walls
-// are dotted with windows infantry can climb through and fire out of.
+// Floor fill. We keep the interior a single open room (no partition walls — they
+// read as a maze and block movement), then knock a couple of exterior doors through
+// onto passable ground and dot the remaining outer walls with windows infantry can
+// climb through and fire out of.
 
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
@@ -40,7 +40,7 @@ export function carveBuilding(grid: Grid, x0: number, y0: number, x1: number, y1
   const ih = y1 - y0 - 1;
   if (iw < 1 || ih < 1) return;
 
-  if (iw >= 2 && ih >= 2) partition(grid, x0 + 1, y0 + 1, x1 - 1, y1 - 1, rng, 0);
+  // No interior partitions — the building stays one open room.
   carveExteriorDoors(grid, x0, y0, x1, y1, rng);
   carveWindows(grid, x0, y0, x1, y1, rng);
 }
@@ -49,65 +49,10 @@ export function carveBuilding(grid: Grid, x0: number, y0: number, x1: number, y1
 // whatever Floor cells fall inside the given cell bbox: it lays straight partition
 // walls but only over Floor, so it naturally stops at the irregular exterior walls,
 // and re-opens one Floor cell per wall as a doorway. Used for OSM footprints.
-export function partitionInterior(grid: Grid, x0: number, y0: number, x1: number, y1: number, seed: number): void {
-  const rng = mulberry32((seed ^ 0x9e3779b1) >>> 0);
-  splitFloor(grid, x0, y0, x1, y1, rng, 0);
-}
-
-function splitFloor(grid: Grid, x0: number, y0: number, x1: number, y1: number, rng: () => number, depth: number): void {
-  const w = x1 - x0 + 1;
-  const h = y1 - y0 + 1;
-  if (depth >= 2 || (w < 6 && h < 6)) return;
-  const vertical = w >= h ? w >= 6 : h < 6;
-  if (vertical && w >= 6) {
-    const sx = x0 + 2 + Math.floor(rng() * (w - 4));
-    const door = y0 + Math.floor(rng() * h);
-    let touched = false;
-    for (let y = y0; y <= y1; y++) {
-      if (y === door) continue;
-      if (grid.get(sx, y) === Terrain.Floor) { grid.set(sx, y, Terrain.Wall); touched = true; }
-    }
-    if (touched) {
-      splitFloor(grid, x0, y0, sx - 1, y1, rng, depth + 1);
-      splitFloor(grid, sx + 1, y0, x1, y1, rng, depth + 1);
-    }
-  } else if (h >= 6) {
-    const sy = y0 + 2 + Math.floor(rng() * (h - 4));
-    const door = x0 + Math.floor(rng() * w);
-    let touched = false;
-    for (let x = x0; x <= x1; x++) {
-      if (x === door) continue;
-      if (grid.get(x, sy) === Terrain.Floor) { grid.set(x, sy, Terrain.Wall); touched = true; }
-    }
-    if (touched) {
-      splitFloor(grid, x0, y0, x1, sy - 1, rng, depth + 1);
-      splitFloor(grid, x0, sy + 1, x1, y1, rng, depth + 1);
-    }
-  }
-}
-
-// Recursively split a room with a wall + single doorway until the pieces get small.
-function partition(grid: Grid, ax0: number, ay0: number, ax1: number, ay1: number, rng: () => number, depth: number): void {
-  const w = ax1 - ax0 + 1;
-  const h = ay1 - ay0 + 1;
-  if (depth >= 2) return;
-  const canV = w >= 5;
-  const canH = h >= 5;
-  if (!canV && !canH) return;
-  const splitV = canV && (!canH || rng() < (w >= h ? 0.62 : 0.4));
-  if (splitV) {
-    const sx = ax0 + 2 + Math.floor(rng() * (w - 4));
-    for (let y = ay0; y <= ay1; y++) grid.set(sx, y, Terrain.Wall);
-    grid.set(sx, ay0 + Math.floor(rng() * h), Terrain.Floor); // doorway
-    partition(grid, ax0, ay0, sx - 1, ay1, rng, depth + 1);
-    partition(grid, sx + 1, ay0, ax1, ay1, rng, depth + 1);
-  } else {
-    const sy = ay0 + 2 + Math.floor(rng() * (h - 4));
-    for (let x = ax0; x <= ax1; x++) grid.set(x, sy, Terrain.Wall);
-    grid.set(ax0 + Math.floor(rng() * w), sy, Terrain.Floor); // doorway
-    partition(grid, ax0, ay0, ax1, sy - 1, rng, depth + 1);
-    partition(grid, ax0, sy + 1, ax1, ay1, rng, depth + 1);
-  }
+// OSM footprints: kept as a single open room (no interior partitions). The exterior
+// walls and windows come from the rasterizer; this is a no-op left for compatibility.
+export function partitionInterior(_grid: Grid, _x0: number, _y0: number, _x1: number, _y1: number, _seed: number): void {
+  // intentionally empty — buildings are open rooms now
 }
 
 // Knock 1-2 doorways through the outer wall wherever it faces open, walkable ground.

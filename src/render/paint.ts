@@ -617,12 +617,12 @@ function paintBuilding(grid: Grid, b: Building): BuildingArt {
     if (cy < minCy) minCy = cy; if (cy > maxCy) maxCy = cy;
   }
   const seed = ((minCx * 92837) ^ (minCy * 689287)) >>> 0;
-  const floor = paintFloorTile(grid, b.cells, minCx, minCy, maxCx, maxCy);
+  const floor = paintFloorTile(grid, b, minCx, minCy, maxCx, maxCy);
   const roof = paintRoofTile(b, minCx, minCy, maxCx, maxCy, mulberry32(seed));
   return { floor, roof, cells: b.cells };
 }
 
-function paintFloorTile(grid: Grid, cells: number[], minCx: number, minCy: number, maxCx: number, maxCy: number): Tile {
+function paintFloorTile(grid: Grid, b: Building, minCx: number, minCy: number, maxCx: number, maxCy: number): Tile {
   const SS = 2;
   const W = grid.width;
   const x0 = minCx * CELL_SIZE, y0 = minCy * CELL_SIZE;
@@ -634,33 +634,57 @@ function paintFloorTile(grid: Grid, cells: number[], minCx: number, minCy: numbe
   ctx.scale(SS, SS);
   ctx.translate(-x0, -y0);
   const fRng = mulberry32((((minCx + 7) * 40503) ^ ((minCy + 13) * 12289)) >>> 0);
-  // 1. Floorboards under every interior cell — including under interior partition walls,
-  //    so rooms read as open floor split by thin dividers rather than a maze of blocks.
-  for (const idx of cells) {
-    const t = grid.cells[idx], cx = idx % W, cy = (idx / W) | 0;
-    if (t === Terrain.Floor || t === Terrain.Window || (t === Terrain.Wall && !isExteriorWall(grid, cx, cy))) {
-      drawFloorCell(ctx, grid, cx, cy);
-    }
+  // 1. One open room: floorboards across the entire footprint (walls included — the
+  //    thin wall line is drawn over the top, so there's no gap beneath it).
+  for (const idx of b.cells) drawFloorCell(ctx, grid, idx % W, (idx / W) | 0);
+  // 2. A sparse scatter of furniture on the open floor.
+  for (const idx of b.cells) {
+    if (grid.cells[idx] === Terrain.Floor && fRng() < 0.04) drawFurniture(ctx, idx % W, (idx / W) | 0, fRng);
   }
-  // 2. Solid stone only for the outer perimeter walls.
-  for (const idx of cells) {
-    const cx = idx % W, cy = (idx / W) | 0;
-    if (grid.cells[idx] === Terrain.Wall && isExteriorWall(grid, cx, cy)) drawWallCell(ctx, cx, cy);
-  }
-  // 3. Interior walls as thin partition bars over the floor.
-  for (const idx of cells) {
-    const cx = idx % W, cy = (idx / W) | 0;
-    if (grid.cells[idx] === Terrain.Wall && !isExteriorWall(grid, cx, cy)) drawInteriorWall(ctx, grid, cx, cy);
-  }
-  // 4. Windows punched through the perimeter.
-  for (const idx of cells) {
-    if (grid.cells[idx] === Terrain.Window) drawWindowCell(ctx, idx % W, (idx / W) | 0);
-  }
-  // 5. A sparse scatter of furniture.
-  for (const idx of cells) {
-    if (grid.cells[idx] === Terrain.Floor && fRng() < 0.05) drawFurniture(ctx, idx % W, (idx / W) | 0, fRng);
+  // 3. The exterior wall: a thin stone line traced along the building's polygon, so it
+  //    follows the roofline exactly and reads as a real wall, not a ring of blocks.
+  drawThinWall(ctx, b);
+  // 4. Windows: small panes set into the wall line where the perimeter has them.
+  for (const idx of b.cells) {
+    if (grid.cells[idx] === Terrain.Window) drawWindowPane(ctx, idx % W, (idx / W) | 0);
   }
   return { canvas, x: x0, y: y0, scale: 1 / SS };
+}
+
+// The exterior wall as a thin outline along the building polygon — a soft shadow, a
+// stone body, and a sunlit inner highlight, all just a few pixels wide.
+function drawThinWall(ctx: CanvasRenderingContext2D, b: Building): void {
+  const pts = b.poly.map((p) => [p.x * CELL_SIZE, p.y * CELL_SIZE] as [number, number]);
+  if (pts.length < 2) return;
+  const trace = () => {
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath();
+  };
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "rgba(18,14,10,0.4)"; trace(); ctx.lineWidth = 5; ctx.stroke();
+  ctx.strokeStyle = "#6b6157"; trace(); ctx.lineWidth = 3; ctx.stroke();
+  ctx.strokeStyle = "rgba(255,248,235,0.16)"; trace(); ctx.lineWidth = 0.9; ctx.stroke();
+}
+
+// A window pane set into the thin wall: a small dark frame with muted glass, centered on
+// the window cell (which sits on the perimeter), so it reads as an opening in the wall.
+function drawWindowPane(ctx: CanvasRenderingContext2D, cx: number, cy: number): void {
+  const x = cx * CELL_SIZE, y = cy * CELL_SIZE;
+  const m = CELL_SIZE * 0.3;
+  const px = x + m, py = y + m, pw = CELL_SIZE - 2 * m, ph = CELL_SIZE - 2 * m;
+  ctx.fillStyle = "#241d16";
+  ctx.fillRect(px - 1.2, py - 1.2, pw + 2.4, ph + 2.4);
+  ctx.fillStyle = "rgba(150,170,180,0.6)";
+  ctx.fillRect(px, py, pw, ph);
+  ctx.strokeStyle = "rgba(36,29,22,0.85)";
+  ctx.lineWidth = 0.7;
+  ctx.beginPath();
+  ctx.moveTo(x + CELL_SIZE / 2, py);
+  ctx.lineTo(x + CELL_SIZE / 2, py + ph);
+  ctx.stroke();
 }
 
 function paintRoofTile(b: Building, minCx: number, minCy: number, maxCx: number, maxCy: number, rng: () => number): Tile {
@@ -723,61 +747,9 @@ function drawFloorCell(ctx: CanvasRenderingContext2D, grid: Grid, cx: number, cy
   if (grid.get(cx, cy + 1) === Terrain.Wall) ctx.fillRect(x, y + CELL_SIZE - 2, CELL_SIZE, 2);
 }
 
-// Perimeter wall: a beveled stone block forming the building's solid outer shell.
-function drawWallCell(ctx: CanvasRenderingContext2D, cx: number, cy: number): void {
-  const x = cx * CELL_SIZE, y = cy * CELL_SIZE;
-  ctx.fillStyle = "#6b6157";
-  ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
-  // Bevel: top-left catches the light, bottom-right falls into shadow.
-  ctx.fillStyle = "rgba(255,250,240,0.12)";
-  ctx.fillRect(x, y, CELL_SIZE, 1.3);
-  ctx.fillRect(x, y, 1.3, CELL_SIZE);
-  ctx.fillStyle = "rgba(0,0,0,0.3)";
-  ctx.fillRect(x, y + CELL_SIZE - 1.3, CELL_SIZE, 1.3);
-  ctx.fillRect(x + CELL_SIZE - 1.3, y, 1.3, CELL_SIZE);
-}
-
-// Interior partition: a thin plaster bar drawn along the wall's run (over the floor that
-// was already painted under it), so rooms read open instead of as solid blocks. Bars in
-// adjacent cells share the same offset, so a partition reads as one continuous wall.
-function drawInteriorWall(ctx: CanvasRenderingContext2D, grid: Grid, cx: number, cy: number): void {
-  const x = cx * CELL_SIZE, y = cy * CELL_SIZE;
-  const isW = (a: number, b: number) => grid.get(a, b) === Terrain.Wall;
-  const horiz = isW(cx - 1, cy) || isW(cx + 1, cy);
-  const vert = isW(cx, cy - 1) || isW(cx, cy + 1);
-  const th = CELL_SIZE * 0.32;
-  const off = (CELL_SIZE - th) / 2;
-  const bar = (rx: number, ry: number, rw: number, rh: number) => {
-    ctx.fillStyle = "rgba(0,0,0,0.22)";
-    ctx.fillRect(rx + 1, ry + 1, rw, rh); // soft drop shadow for depth
-    ctx.fillStyle = "#9b8f7c"; // plaster
-    ctx.fillRect(rx, ry, rw, rh);
-    ctx.fillStyle = "rgba(255,250,240,0.14)"; // top-edge highlight
-    ctx.fillRect(rx, ry, rw, 1);
-  };
-  if (horiz) bar(x, y + off, CELL_SIZE, th);
-  if (vert) bar(x + off, y, th, CELL_SIZE);
-  if (!horiz && !vert) bar(x + off, y + off, th, th); // isolated stub
-}
-
-// A window: a small recessed pane set into the wall, not a full-cell glass block.
-function drawWindowCell(ctx: CanvasRenderingContext2D, cx: number, cy: number): void {
-  const x = cx * CELL_SIZE, y = cy * CELL_SIZE;
-  ctx.fillStyle = "#6b6157"; // wall surround
-  ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
-  const m = CELL_SIZE * 0.3; // deeper inset → smaller pane
-  const px = x + m, py = y + m, pw = CELL_SIZE - 2 * m, ph = CELL_SIZE - 2 * m;
-  ctx.fillStyle = "#241d16"; // dark frame / sill
-  ctx.fillRect(px - 1, py - 1, pw + 2, ph + 2);
-  ctx.fillStyle = "rgba(120,140,150,0.5)"; // muted glass
-  ctx.fillRect(px, py, pw, ph);
-  ctx.strokeStyle = "rgba(36,29,22,0.85)"; // single mullion
-  ctx.lineWidth = 0.7;
-  ctx.beginPath();
-  ctx.moveTo(x + CELL_SIZE / 2, py);
-  ctx.lineTo(x + CELL_SIZE / 2, py + ph);
-  ctx.stroke();
-}
+// (Legacy block-wall, interior-partition, and full-cell window renderers removed —
+// buildings are now one open room walled by a thin polygon outline; see drawThinWall
+// and drawWindowPane.)
 
 // One piece of furniture in a room cell — a table, bed, or crate, drawn so it reads as
 // an object rather than a featureless block.
@@ -823,17 +795,6 @@ function drawFurniture(ctx: CanvasRenderingContext2D, cx: number, cy: number, rn
 function shadowRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
   ctx.fillStyle = "rgba(8,6,4,0.3)";
   ctx.fillRect(x + 1.5, y + 1.5, w, h);
-}
-
-// A wall cell is "exterior" when an orthogonal neighbour is outside the building
-// (not Wall/Floor/Window) or off the map — those face the world and cast windows.
-function isExteriorWall(grid: Grid, cx: number, cy: number): boolean {
-  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-    if (!grid.inBounds(cx + dx, cy + dy)) return true;
-    const t = grid.get(cx + dx, cy + dy);
-    if (t !== Terrain.Wall && t !== Terrain.Floor && t !== Terrain.Window) return true;
-  }
-  return false;
 }
 
 // Irregular (OSM) footprints get a low-pitch hip roof, clipped to the smooth building

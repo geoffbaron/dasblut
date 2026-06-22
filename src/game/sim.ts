@@ -1,5 +1,5 @@
 import { acquireTargets, ensureFleeGoal } from "./ai.ts";
-import { commandAxis } from "./axisAI.ts";
+import { commandDefender } from "./axisAI.ts";
 import { resolveFire, updateGrenades } from "./combat.ts";
 import {
   BASE_MOVE_SPEED,
@@ -54,7 +54,7 @@ export function step(world: World): void {
     world.visAccum = 0;
   }
 
-  if (!world.axisHuman) commandAxis(world, SIM_DT); // a human German commander replaces the AI
+  if (!world.defenderHuman) commandDefender(world, SIM_DT); // a human opponent replaces the AI
   acquireTargets(world);
   resolveFire(world, SIM_DT);
   updateGrenades(world, SIM_DT); // detonate grenades whose fuse has run out
@@ -65,7 +65,7 @@ export function step(world: World): void {
 
   if (!world.outcome) world.outcome = checkOutcome(world);
   // Time's up: the US must control EVERY objective by the deadline, else the Axis wins.
-  if (!world.outcome && world.time >= BATTLE_TIME_S) world.outcome = world.usHoldsAll() ? "win" : "lose";
+  if (!world.outcome && world.time >= BATTLE_TIME_S) world.outcome = world.attackerHoldsAll() ? "win" : "lose";
 }
 
 // Capture-and-hold. A side captures an objective by being the only one with units in
@@ -97,7 +97,7 @@ function updateObjective(world: World, dt: number): void {
   }
 
   // Hold ALL objectives to win; losing any one resets the clock.
-  if (world.usHoldsAll()) {
+  if (world.attackerHoldsAll()) {
     world.objHoldTimer += dt;
     if (world.objHoldTimer >= OBJECTIVE_HOLD_TO_WIN && !world.outcome) world.outcome = "win";
   } else {

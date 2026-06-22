@@ -175,6 +175,8 @@ function squadLoadout(kind: SquadKind, count: number, faction: Faction): WeaponI
   return out;
 }
 
+export type GameMode = "us-attacks" | "axis-attacks";
+
 export class World {
   grid: Grid;
   features: MapFeatures;
@@ -186,20 +188,28 @@ export class World {
   pendingGrenades: PendingGrenade[] = [];
   time = 0;
   phase: "deploy" | "battle" = "deploy";
-  // Deployment zones (in grid cells): US south band, Axis north band.
-  deployY0Us: number = 0;   // US zone: rows deployY0Us..grid.height-1
-  deployY1Axis: number = 0; // Axis zone: rows 0..deployY1Axis-1
+  // Which faction is the human attacker, and which defends (AI or second human).
+  mode: GameMode = "axis-attacks";
+  attacker: Faction = "axis";
+  defender: Faction = "us";
+  // Deployment zones (in grid cells): attacker gets the south band, defender the north.
+  deployY0Atk: number = 0;  // attacker zone: rows deployY0Atk..grid.height-1
+  deployY1Def: number = 0;  // defender zone: rows 0..deployY1Def-1
+  // Legacy aliases so existing code still compiles
+  get deployY0Us(): number { return this.attacker === "us" ? this.deployY0Atk : this.deployY1Def; }
+  get deployY1Axis(): number { return this.attacker === "axis" ? this.deployY0Atk : this.deployY1Def; }
   selectedTeamId: number | null = null;
   selectedTeamIds: Set<number> = new Set();
   selectedVehicleId: number | null = null;
-  // When a human (multiplayer German) is commanding the Axis, suppress the enemy AI.
+  // When a human opponent is commanding the defender, suppress the defender AI.
   axisHuman = false;
+  defenderHuman = false;
   outcome: "win" | "lose" | null = null;
 
-  // Capture-and-hold objectives (1-3). Each starts under the defender (Axis); the
-  // attacker (US) wins by controlling ALL of them at once for objHoldTimer seconds.
+  // Capture-and-hold objectives (1-3). Each starts under the defender; the
+  // attacker wins by controlling ALL of them at once for objHoldTimer seconds.
   objectives: ObjState[] = [];
-  objHoldTimer = 0; // seconds the US has held EVERY objective simultaneously
+  objHoldTimer = 0; // seconds the attacker has held EVERY objective simultaneously
 
   // Battle clock + enemy-AI throttle.
   aiAccum = 0;
@@ -229,33 +239,43 @@ export class World {
 
   readonly mapName: string;
 
-  constructor(map: GameMap, objectiveCount = map.objectives.length) {
+  constructor(map: GameMap, objectiveCount = map.objectives.length, mode: GameMode = "axis-attacks") {
     this.mapName = map.name;
     this.grid = map.grid;
     this.features = map.features;
+    this.mode = mode;
+    this.attacker = mode === "us-attacks" ? "us" : "axis";
+    this.defender = mode === "us-attacks" ? "axis" : "us";
     // Use the first N candidate objectives; all start under the defender.
     const n = Math.max(1, Math.min(objectiveCount, map.objectives.length));
     this.objectives = map.objectives.slice(0, n).map((o) => ({
       cx: o.cx, cy: o.cy, radius: o.radius,
-      owner: "axis", capturing: null, progress: 0, contested: false,
+      owner: this.defender, capturing: null, progress: 0, contested: false,
     }));
     this.visGrid = new Uint8Array(this.grid.width * this.grid.height);
     this.buildDmg = new Float32Array(this.grid.width * this.grid.height);
     this.smokeGrid = new Float32Array(this.grid.width * this.grid.height);
-    // Deployment zones: each side gets the outer 25% of map depth.
-    this.deployY0Us    = Math.floor(this.grid.height * 0.75);
-    this.deployY1Axis  = Math.ceil(this.grid.height  * 0.25);
+    // Deployment zones: attacker gets the south 25%, defender the north 25%.
+    this.deployY0Atk  = Math.floor(this.grid.height * 0.75);
+    this.deployY1Def  = Math.ceil(this.grid.height  * 0.25);
 
-    for (const s of map.spawns.us) this.spawnSquad(s, "us", 0x4f7fd1, 0.65);
-    for (const s of map.spawns.axis) this.spawnSquad(s, "axis", 0xc4514a, 0.6);
+    // The attacker uses the south spawn *positions* and the defender the north ones.
+    // map.spawns.us is always south, map.spawns.axis is always north. The *faction*
+    // assigned to each position set depends on the mode.
+    const atkColor = this.attacker === "us" ? 0x4f7fd1 : 0xc4514a;
+    const defColor = this.defender === "us" ? 0x4f7fd1 : 0xc4514a;
+    for (const s of map.spawns.us) this.spawnSquad(s, this.attacker, atkColor, 0.65);
+    for (const s of map.spawns.axis) this.spawnSquad(s, this.defender, defColor, 0.6);
     for (const v of map.spawns.usVehicles) this.spawnVehicle(v.cls, v.cx, v.cy, v.facing);
     for (const v of map.spawns.axisVehicles) this.spawnVehicle(v.cls, v.cx, v.cy, v.facing);
   }
 
-  /** True when the US controls every objective — the win/hold condition. */
-  usHoldsAll(): boolean {
-    return this.objectives.length > 0 && this.objectives.every((o) => o.owner === "us");
+  /** True when the attacker controls every objective — the win/hold condition. */
+  attackerHoldsAll(): boolean {
+    return this.objectives.length > 0 && this.objectives.every((o) => o.owner === this.attacker);
   }
+  /** @deprecated Use attackerHoldsAll(). Kept for compatibility. */
+  usHoldsAll(): boolean { return this.attackerHoldsAll(); }
 
   /** Center point of all objectives, for framing the camera. */
   objectivesCentroid(): { cx: number; cy: number } {
@@ -342,14 +362,14 @@ export class World {
         pathIndex: 0,
         ox: f.ox,
         oy: f.oy,
-        facing: faction === "us" ? -Math.PI / 2 : Math.PI / 2,
+        facing: faction === this.attacker ? -Math.PI / 2 : Math.PI / 2,
         gait: 0.9 + Math.random() * 0.22, // 0.90–1.12: each man's natural pace
 
         weapon,
         ammo: WEAPONS[weapon].ammo,
         status: "active",
         training,
-        stance: faction === "axis" ? "defend" : "move",
+        stance: faction === this.defender ? "defend" : "move",
         targetId: null,
         targetVehId: null,
         manualTargetId: null,

@@ -15,25 +15,26 @@ interface Spotter {
 // concealment and rises if it is moving or firing; tanks are big and loud and easy to
 // pick out. A short hysteresis keeps contacts from flickering.
 export function updateVisibility(world: World, dt: number): void {
-  const usPts: Spotter[] = [];
-  const axisPts: Spotter[] = [];
+  const atk = world.attacker;
+  const atkPts: Spotter[] = [];
+  const defPts: Spotter[] = [];
   for (const s of world.soldiers) {
     if (s.status === "dead") continue;
-    (s.faction === "us" ? usPts : axisPts).push({ x: s.x, y: s.y });
+    (s.faction === atk ? atkPts : defPts).push({ x: s.x, y: s.y });
   }
   for (const v of world.vehicles) {
     if (v.status === "ko") continue;
-    (v.faction === "us" ? usPts : axisPts).push({ x: v.x, y: v.y });
+    (v.faction === atk ? atkPts : defPts).push({ x: v.x, y: v.y });
   }
 
-  // 1. US shroud.
+  // 1. Attacker's shroud (the human player's line of sight).
   world.visGrid.fill(0);
-  for (const p of usPts) markVision(world, p.x, p.y);
+  for (const p of atkPts) markVision(world, p.x, p.y);
   world.visVersion++;
 
   // 2. Spotting both ways.
-  for (const s of world.soldiers) spotSoldier(world, s, s.faction === "us" ? axisPts : usPts, dt);
-  for (const v of world.vehicles) spotVehicle(world, v, v.faction === "us" ? axisPts : usPts, dt);
+  for (const s of world.soldiers) spotSoldier(world, s, s.faction === atk ? defPts : atkPts, dt);
+  for (const v of world.vehicles) spotVehicle(world, v, v.faction === atk ? defPts : atkPts, dt);
 }
 
 function markVision(world: World, x: number, y: number): void {

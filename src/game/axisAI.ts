@@ -3,32 +3,33 @@ import { Cell } from "./pathfinding.ts";
 import { isPassable, TERRAIN, vehiclePassable } from "./terrain.ts";
 import { Soldier, World } from "./world.ts";
 
-// Objective-aware enemy command, run on a throttle. The Axis garrisons the victory
-// location at the start, holds it under a Defend posture, and counterattacks toward
-// the flag the moment the US threatens or takes it. Per-soldier firing is still
-// handled by the combat AI — this only issues squad movement/stance orders.
-export function commandAxis(world: World, dt: number): void {
+// Objective-aware defender AI, run on a throttle. Whichever faction is the defender
+// garrisons the objectives, holds under a Defend posture, and counterattacks the
+// moment the attacker threatens or takes one. Works for both "us-attacks" and
+// "axis-attacks" modes — the faction it controls is world.defender.
+export function commandDefender(world: World, dt: number): void {
   world.aiAccum += dt;
   if (world.aiAccum < AI_INTERVAL) return;
   world.aiAccum = 0;
 
+  const atk = world.attacker;
+  const def = world.defender;
   const objThreatened = (o: { owner: string; capturing: string | null; contested: boolean }) =>
-    o.owner === "us" || o.capturing === "us" || o.contested;
+    o.owner === atk || o.capturing === atk || o.contested;
   const anyThreat = world.objectives.some(objThreatened);
   const threatChanged = anyThreat !== world.aiThreatPrev;
   world.aiThreatPrev = anyThreat;
 
-  const axisTeams = world.teams.filter((t) => t.faction === "axis");
-  axisTeams.forEach((team, idx) => {
+  const defTeams = world.teams.filter((t) => t.faction === def);
+  defTeams.forEach((team, idx) => {
     const men = team.soldierIds.map((id) => world.soldier(id)!).filter((s) => s.status === "active");
     if (men.length === 0) return;
-    if (men.every((s) => s.state === "panicked" || s.state === "routing")) return; // broken — let them run
+    if (men.every((s) => s.state === "panicked" || s.state === "routing")) return;
 
-    // Each squad garrisons one objective (round-robin across however many there are).
     const o = world.objectives[idx % world.objectives.length];
     const threatened = objThreatened(o);
-    const lost = o.owner === "us"; // the flag has actually fallen — retake it now
-    if (!team.post) team.post = postAround(world, o.cx, o.cy, o.radius, idx, axisTeams.length);
+    const lost = o.owner === atk;
+    if (!team.post) team.post = postAround(world, o.cx, o.cy, o.radius, idx, defTeams.length);
     const anchor = men[0];
     const goal: Cell = threatened ? { cx: o.cx, cy: o.cy } : team.post;
     const d = Math.hypot(anchor.x - goal.cx, anchor.y - goal.cy);
@@ -36,8 +37,6 @@ export function commandAxis(world: World, dt: number): void {
     const engaged = men.some((s) => s.targetId != null);
 
     if (d > 4) {
-      // March to the post / counterattack the flag. Push on even if engaged when the
-      // objective is under threat; a lost flag is rushed (Fast) regardless of contact.
       if (threatChanged || !moving || (threatened && !movingToward(men, goal))) {
         if (lost) world.orderMove(team.id, goal, "fast");
         else if (!engaged || threatened) world.orderMove(team.id, goal, "move");
@@ -47,10 +46,10 @@ export function commandAxis(world: World, dt: number): void {
     }
   });
 
-  // Axis armor: fall back onto the nearest threatened objective, else hold near one.
+  // Defender armor: fall back onto the nearest threatened objective, else hold near one.
   const vt = world.objectives.find(objThreatened) ?? world.objectives[0];
   for (const v of world.vehicles) {
-    if (v.faction !== "axis" || v.status === "ko" || !vt) continue;
+    if (v.faction !== def || v.status === "ko" || !vt) continue;
     const d = Math.hypot(v.x - vt.cx, v.y - vt.cy);
     const threatened = objThreatened(vt);
     if (threatened && d > 6) {
@@ -61,22 +60,20 @@ export function commandAxis(world: World, dt: number): void {
   }
 }
 
+// Legacy export name — some call sites may still use it.
+export const commandAxis = commandDefender;
+
 function defending(men: Soldier[]): boolean {
   return men.every((s) => s.stance === "defend" && !s.path);
 }
 
 function movingToward(men: Soldier[], goal: Cell): boolean {
-  // Cheap check: is the lead man's current path aimed near the goal?
   const p = men[0].path;
   if (!p || p.length === 0) return false;
   const end = p[p.length - 1];
   return Math.hypot(end.cx - goal.cx, end.cy - goal.cy) < 6;
 }
 
-// A defensive slot on a ring just outside the capture edge, spread by squad index.
-// Rather than the first passable cell, defenders pick the best *cover* within a short
-// search window — a building, wall or treeline near the flag — so they hole up instead
-// of standing in the open, exactly as a defender should in Close Combat.
 function postAround(world: World, cx: number, cy: number, radius: number, idx: number, n: number): Cell {
   const ang = (idx / Math.max(1, n)) * Math.PI * 2 - Math.PI / 2;
   const r = radius + 2;
@@ -90,7 +87,6 @@ function postAround(world: World, cx: number, cy: number, radius: number, idx: n
       if (!world.grid.inBounds(x, y)) continue;
       const t = world.grid.get(x, y);
       if (!isPassable(t)) continue;
-      // Favour hard cover and concealment; lightly prefer staying near the ring point.
       const score = TERRAIN[t].cover * 1.6 + TERRAIN[t].concealment * 0.6 - Math.hypot(dx, dy) * 0.05;
       if (score > bestScore) { bestScore = score; best = { cx: x, cy: y }; }
     }

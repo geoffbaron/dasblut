@@ -172,37 +172,67 @@ function mgShot(world: World, v: Vehicle, target: Soldier, def: (typeof VEHICLES
   if (Math.random() < p && Math.random() < def.mg.lethality) killSoldier(world, target);
 }
 
+// A tank moves on tracks: it must rotate the hull to point at (or directly away from)
+// the next waypoint, then drive forward or reverse along its hull axis. It can't slide
+// sideways. When the hull is still turning toward the waypoint the tank creeps or
+// pivots in place; once roughly aligned it accelerates to full speed.
 function move(world: World, v: Vehicle, dt: number): void {
   if (v.immobilized || !v.path) return;
   const def = VEHICLES[v.cls];
   const cx = Math.floor(v.x);
   const cy = Math.floor(v.y);
   const cost = world.grid.inBounds(cx, cy) ? vehicleCost(world.grid.get(cx, cy)) : 1;
-  const speed = (def.speed / cost) * (v.stance === "fast" ? 1.5 : 1);
+  const maxSpeed = (def.speed / cost) * (v.stance === "fast" ? 1.5 : 1);
 
-  let budget = speed * dt;
-  while (budget > 0 && v.path) {
-    const wp = v.path[v.pathIndex];
-    const tx = wp.cx + 0.5;
-    const ty = wp.cy + 0.5;
-    const dx = tx - v.x;
-    const dy = ty - v.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist <= budget) {
-      v.x = tx;
-      v.y = ty;
-      budget -= dist;
-      v.pathIndex++;
-      if (v.pathIndex >= v.path.length) v.path = null;
-    } else {
-      v.x += (dx / dist) * budget;
-      v.y += (dy / dist) * budget;
-      budget = 0;
-    }
+  const wp = v.path[v.pathIndex];
+  const tx = wp.cx + 0.5;
+  const ty = wp.cy + 0.5;
+  const dx = tx - v.x;
+  const dy = ty - v.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 0.01) {
+    v.pathIndex++;
+    if (v.pathIndex >= v.path.length) v.path = null;
+    return;
   }
-  const mvx = v.x - v.px;
-  const mvy = v.y - v.py;
-  if (mvx * mvx + mvy * mvy > 1e-6) v.facing = rotateToward(v.facing, Math.atan2(mvy, mvx), def.hullTurn * dt);
+
+  const desired = Math.atan2(dy, dx);
+  const fwdOff = Math.abs(angleDiff(v.facing, desired)); // how far off forward
+  const revOff = Math.abs(angleDiff(v.facing, desired + Math.PI)); // how far off reverse
+
+  // Choose whichever is closer — drive forward or reverse — so the tank doesn't
+  // do a 170° pivot when backing up 10° would reach the waypoint.
+  const reverse = revOff < fwdOff;
+  const targetFacing = reverse ? desired + Math.PI : desired;
+  // Normalise into [-π, π]
+  const normFacing = Math.atan2(Math.sin(targetFacing), Math.cos(targetFacing));
+
+  // Rotate the hull toward the chosen heading.
+  v.facing = rotateToward(v.facing, normFacing, def.hullTurn * dt);
+
+  // How far off-axis is the hull now? Only drive when roughly aligned; the more
+  // misaligned, the slower, down to zero (pure pivot) beyond ~40°.
+  const misalign = Math.abs(angleDiff(v.facing, normFacing));
+  const driveFrac = Math.max(0, 1 - misalign / 0.7); // 0.7 rad ≈ 40°
+  const speed = maxSpeed * driveFrac * (reverse ? 0.6 : 1); // reverse is slower
+  const step = speed * dt;
+  if (step < 0.001) return; // still pivoting in place
+
+  // Drive along the hull's forward axis (or backward if reversing).
+  const driveAng = reverse ? v.facing + Math.PI : v.facing;
+  const mx = Math.cos(driveAng) * step;
+  const my = Math.sin(driveAng) * step;
+
+  // Advance toward the waypoint, but never overshoot it.
+  if (step >= dist) {
+    v.x = tx;
+    v.y = ty;
+    v.pathIndex++;
+    if (v.pathIndex >= v.path.length) v.path = null;
+  } else {
+    v.x += mx;
+    v.y += my;
+  }
 }
 
 // Tank terror, from the tank's side: a buttoned-up crew with enemy infantry right on

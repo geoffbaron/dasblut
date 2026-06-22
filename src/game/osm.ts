@@ -340,19 +340,17 @@ function generateSpawns(grid: Grid): Spawns {
   const usVehBand = vehicleInBand(grid, grid.height - 8, grid.height - 3);
   const axisVehBand = vehicleInBand(grid, 3, 8);
 
-  const usSquads: { name: string; kind: SquadSpawn["kind"]; count: number }[] = [
+  // Both sides field an identical order of battle so the fight is balanced; they deploy
+  // in mirrored bands at opposite edges (rows 3-8 north, height-8..-3 south).
+  const orbat: { name: string; kind: SquadSpawn["kind"]; count: number }[] = [
     { name: "1st Squad", kind: "rifle", count: 8 },
     { name: "2nd Squad", kind: "rifle", count: 8 },
-    { name: "LMG Team", kind: "mg", count: 6 },
+    { name: "MG Team", kind: "mg", count: 6 },
     { name: "AT Team", kind: "at", count: 5 },
     { name: "Mortar Team", kind: "mortar", count: 5 },
   ];
-  const axisSquads: { name: string; kind: SquadSpawn["kind"]; count: number }[] = [
-    { name: "Garrison", kind: "rifle", count: 6 },
-    { name: "MG Team", kind: "mg", count: 6 },
-    { name: "Outpost", kind: "rifle", count: 6 },
-    { name: "Reserve", kind: "rifle", count: 6 },
-  ];
+  const usSquads = orbat;
+  const axisSquads = orbat;
   cluster(usBand, usSquads.length).forEach((c, i) =>
     us.push({ name: usSquads[i].name, cx: c.cx, cy: c.cy, count: usSquads[i].count, kind: usSquads[i].kind }));
   cluster(axisBand, axisSquads.length).forEach((c, i) =>

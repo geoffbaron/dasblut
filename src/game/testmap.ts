@@ -52,31 +52,35 @@ export function buildTestMap(): GameMap {
 
   g.fillRect(31, 12, 34, 15, Terrain.Rubble);
 
+  // Both sides field an identical force and deploy at their own back edge — mirror
+  // images on opposite sides of the map — so the fight is symmetric and neither side
+  // starts sitting on the objective. The south list is used by whoever attacks from the
+  // south; the north list by their opponent (see World's spawn assignment).
   const spawns: Spawns = {
     us: [
-      { name: "1st Squad", cx: 18, cy: 37, count: 8, kind: "rifle" },
-      { name: "2nd Squad", cx: 22, cy: 38, count: 8, kind: "rifle" },
-      { name: "LMG Team", cx: 30, cy: 38, count: 6, kind: "mg" },
-      { name: "AT Team", cx: 26, cy: 37, count: 5, kind: "at" },
-      { name: "Mortar Team", cx: 20, cy: 41, count: 5, kind: "mortar" },
+      { name: "1st Squad", cx: 16, cy: 38, count: 8, kind: "rifle" },
+      { name: "2nd Squad", cx: 24, cy: 38, count: 8, kind: "rifle" },
+      { name: "MG Team", cx: 31, cy: 39, count: 6, kind: "mg" },
+      { name: "AT Team", cx: 20, cy: 39, count: 5, kind: "at" },
+      { name: "Mortar Team", cx: 12, cy: 40, count: 5, kind: "mortar" },
     ],
-    // Axis deploy well back (rows 6-8, north of the buildings) so they're not sitting
-    // on top of the objective — the US has room to advance before contact.
     axis: [
-      { name: "Garrison", cx: 18, cy: 7, count: 6, kind: "rifle" },
-      { name: "MG Team", cx: 24, cy: 6, count: 6, kind: "mg" },
-      { name: "Outpost", cx: 30, cy: 7, count: 6, kind: "rifle" },
+      { name: "1st Squad", cx: 16, cy: 3, count: 8, kind: "rifle" },
+      { name: "2nd Squad", cx: 24, cy: 3, count: 8, kind: "rifle" },
+      { name: "MG Team", cx: 31, cy: 2, count: 6, kind: "mg" },
+      { name: "AT Team", cx: 20, cy: 2, count: 5, kind: "at" },
+      { name: "Mortar Team", cx: 12, cy: 1, count: 5, kind: "mortar" },
     ],
-    usVehicles: [{ cls: "sherman", cx: 30, cy: 37, facing: -Math.PI / 2 }],
-    axisVehicles: [{ cls: "panzer4", cx: 38, cy: 8, facing: Math.PI / 2 }],
+    usVehicles: [{ cls: "sherman", cx: 28, cy: 39, facing: -Math.PI / 2 }],
+    axisVehicles: [{ cls: "panzer4", cx: 28, cy: 2, facing: Math.PI / 2 }],
   };
 
-  // Candidate objectives (the chosen count uses the first N). The crossroads at the
-  // heart of the hamlet is the primary; a west and an east flag spread the fight out.
+  // Candidate objectives (the chosen count uses the first N). Placed near the centre of
+  // no-man's-land so both sides have an equal advance to reach them.
   const objectives = [
-    { cx: 22, cy: 17, radius: OBJECTIVE_RADIUS }, // center crossroads
-    { cx: 9, cy: 15, radius: OBJECTIVE_RADIUS },  // west
-    { cx: 38, cy: 19, radius: OBJECTIVE_RADIUS }, // east
+    { cx: 22, cy: 20, radius: OBJECTIVE_RADIUS }, // centre of the hamlet
+    { cx: 9, cy: 20, radius: OBJECTIVE_RADIUS },  // west
+    { cx: 38, cy: 20, radius: OBJECTIVE_RADIUS }, // east
   ];
 
   return { name: "Carentan Approach (test map)", grid: g, features, spawns, objectives };

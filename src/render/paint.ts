@@ -152,16 +152,61 @@ function scatterGroundDetail(ctx: CanvasRenderingContext2D, grid: Grid, rng: () 
     for (let cx = 0; cx < grid.width; cx++) {
       const t = grid.get(cx, cy);
       if (t !== Terrain.Grass && t !== Terrain.Open) continue;
-      const n = t === Terrain.Grass ? 3 : 1;
-      for (let k = 0; k < n; k++) {
-        const x = (cx + rng()) * CELL_SIZE;
-        const y = (cy + rng()) * CELL_SIZE;
-        ctx.strokeStyle = `rgba(${t === Terrain.Grass ? "108,120,58" : "150,138,96"},0.35)`;
-        ctx.lineWidth = 0.8;
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x + (rng() - 0.5) * 2, y - 2 - rng() * 2);
-        ctx.stroke();
+      const bx = cx * CELL_SIZE, by = cy * CELL_SIZE;
+
+      if (t === Terrain.Grass) {
+        // Grass tufts — 4-6 multi-blade clusters, slightly different greens.
+        const n = 4 + Math.floor(rng() * 3);
+        for (let k = 0; k < n; k++) {
+          const x = bx + rng() * CELL_SIZE, y = by + rng() * CELL_SIZE;
+          const hue = 82 + Math.floor(rng() * 28);
+          const light = 30 + Math.floor(rng() * 16);
+          ctx.strokeStyle = `hsla(${hue},42%,${light}%,0.45)`;
+          ctx.lineWidth = 0.7 + rng() * 0.4;
+          ctx.beginPath();
+          for (let b = 0; b < 3; b++) {
+            ctx.moveTo(x + (rng() - 0.5) * 1.6, y);
+            ctx.lineTo(x + (rng() - 0.5) * 3, y - 2.5 - rng() * 2.5);
+          }
+          ctx.stroke();
+        }
+        // Wildflower dots (sparse).
+        if (rng() < 0.35) {
+          const fx = bx + rng() * CELL_SIZE, fy = by + rng() * CELL_SIZE;
+          const colors = ["rgba(200,180,80,0.6)", "rgba(180,110,70,0.5)", "rgba(160,160,110,0.5)"];
+          ctx.fillStyle = colors[Math.floor(rng() * colors.length)];
+          ctx.beginPath();
+          ctx.arc(fx, fy, 0.6 + rng() * 0.6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        // Open ground: sparse grass + dirt patches + scattered stones.
+        if (rng() < 0.6) {
+          const x = bx + rng() * CELL_SIZE, y = by + rng() * CELL_SIZE;
+          ctx.strokeStyle = `rgba(150,138,96,0.3)`;
+          ctx.lineWidth = 0.7;
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + (rng() - 0.5) * 2, y - 1.8 - rng() * 1.5);
+          ctx.stroke();
+        }
+        // Dirt patch (darker, irregular smudge).
+        if (rng() < 0.18) {
+          const x = bx + rng() * CELL_SIZE, y = by + rng() * CELL_SIZE;
+          ctx.fillStyle = `rgba(80,68,48,${0.12 + rng() * 0.12})`;
+          ctx.beginPath();
+          ctx.ellipse(x, y, 2 + rng() * 3, 1.5 + rng() * 2, rng() * Math.PI, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // Small stone or pebble.
+        if (rng() < 0.2) {
+          const x = bx + rng() * CELL_SIZE, y = by + rng() * CELL_SIZE;
+          const s = 0.5 + rng() * 1.2;
+          ctx.fillStyle = `rgba(22,18,14,0.2)`;
+          ctx.fillRect(x + 0.3, y + 0.3, s, s);
+          ctx.fillStyle = `hsl(36,8%,${52 + rng() * 18}%)`;
+          ctx.fillRect(x, y, s, s);
+        }
       }
     }
   }
@@ -172,13 +217,42 @@ function drawRoadRuts(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => numb
   for (let cy = 0; cy < grid.height; cy++) {
     for (let cx = 0; cx < grid.width; cx++) {
       if (grid.get(cx, cy) !== Terrain.Road) continue;
-      // Darken edges and add gravel speckle.
-      for (let k = 0; k < 5; k++) {
-        const x = (cx + rng()) * CELL_SIZE;
-        const y = (cy + rng()) * CELL_SIZE;
-        ctx.fillStyle = `rgba(90,78,55,${0.25 + rng() * 0.2})`;
+      const bx = cx * CELL_SIZE, by = cy * CELL_SIZE;
+      // Gravel speckle — more pebbles for texture.
+      for (let k = 0; k < 8; k++) {
+        const x = bx + rng() * CELL_SIZE, y = by + rng() * CELL_SIZE;
+        ctx.fillStyle = `rgba(90,78,55,${0.2 + rng() * 0.2})`;
         ctx.beginPath();
-        ctx.arc(x, y, 0.6 + rng() * 0.9, 0, Math.PI * 2);
+        ctx.arc(x, y, 0.4 + rng() * 0.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // Tire ruts / wheel tracks (faint parallel lines, connected to adjacent road cells).
+      const below = grid.inBounds(cx, cy + 1) && grid.get(cx, cy + 1) === Terrain.Road;
+      const right = grid.inBounds(cx + 1, cy) && grid.get(cx + 1, cy) === Terrain.Road;
+      if (below && rng() < 0.4) {
+        const ox = 3 + rng() * 4;
+        ctx.strokeStyle = `rgba(65,55,38,${0.15 + rng() * 0.1})`;
+        ctx.lineWidth = 1.0 + rng() * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(bx + ox, by);
+        ctx.lineTo(bx + ox + (rng() - 0.5) * 1.5, by + CELL_SIZE);
+        ctx.stroke();
+      }
+      if (right && rng() < 0.4) {
+        const oy = 3 + rng() * 4;
+        ctx.strokeStyle = `rgba(65,55,38,${0.15 + rng() * 0.1})`;
+        ctx.lineWidth = 1.0 + rng() * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(bx, by + oy);
+        ctx.lineTo(bx + CELL_SIZE, by + oy + (rng() - 0.5) * 1.5);
+        ctx.stroke();
+      }
+      // Puddle stain (occasional dark wet patch).
+      if (rng() < 0.08) {
+        const px = bx + rng() * CELL_SIZE, py = by + rng() * CELL_SIZE;
+        ctx.fillStyle = `rgba(50,45,35,${0.18 + rng() * 0.12})`;
+        ctx.beginPath();
+        ctx.ellipse(px, py, 2 + rng() * 3, 1.2 + rng() * 2, rng() * Math.PI, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -190,28 +264,80 @@ function drawWater(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number)
   for (let cy = 0; cy < grid.height; cy++) {
     for (let cx = 0; cx < grid.width; cx++) {
       if (grid.get(cx, cy) !== Terrain.Water) continue;
-      // Ripple highlights.
-      for (let k = 0; k < 3; k++) {
-        const x = (cx + rng()) * CELL_SIZE;
-        const y = (cy + rng()) * CELL_SIZE;
-        ctx.strokeStyle = `rgba(150,185,205,${0.18 + rng() * 0.12})`;
-        ctx.lineWidth = 0.9;
+      const bx = cx * CELL_SIZE, by = cy * CELL_SIZE;
+      // Ripple highlights — more, varied curvature.
+      for (let k = 0; k < 5; k++) {
+        const x = bx + rng() * CELL_SIZE, y = by + rng() * CELL_SIZE;
+        ctx.strokeStyle = `rgba(150,185,205,${0.14 + rng() * 0.14})`;
+        ctx.lineWidth = 0.6 + rng() * 0.6;
         ctx.beginPath();
-        ctx.arc(x, y, 1.5 + rng() * 2, 0.6, 2.4);
+        ctx.arc(x, y, 1.2 + rng() * 2.5, rng() * Math.PI, rng() * Math.PI + 1.5 + rng());
         ctx.stroke();
       }
-      // Lighter shoreline where water meets non-water.
-      if (!isWater(grid, cx - 1, cy) || !isWater(grid, cx + 1, cy)) {
-        ctx.fillStyle = "rgba(120,150,150,0.25)";
-        ctx.fillRect(cx * CELL_SIZE, cy * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+      // Deep-water darken (center of large water bodies).
+      const edges = [!isWater(grid, cx - 1, cy), !isWater(grid, cx + 1, cy), !isWater(grid, cx, cy - 1), !isWater(grid, cx, cy + 1)];
+      const shore = edges.some(Boolean);
+      if (!shore) {
+        ctx.fillStyle = "rgba(20,35,50,0.12)";
+        ctx.fillRect(bx, by, CELL_SIZE, CELL_SIZE);
+      }
+      // Lighter shoreline where water meets land.
+      if (shore) {
+        ctx.fillStyle = "rgba(120,155,155,0.22)";
+        ctx.fillRect(bx, by, CELL_SIZE, CELL_SIZE);
+        // Cattails / reeds at shoreline.
+        if (rng() < 0.45) {
+          const n = 2 + Math.floor(rng() * 3);
+          for (let k = 0; k < n; k++) {
+            const rx = bx + rng() * CELL_SIZE, ry = by + rng() * CELL_SIZE;
+            ctx.strokeStyle = `rgba(75,88,42,${0.4 + rng() * 0.25})`;
+            ctx.lineWidth = 0.7;
+            ctx.beginPath();
+            ctx.moveTo(rx, ry);
+            ctx.lineTo(rx + (rng() - 0.5) * 2, ry - 3 - rng() * 3);
+            ctx.stroke();
+            // Cattail head (small dark oval at top of some).
+            if (rng() < 0.4) {
+              ctx.fillStyle = "rgba(60,40,25,0.6)";
+              ctx.beginPath();
+              ctx.ellipse(rx + (rng() - 0.5), ry - 4.5 - rng() * 2, 0.6, 1.2, 0, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+        }
       }
     }
   }
 }
 
 function drawWoods(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number): void {
-  // Collect tree positions first so we can paint all shadows, then all canopies.
-  const trees: { x: number; y: number; r: number }[] = [];
+  // Leaf litter on the forest floor before trees go up — dead leaves, twigs, and
+  // dappled light patches that make the ground under the canopy read differently.
+  for (let cy = 0; cy < grid.height; cy++) {
+    for (let cx = 0; cx < grid.width; cx++) {
+      if (grid.get(cx, cy) !== Terrain.Woods) continue;
+      const bx = cx * CELL_SIZE, by = cy * CELL_SIZE;
+      for (let k = 0; k < 5; k++) {
+        const lx = bx + rng() * CELL_SIZE, ly = by + rng() * CELL_SIZE;
+        const s = 0.5 + rng() * 1.4;
+        ctx.fillStyle = `hsla(${35 + rng() * 20},20%,${22 + rng() * 14}%,${0.25 + rng() * 0.2})`;
+        ctx.beginPath();
+        ctx.ellipse(lx, ly, s, s * 0.6, rng() * Math.PI, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // Dappled sunlight patch (rare bright spot where canopy gaps).
+      if (rng() < 0.15) {
+        const dx = bx + rng() * CELL_SIZE, dy = by + rng() * CELL_SIZE;
+        ctx.fillStyle = `rgba(140,145,70,${0.08 + rng() * 0.06})`;
+        ctx.beginPath();
+        ctx.ellipse(dx, dy, 2 + rng() * 3, 1.5 + rng() * 2, rng() * Math.PI, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // Collect tree positions: varied sizes and shapes.
+  const trees: { x: number; y: number; r: number; hue: number; conifer: boolean }[] = [];
   for (let cy = 0; cy < grid.height; cy++) {
     for (let cx = 0; cx < grid.width; cx++) {
       if (grid.get(cx, cy) !== Terrain.Woods) continue;
@@ -220,7 +346,9 @@ function drawWoods(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number)
         trees.push({
           x: (cx + rng()) * CELL_SIZE,
           y: (cy + rng()) * CELL_SIZE,
-          r: CELL_SIZE * (0.45 + rng() * 0.3),
+          r: CELL_SIZE * (0.4 + rng() * 0.35),
+          hue: 72 + Math.floor(rng() * 36),
+          conifer: rng() < 0.2,
         });
       }
     }
@@ -232,24 +360,34 @@ function drawWoods(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number)
     ctx.ellipse(t.x - SUN.x * t.r * 0.7, t.y - SUN.y * t.r * 0.7, t.r * 0.95, t.r * 0.8, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  // Canopies with a top-left highlight.
+  // Canopies — deciduous get a round blob, conifers a slightly pointed smaller shape.
   for (const t of trees) {
+    const r = t.conifer ? t.r * 0.7 : t.r;
+    const sat = t.conifer ? 48 : 38;
     const g = ctx.createRadialGradient(
-      t.x + SUN.x * t.r * 0.4,
-      t.y + SUN.y * t.r * 0.4,
-      t.r * 0.15,
+      t.x + SUN.x * r * 0.4,
+      t.y + SUN.y * r * 0.4,
+      r * 0.15,
       t.x,
       t.y,
-      t.r,
+      r,
     );
-    const hue = 80 + Math.floor(rng() * 20);
-    g.addColorStop(0, `hsl(${hue},38%,42%)`);
-    g.addColorStop(0.7, `hsl(${hue},42%,30%)`);
-    g.addColorStop(1, `hsl(${hue},45%,20%)`);
+    g.addColorStop(0, `hsl(${t.hue},${sat}%,42%)`);
+    g.addColorStop(0.7, `hsl(${t.hue},${sat + 4}%,28%)`);
+    g.addColorStop(1, `hsl(${t.hue},${sat + 7}%,18%)`);
     ctx.fillStyle = g;
     ctx.beginPath();
-    ctx.arc(t.x, t.y, t.r, 0, Math.PI * 2);
+    ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
     ctx.fill();
+    // Canopy edge texture: a few small bumps breaking the perfect circle.
+    for (let b = 0; b < 4; b++) {
+      const a = rng() * Math.PI * 2;
+      const br = r * (0.2 + rng() * 0.25);
+      ctx.fillStyle = `hsl(${t.hue},${sat}%,${24 + rng() * 12}%)`;
+      ctx.beginPath();
+      ctx.arc(t.x + Math.cos(a) * r * 0.7, t.y + Math.sin(a) * r * 0.7, br, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 }
 
@@ -257,14 +395,40 @@ function drawRubble(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number
   for (let cy = 0; cy < grid.height; cy++) {
     for (let cx = 0; cx < grid.width; cx++) {
       if (grid.get(cx, cy) !== Terrain.Rubble) continue;
-      for (let k = 0; k < 6; k++) {
-        const x = (cx + rng()) * CELL_SIZE;
-        const y = (cy + rng()) * CELL_SIZE;
-        const s = 1 + rng() * 2.5;
+      const bx = cx * CELL_SIZE, by = cy * CELL_SIZE;
+      // Stone chunks — varied sizes and shapes.
+      for (let k = 0; k < 8; k++) {
+        const x = bx + rng() * CELL_SIZE, y = by + rng() * CELL_SIZE;
+        const w = 1 + rng() * 3, h = 0.8 + rng() * 2;
         ctx.fillStyle = `rgba(30,26,22,0.3)`;
-        ctx.fillRect(x + 1, y + 1, s, s); // chunk shadow
-        ctx.fillStyle = `hsl(40,12%,${45 + rng() * 20}%)`;
-        ctx.fillRect(x, y, s, s);
+        ctx.save();
+        ctx.translate(x + 0.8, y + 0.8);
+        ctx.rotate(rng() * Math.PI);
+        ctx.fillRect(-w / 2, -h / 2, w, h);
+        ctx.fillStyle = `hsl(${30 + rng() * 20},${10 + rng() * 10}%,${40 + rng() * 22}%)`;
+        ctx.translate(-0.8, -0.8);
+        ctx.fillRect(-w / 2, -h / 2, w, h);
+        ctx.restore();
+      }
+      // Rebar / twisted metal (dark thin lines sticking out at angles).
+      if (rng() < 0.4) {
+        const rx = bx + rng() * CELL_SIZE, ry = by + rng() * CELL_SIZE;
+        ctx.strokeStyle = `rgba(55,48,42,${0.45 + rng() * 0.25})`;
+        ctx.lineWidth = 0.6;
+        ctx.beginPath();
+        const len = 3 + rng() * 5;
+        const ang = rng() * Math.PI;
+        ctx.moveTo(rx, ry);
+        ctx.quadraticCurveTo(rx + Math.cos(ang) * len * 0.5, ry + Math.sin(ang) * len * 0.5 - 2, rx + Math.cos(ang) * len, ry + Math.sin(ang) * len);
+        ctx.stroke();
+      }
+      // Dust patch.
+      if (rng() < 0.3) {
+        const dx = bx + rng() * CELL_SIZE, dy = by + rng() * CELL_SIZE;
+        ctx.fillStyle = `rgba(110,98,78,${0.12 + rng() * 0.1})`;
+        ctx.beginPath();
+        ctx.ellipse(dx, dy, 2.5 + rng() * 3, 1.5 + rng() * 2, rng() * Math.PI, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
   }

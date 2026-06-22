@@ -1,6 +1,7 @@
 import { SPOT_BASE, SPOT_HYSTERESIS, VISION_CELLS } from "./constants.ts";
 import { hasLOS } from "./los.ts";
 import { TERRAIN } from "./terrain.ts";
+import { WEAPONS } from "./weapons.ts";
 import { Soldier, Vehicle, World } from "./world.ts";
 
 interface Spotter {
@@ -65,10 +66,15 @@ function spotSoldier(world: World, t: Soldier, spotters: Spotter[], dt: number):
   const firing = t.firedTimer > 0;
   let range = SPOT_BASE * (1 - conceal * 0.6);
   if (moving) range *= 1.3;
-  if (firing) range *= 1.4;
   if (t.stance === "sneak") range *= 0.45;
   else if (t.stance === "fast") range *= 1.3;
   else if (t.stance === "ambush" || t.stance === "defend") range *= 0.85;
+  // Muzzle flash, smoke and tracers give a firing soldier away. A man shooting is
+  // spottable out to the range he's actually shooting at, by anyone with a clear line
+  // to him — concealment only thins it a little. Because LOS is mutual, whoever he's
+  // firing on can always spot him back, so you can never be killed from concealment by
+  // an enemy you had no chance of seeing. (Holding fire — ambush/sneak — stays hidden.)
+  if (firing) range = Math.max(range, WEAPONS[t.weapon].rangeCells * (1 - conceal * 0.3));
   applySeen(world, t, spotters, tcx, tcy, range, dt);
 }
 

@@ -42,6 +42,14 @@ export const AMBUSH_BONUS_TIME = 3; // seconds the first-volley bonus lasts
 export const AMBUSH_ACC_MULT = 1.7; // accuracy/suppression multiplier on the opening burst
 export const AREA_FIRE_RADIUS = 1.8; // cells; suppression splash of area (suppressing) fire
 
+// --- Machine guns: a belt-fed LMG must be set up on its bipod before it can fire, and
+// it loses that setup the instant it picks up to move. It also fires within a limited
+// arc — swing it onto a target outside that cone and it has to re-lay, which costs time.
+// This is why CC machine guns anchor a position but are beaten by flanking.
+export const MG_SETUP_TIME = 2.5;   // seconds stationary before an MG can open fire
+export const MG_ARC = 0.9;          // radians either side of facing the gun can fire within (~50°)
+export const MG_TRAVERSE = 1.2;     // radians/sec the gun can swing to re-lay onto a new target
+
 // --- Generated battlefield size (Phase 5) ---
 export const BATTLEFIELD_W_M = 380;
 export const BATTLEFIELD_H_M = 300;

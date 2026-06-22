@@ -58,7 +58,9 @@ export function acquireTargets(world: World): void {
         const d = Math.hypot(t.x - s.x, t.y - s.y);
         if (d <= w.rangeCells && hasLOS(world.grid, scx, scy, Math.floor(t.x), Math.floor(t.y), world.smokeGrid)) {
           s.targetId = t.id;
-          if (!s.path) s.facing = Math.atan2(t.y - s.y, t.x - s.x);
+          // An MG keeps its own facing (it traverses on its mount in combat); everyone
+          // else snaps to face the target they're firing on.
+          if (!s.path && s.weapon !== "lmg") s.facing = Math.atan2(t.y - s.y, t.x - s.x);
           continue;
         }
       } else {
@@ -84,7 +86,8 @@ export function acquireTargets(world: World): void {
     if (best) {
       // Ambushers get an opening-volley bonus the instant they open up.
       if (s.stance === "ambush" && had == null) s.ambushTimer = AMBUSH_BONUS_TIME;
-      if (!s.path) s.facing = Math.atan2(best.y - s.y, best.x - s.x);
+      // An MG traverses on its mount (handled in combat); everyone else snaps to face.
+      if (!s.path && s.weapon !== "lmg") s.facing = Math.atan2(best.y - s.y, best.x - s.x);
     }
   }
 }

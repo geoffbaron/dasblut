@@ -1,6 +1,6 @@
 import { addSuppression, killSoldier, woundSoldier } from "./casualty.ts";
 import { damageBuildings } from "./buildingDamage.ts";
-import { AMBUSH_ACC_MULT, AREA_FIRE_RADIUS, SMOKE_INITIAL } from "./constants.ts";
+import { AMBUSH_ACC_MULT, AREA_FIRE_RADIUS, MG_ARC, MG_SETUP_TIME, MG_TRAVERSE, SMOKE_INITIAL } from "./constants.ts";
 import { hasLOS } from "./los.ts";
 import { isHardSurface, TERRAIN } from "./terrain.ts";
 import { knockOut, resolveArmorHit } from "./vehicleCombat.ts";
@@ -19,6 +19,14 @@ export function resolveFire(world: World, dt: number): void {
     s.firedTimer = Math.max(0, s.firedTimer - dt);
     s.ambushTimer = Math.max(0, s.ambushTimer - dt);
     s.grenadeCD = Math.max(0, s.grenadeCD - dt);
+    // A machine gun has to be set up on its bipod before it can fire, and it loses that
+    // setup the instant it picks up to move (see mgGate). Track how long it's been
+    // deployed-and-still; relocating resets the clock.
+    if (s.weapon === "lmg") {
+      const movedSq = (s.x - s.px) ** 2 + (s.y - s.py) ** 2;
+      if (s.path != null || movedSq > 1e-4) s.setupTime = 0;
+      else s.setupTime = Math.min(MG_SETUP_TIME + 1, s.setupTime + dt);
+    }
     if (s.status !== "active") continue;
     if (s.state === "panicked" || s.state === "routing" || s.stance === "sneak") continue;
 
@@ -89,6 +97,7 @@ export function resolveFire(world: World, dt: number): void {
     // Area (suppressing) fire onto a designated patch of ground.
     if (s.fireCell) {
       if (!hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), s.fireCell.cx, s.fireCell.cy, world.smokeGrid)) continue;
+      if (!mgGate(s, s.fireCell.cx + 0.5, s.fireCell.cy + 0.5, dt)) continue;
       s.fireCD -= dt * rateMul;
       let guard = 8;
       while (s.fireCD <= 0 && s.ammo > 0 && guard-- > 0) {
@@ -113,6 +122,7 @@ export function resolveFire(world: World, dt: number): void {
     if (dist > w.rangeCells) continue;
     if (!hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), Math.floor(target.x), Math.floor(target.y), world.smokeGrid))
       continue;
+    if (!mgGate(s, target.x, target.y, dt)) continue;
 
     s.fireCD -= dt * rateMul;
     let guard = 8;
@@ -123,6 +133,25 @@ export function resolveFire(world: World, dt: number): void {
       fireShot(world, s, target, dist);
     }
   }
+}
+
+// Gate (and aim) an MG's fire. A non-MG always passes. A machine gun fires only when
+// it's both finished setting up and trained within its arc on the aimpoint; otherwise
+// it swings the gun toward the target (a slow traverse) and holds fire. Swinging onto a
+// target outside the cone re-lays the gun, eating into its setup — so a flanker who
+// appears off the gun's shoulder gets free moments before it can answer.
+function mgGate(s: Soldier, aimX: number, aimY: number, dt: number): boolean {
+  if (s.weapon !== "lmg") return true;
+  const bearing = Math.atan2(aimY - s.y, aimX - s.x);
+  let off = bearing - s.facing;
+  off = Math.atan2(Math.sin(off), Math.cos(off)); // normalize to [-π, π]
+  if (Math.abs(off) > MG_ARC) {
+    s.facing += Math.sign(off) * Math.min(Math.abs(off), MG_TRAVERSE * dt); // traverse toward it
+    s.setupTime = Math.max(0, s.setupTime - dt); // re-laying costs setup
+    return false;
+  }
+  s.facing = bearing; // keep the gun trained
+  return s.setupTime >= MG_SETUP_TIME;
 }
 
 // Suppressing fire onto a point: tracers in, suppression splashed over any enemy

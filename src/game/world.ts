@@ -292,7 +292,12 @@ export class World {
     // map.spawns.us is always the south positions, map.spawns.axis the north ones; the
     // faction occupying each depends on who's attacking from where.
     const colorOf = (f: Faction) => (f === "us" ? 0x4f7fd1 : 0xc4514a);
-    const trainOf = (f: Faction) => (this.roleOf(f) === "attack" ? 0.65 : 0.6);
+    // Each squad's veterancy is rolled on its own, so a force is a mix of green and
+    // seasoned teams — CC's recruit/veteran/elite texture, where one squad folds under
+    // fire that another shrugs off. The attacking side averages a touch higher (assault
+    // troops tend to be the better units).
+    const trainOf = (f: Faction) =>
+      Math.max(0.3, Math.min(0.9, (this.roleOf(f) === "attack" ? 0.64 : 0.56) + (Math.random() - 0.5) * 0.5));
     for (const s of map.spawns.us) this.spawnSquad(s, this.southFaction, colorOf(this.southFaction), trainOf(this.southFaction));
     for (const s of map.spawns.axis) this.spawnSquad(s, northFaction, colorOf(northFaction), trainOf(northFaction));
 
@@ -388,8 +393,13 @@ export class World {
   }
 
   private spawnSquad(spawn: SquadSpawn, faction: Faction, color: number, training: number): void {
-    const count = spawn.count;
     const kind: SquadKind = spawn.kind ?? "rifle";
+    // The assaulting side fields heavier rifle squads: CC always hands the attacker a
+    // material edge to pay for crossing open ground into a dug-in defender. Support
+    // teams (MG/AT/mortar) keep their fixed crews; only the rifle line swells. A meeting
+    // engagement (no defender) leaves both sides at full strength, so neither is favored.
+    const reinforced = kind === "rifle" && this.roleOf(faction) === "attack" && this.roleOf(other(faction)) === "defend";
+    const count = reinforced ? Math.round(spawn.count * 1.4) : spawn.count;
     const team: Team = {
       id: this.nextId++,
       name: spawn.name,

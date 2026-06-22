@@ -38,6 +38,34 @@ export function updateMorale(world: World, dt: number): void {
     }
 
     s.state = deriveState(s);
+
+    // A broken man who is cut off, with the enemy closing in, throws up his hands rather
+    // than die where he stands — CC's surrender, the reward for isolating and overwhelming
+    // a position instead of trading shots to the last man.
+    if (s.state === "routing" || s.state === "panicked") maybeSurrender(world, s, dt);
+  }
+}
+
+// Surrender check for an already-broken soldier. He gives up only when his resolve is
+// gone, he's under fire, he has almost no comrades left beside him, and an enemy is
+// right on top of him. A small per-step hazard makes it happen over a second or two
+// rather than instantly, so a position caves man-by-man as it's overrun.
+function maybeSurrender(world: World, s: Soldier, dt: number): void {
+  if (s.morale > 0.12 || s.suppression < 0.3) return;
+  let friends = 0;
+  let nearestEnemy2 = Infinity;
+  for (const o of world.soldiers) {
+    if (o.status !== "active" || o === s) continue;
+    const d2 = (o.x - s.x) ** 2 + (o.y - s.y) ** 2;
+    if (o.faction === s.faction) { if (d2 < 36) friends++; } // a comrade within 6 cells
+    else if (d2 < nearestEnemy2) nearestEnemy2 = d2;
+  }
+  if (friends >= 2 || nearestEnemy2 > 100) return; // not alone, or no enemy within 10 cells
+  if (Math.random() < 0.5 * dt) { // ~0.5/s hazard once cornered → typically gives up within ~2s
+    s.status = "surrendered";
+    s.path = null;
+    s.targetId = null;
+    s.targetVehId = null;
   }
 }
 

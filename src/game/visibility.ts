@@ -20,7 +20,7 @@ export function updateVisibility(world: World, dt: number): void {
   const myPts: Spotter[] = [];
   const foePts: Spotter[] = [];
   for (const s of world.soldiers) {
-    if (s.status === "dead") continue;
+    if (s.status === "dead" || s.status === "surrendered") continue; // a man with his hands up isn't scouting
     (s.faction === me ? myPts : foePts).push({ x: s.x, y: s.y });
   }
   for (const v of world.vehicles) {

@@ -45,6 +45,13 @@ export function isPassable(t: Terrain): boolean {
   return TERRAIN[t].moveCost !== Infinity;
 }
 
+// A building interior a man can walk into but a horse or a wheeled gun cannot — used to
+// keep cavalry and artillery out of houses (their walls/doors are too tight). The Wall
+// ring itself is already impassable to everyone.
+export function isBuildingInterior(t: Terrain): boolean {
+  return t === Terrain.Floor || t === Terrain.Window;
+}
+
 // Hard surfaces — paving, stone, masonry, rubble — that a round can spark and
 // ricochet off. Soil, grass, hedges and water just absorb the round (no spark), and
 // neither does flesh, which is why a man hit in the open never throws a ricochet.

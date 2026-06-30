@@ -3,7 +3,7 @@ import { hasLOS } from "./los.ts";
 import { AMBUSH_BONUS_TIME, AMBUSH_RANGE } from "./constants.ts";
 import { WEAPONS } from "./weapons.ts";
 import { Cell } from "./pathfinding.ts";
-import { Soldier, Vehicle, World } from "./world.ts";
+import { Soldier, unitPassable, Vehicle, World } from "./world.ts";
 
 // Target acquisition, governed by the soldier's stance:
 //  • sneak — never fires (stays hidden);
@@ -138,8 +138,9 @@ export function ensureFleeGoal(world: World, s: Soldier): void {
   const len = Math.hypot(ex, ey) || 1;
   const gx = Math.round(s.x + (ex / len) * 8);
   const gy = Math.round(s.y + (ey / len) * 8);
-  const goal: Cell = world.nearestPassable(gx, gy, { cx: Math.floor(s.x), cy: Math.floor(s.y) });
-  const path = findPath(world.grid, { cx: Math.floor(s.x), cy: Math.floor(s.y) }, goal);
+  const pass = unitPassable(world.grid, s.weapon);
+  const goal: Cell = world.nearestPassable(gx, gy, { cx: Math.floor(s.x), cy: Math.floor(s.y) }, pass);
+  const path = findPath(world.grid, { cx: Math.floor(s.x), cy: Math.floor(s.y) }, goal, { passable: pass });
   if (path && path.length > 1) {
     s.path = path;
     s.pathIndex = 1;

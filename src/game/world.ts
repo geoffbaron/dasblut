@@ -1,7 +1,7 @@
 import { GameMap, MapFeatures, SquadSpawn } from "./gamemap.ts";
 import { Grid } from "./grid.ts";
 import { Cell, findPath, smoothPath } from "./pathfinding.ts";
-import { vehicleCost, vehiclePassable } from "./terrain.ts";
+import { isBuildingInterior, vehicleCost, vehiclePassable } from "./terrain.ts";
 import { VehicleClass, VEHICLES } from "./vehicleDefs.ts";
 import { WeaponId, WEAPONS } from "./weapons.ts";
 
@@ -259,6 +259,15 @@ export function factionColor(era: Era, f: Faction): number {
 }
 
 function other(f: Faction): Faction { return f === "us" ? "axis" : "us"; }
+
+// Cavalry (carbine) and field guns (cannon) are too big for a building interior; everyone
+// else uses normal infantry passability. Shared by every pathing call so these units route
+// around houses rather than through them.
+export function unitPassable(grid: Grid, weapon: WeaponId): (cx: number, cy: number) => boolean {
+  if (weapon === "carbine" || weapon === "cannon")
+    return (cx, cy) => grid.passable(cx, cy) && !isBuildingInterior(grid.get(cx, cy));
+  return (cx, cy) => grid.passable(cx, cy);
+}
 
 export class World {
   grid: Grid;
@@ -611,12 +620,14 @@ export class World {
       s.fireCell = null;
       s.fireSmoke = false;
       // Round the per-man formation offset to a whole cell — ox/oy can be fractional
-      // (Civil War line spacing), and grid lookups need integer coordinates.
-      const goal = this.nearestPassable(Math.round(target.cx + s.ox), Math.round(target.cy + s.oy), target);
+      // (Civil War line spacing), and grid lookups need integer coordinates. Cavalry and
+      // guns path with building-blocking passability so they route around houses.
+      const pass = unitPassable(this.grid, s.weapon);
+      const goal = this.nearestPassable(Math.round(target.cx + s.ox), Math.round(target.cy + s.oy), target, pass);
       const start: Cell = { cx: Math.floor(s.x), cy: Math.floor(s.y) };
-      const raw = findPath(this.grid, start, goal);
+      const raw = findPath(this.grid, start, goal, { passable: pass });
       if (raw && raw.length > 1) {
-        s.path = smoothPath(this.grid, raw);
+        s.path = smoothPath(this.grid, raw, { passable: pass });
         s.pathIndex = 1;
         anyPathed = true;
       } else if (raw && raw.length === 1 && start.cx === goal.cx && start.cy === goal.cy) {
@@ -880,13 +891,14 @@ export class World {
     return best;
   }
 
-  nearestPassable(cx: number, cy: number, fallback: Cell): Cell {
-    if (this.grid.passable(cx, cy)) return { cx, cy };
-    if (this.grid.passable(fallback.cx, fallback.cy)) return fallback;
-    for (let r = 1; r <= 4; r++) {
+  nearestPassable(cx: number, cy: number, fallback: Cell, passable?: (cx: number, cy: number) => boolean): Cell {
+    const ok = passable ?? ((x, y) => this.grid.passable(x, y));
+    if (ok(cx, cy)) return { cx, cy };
+    if (ok(fallback.cx, fallback.cy)) return fallback;
+    for (let r = 1; r <= 6; r++) {
       for (let dy = -r; dy <= r; dy++) {
         for (let dx = -r; dx <= r; dx++) {
-          if (this.grid.passable(cx + dx, cy + dy)) return { cx: cx + dx, cy: cy + dy };
+          if (ok(cx + dx, cy + dy)) return { cx: cx + dx, cy: cy + dy };
         }
       }
     }

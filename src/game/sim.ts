@@ -27,7 +27,7 @@ import { findPath, smoothPath } from "./pathfinding.ts";
 import { TERRAIN } from "./terrain.ts";
 import { updateVehicles } from "./vehicleSim.ts";
 import { updateVisibility } from "./visibility.ts";
-import { Soldier, World } from "./world.ts";
+import { Soldier, unitPassable, World } from "./world.ts";
 
 // One fixed simulation step, in the order that makes the firefight read correctly:
 // see → acquire → fire → feel → act.
@@ -235,11 +235,12 @@ function regroupStragglers(world: World, centers: Map<number, Pt2>): void {
 
       const gx = Math.round(center.x - 0.5 + s.ox * 0.6);
       const gy = Math.round(center.y - 0.5 + s.oy * 0.6);
-      const goal = world.nearestPassable(gx, gy, { cx: Math.floor(center.x), cy: Math.floor(center.y) });
+      const pass = unitPassable(world.grid, s.weapon);
+      const goal = world.nearestPassable(gx, gy, { cx: Math.floor(center.x), cy: Math.floor(center.y) }, pass);
       const start = { cx: Math.floor(s.x), cy: Math.floor(s.y) };
-      const raw = findPath(world.grid, start, goal);
+      const raw = findPath(world.grid, start, goal, { passable: pass });
       if (raw && raw.length > 1) {
-        s.path = smoothPath(world.grid, raw);
+        s.path = smoothPath(world.grid, raw, { passable: pass });
         s.pathIndex = 1;
       }
     }

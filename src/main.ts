@@ -172,21 +172,11 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
     document.body.appendChild(badge);
   }
 
-  // The deploy bar + launch belong to the local human player, who starts the battle.
-  if (opts.local && side === world.player) {
-    deployBar.style.display = "flex";
-    launchBtn.addEventListener("click", () => {
-      world.phase = "battle";
-      deployBar.style.display = "none";
-      renderer.centerOnObjective(world);
-    });
-  } else {
-    deployBar.style.display = "none";
-  }
+  // There is no deployment phase any more — the battle starts at once from the static
+  // spawn positions, so the deploy bar and Launch button are never shown.
+  deployBar.style.display = "none";
+  void launchBtn;
   if (!canCommand) { ordersBar.style.display = "none"; rosterEl.style.display = "none"; }
-
-  const inDeployZone = (cy: number): boolean =>
-    side === world.southFaction ? cy >= world.deploySouthY0 : cy < world.deployNorthY1;
 
   // --- force tracker / objective / selection / banner ---
   const refreshStatus = () => {
@@ -319,7 +309,6 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
   const handleOrder = (x: number, y: number) => {
     if (!canCommand) return;
     const cell = { cx: Math.floor(x), cy: Math.floor(y) };
-    if (world.phase === "deploy" && !inDeployZone(cell.cy)) { flagBlocked(x, y); return; }
 
     if (world.selectedVehicleId != null) {
       const vid = world.selectedVehicleId;
@@ -682,6 +671,18 @@ async function startGame(map: GameMap, objectiveCount = 1, setup: GameSetup = DE
   pauseBtn.addEventListener("click", () => setPaused(!loop.paused));
   speedBtn.addEventListener("click", () => { speedIdx = (speedIdx + 1) % SPEED_STEPS.length; loop.speed = SPEED_STEPS[speedIdx]; speedPill.textContent = `${loop.speed}×`; });
   window.addEventListener("keydown", (e) => { if (e.code === "Space") { e.preventDefault(); setPaused(!loop.paused); } });
+
+  // With no deployment phase, the battle is live the instant the map loads. If the
+  // first-time help card is up, hold the fight paused behind it — it's the new "ready?"
+  // gate — and resume the moment the player dismisses it.
+  const tut = document.getElementById("tutorial");
+  if (tut && getComputedStyle(tut).display !== "none") {
+    setPaused(true);
+    const obs = new MutationObserver(() => {
+      if (getComputedStyle(tut).display === "none") { setPaused(false); obs.disconnect(); }
+    });
+    obs.observe(tut, { attributes: true, attributeFilter: ["style"] });
+  }
 
   document.title = `DasBlut — ${world.mapName}`;
 }

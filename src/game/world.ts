@@ -281,7 +281,9 @@ export class World {
   // Grenades mid-flight, detonated when their fuse runs out (see updateGrenades).
   pendingGrenades: PendingGrenade[] = [];
   time = 0;
-  phase: "deploy" | "battle" = "deploy";
+  // The battle begins immediately from the units' static spawn positions — there is no
+  // separate deployment phase to position squads first.
+  phase: "deploy" | "battle" = "battle";
   // The human commands `player`; the AI commands `aiFaction`. Each side either attacks
   // (advance & take the objectives) or defends (hold them). Both can attack (a meeting
   // engagement over a neutral objective).

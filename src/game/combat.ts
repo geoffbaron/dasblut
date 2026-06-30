@@ -156,12 +156,16 @@ export function resolveFire(world: World, dt: number): void {
       continue;
     if (!mgGate(s, target.x, target.y, dt)) continue;
 
-    // Civil War line infantry fire by VOLLEY: every man holds through the squad's long
-    // reload, then on the volley window each one with a clear shot looses together — a
-    // wall of smoke and lead, far more punishing and dramatic than ragged independent fire.
+    // Civil War line infantry fire by VOLLEY at a distance: every man holds through the
+    // squad's long reload, then on the volley window each one with a clear shot looses
+    // together — a wall of smoke and lead. But once the enemy is CLOSE, or the line is
+    // rattled, fire discipline breaks down and the men load and fire at will: ragged,
+    // sporadic individual shots (the code falls through to the per-man path below).
     const team = world.team(s.teamId);
-    if (s.weapon === "riflemusket" && team && team.kind === "infantry") {
-      if (team.volleyCD > 0 || s.state === "pinned") continue; // still reloading / hugging ground
+    const lineInfantry = s.weapon === "riflemusket" && team && team.kind === "infantry";
+    const fireAtWill = dist < CLOSE_FIRE_RANGE || s.state === "shaken" || s.state === "pinned";
+    if (lineInfantry && !fireAtWill) {
+      if (team.volleyCD > 0) continue; // still reloading
       s.ammo--;
       s.firedTimer = 0.6;
       fireShot(world, s, target, dist);
@@ -327,6 +331,7 @@ function smokeShot(world: World, s: Soldier): void {
   world.smokeSources.push({ cx, cy, t: 0 });
 }
 
+const CLOSE_FIRE_RANGE = 9; // cells; inside this a line stops volleying and fires at will
 const GRENADE_RANGE = 6; // cells (~12 m) — throwing distance
 const GRENADE_RADIUS = 1.8; // blast radius in cells
 const GRENADE_COOLDOWN = 3.5; // seconds between throws per man

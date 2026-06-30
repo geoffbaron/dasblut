@@ -34,10 +34,6 @@ export function makeCavalryBody(teamColor: number): HTMLCanvasElement {
   ctx.beginPath();
   ctx.ellipse(-0.5, 1.2, 8.5, 3.6, 0, 0, Math.PI * 2);
   ctx.fill();
-  // Legs (simple darker stubs).
-  ctx.strokeStyle = "#2c2114";
-  ctx.lineWidth = 1.2;
-  for (const lx of [-6, -3, 3, 6]) { ctx.beginPath(); ctx.moveTo(lx, 3); ctx.lineTo(lx, 6); ctx.stroke(); }
   // Head and neck forward.
   ctx.fillStyle = "#43331f";
   ctx.beginPath();

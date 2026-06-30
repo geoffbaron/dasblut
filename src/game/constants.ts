@@ -16,6 +16,10 @@ export const SPEED_STEPS = [1, 2, 4] as const;
 // --- Line of sight / spotting (Phase 1) ---
 export const VISION_CELLS = 17; // how far a soldier can see clear ground
 export const SPOT_BASE = 16; // base spotting range vs an exposed target
+// Civil War: open-field daylight battles, massed upright formations — you see the enemy
+// lines across the field, so both the shroud and spotting reach much further than WW2.
+export const ACW_VISION_CELLS = 28;
+export const ACW_SPOT_BASE = 34;
 export const SPOT_HYSTERESIS = 1.6; // seconds a spotted unit stays spotted after LOS breaks
 export const VIS_INTERVAL = 0.2; // seconds between visibility/spotting recomputes
 

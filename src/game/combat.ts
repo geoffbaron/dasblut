@@ -15,6 +15,12 @@ import type { SfxId } from "../render/sound.ts";
 // veterancy). Most fire suppresses rather than kills — the firefight is won by
 // pinning the enemy, exactly as in Close Combat.
 export function resolveFire(world: World, dt: number): void {
+  // Volley cadence: a Civil War line fires and reloads as one body. Tick each squad's
+  // volley timer; a squad looses the instant it hits zero, then reloads together. The
+  // set records which squads fired this step so we can restart their reload after.
+  for (const t of world.teams) if (t.volleyCD > 0) t.volleyCD = Math.max(0, t.volleyCD - dt);
+  const volleyed = new Set<number>();
+
   for (const s of world.soldiers) {
     s.firedTimer = Math.max(0, s.firedTimer - dt);
     s.ambushTimer = Math.max(0, s.ambushTimer - dt);
@@ -150,6 +156,19 @@ export function resolveFire(world: World, dt: number): void {
       continue;
     if (!mgGate(s, target.x, target.y, dt)) continue;
 
+    // Civil War line infantry fire by VOLLEY: every man holds through the squad's long
+    // reload, then on the volley window each one with a clear shot looses together — a
+    // wall of smoke and lead, far more punishing and dramatic than ragged independent fire.
+    const team = world.team(s.teamId);
+    if (s.weapon === "riflemusket" && team && team.kind === "infantry") {
+      if (team.volleyCD > 0 || s.state === "pinned") continue; // still reloading / hugging ground
+      s.ammo--;
+      s.firedTimer = 0.6;
+      fireShot(world, s, target, dist);
+      volleyed.add(team.id);
+      continue;
+    }
+
     s.fireCD -= dt * rateMul;
     let guard = 8;
     while (s.fireCD <= 0 && s.ammo > 0 && guard-- > 0) {
@@ -158,6 +177,13 @@ export function resolveFire(world: World, dt: number): void {
       s.firedTimer = 0.5;
       fireShot(world, s, target, dist);
     }
+  }
+
+  // Squads that just volleyed begin their (slightly jittered) reload before the next one.
+  const reload = 1 / WEAPONS.riflemusket.rof;
+  for (const id of volleyed) {
+    const t = world.team(id);
+    if (t) t.volleyCD = reload * (0.85 + Math.random() * 0.4);
   }
 }
 
@@ -244,14 +270,24 @@ function cannonShot(world: World, s: Soldier, tx: number, ty: number, dist: numb
   const canister = dist <= (w.canisterCells ?? 0);
 
   sound.play("cannon", s.x, s.y);
-  world.effects.push({ kind: "flash", x0: s.x, y0: s.y, x1: s.x, y1: s.y, ttl: 0.18 });
-  world.effects.push({ kind: "smoke", x0: s.x, y0: s.y, x1: 0, y1: 0, ttl: 1.6, maxTtl: 1.6 }); // muzzle cloud
+  // Muzzle: hard flash, a big bank of black-powder smoke, and the round streaking out.
+  world.effects.push({ kind: "flash", x0: s.x, y0: s.y, x1: s.x, y1: s.y, ttl: 0.2 });
+  world.effects.push({ kind: "fire", x0: s.x, y0: s.y, x1: s.x, y1: s.y, ttl: 0.18 });
+  for (let i = 0; i < 2; i++) world.effects.push({ kind: "smoke", x0: s.x + (Math.random() - 0.5), y0: s.y + (Math.random() - 0.5), x1: 0, y1: 0, ttl: 1.8, maxTtl: 1.8 });
   world.effects.push({ kind: "ap", x0: s.x, y0: s.y, x1: tx, y1: ty, ttl: 0.16 }); // round in flight
+  // Impact: a fierce multi-burst — flash, a couple of fireballs, dirt thrown up, a
+  // shock ring and a gout of smoke. Bigger and louder than a grenade.
   sound.play("explosion", tx, ty);
-  world.effects.push({ kind: "flash", x0: tx, y0: ty, x1: tx, y1: ty, ttl: 0.12 });
-  world.effects.push({ kind: "fire", x0: tx, y0: ty, x1: tx, y1: ty, ttl: 0.4 });
-  world.effects.push({ kind: "hit", x0: tx, y0: ty, x1: tx, y1: ty, ttl: 0.32 });
-  world.effects.push({ kind: "smoke", x0: tx, y0: ty, x1: 0, y1: 0, ttl: 1.5, maxTtl: 1.5 });
+  sound.play("explosion", tx, ty, true);
+  world.effects.push({ kind: "flash", x0: tx, y0: ty, x1: tx, y1: ty, ttl: 0.16 });
+  world.effects.push({ kind: "fire", x0: tx, y0: ty, x1: tx, y1: ty, ttl: 0.5 });
+  for (let i = 0; i < 3; i++) {
+    const a = Math.random() * Math.PI * 2, r = Math.random() * (canister ? 2.4 : 1.6);
+    world.effects.push({ kind: "fire", x0: tx + Math.cos(a) * r, y0: ty + Math.sin(a) * r, x1: tx, y1: ty, ttl: 0.3 + Math.random() * 0.25 });
+    world.effects.push({ kind: "spark", x0: tx, y0: ty, x1: tx + Math.cos(a) * (r + 2), y1: ty + Math.sin(a) * (r + 2), ttl: 0.2 });
+  }
+  world.effects.push({ kind: "hit", x0: tx, y0: ty, x1: tx, y1: ty, ttl: 0.36 });
+  for (let i = 0; i < 2; i++) world.effects.push({ kind: "smoke", x0: tx + (Math.random() - 0.5) * 1.5, y0: ty + (Math.random() - 0.5) * 1.5, x1: 0, y1: 0, ttl: 1.8, maxTtl: 1.8 });
 
   const radius = canister ? 4.5 : (w.blastCells ?? 3);
   const kill = canister ? 0.6 : 0.5;
@@ -376,13 +412,15 @@ export function updateGrenades(world: World, dt: number): void {
 const MELEE_REACH = 1.4; // cells; how close a trooper must be to strike
 const MELEE_TEMPO = 0.6; // seconds between melee blows
 
-// Mounted shock action. A cavalryman ordered to "charge" gallops in (the speed comes from
-// the charge stance); when he reaches an enemy he strikes with sabre and pistol. Against
-// shaken or broken men a charge rides them down and shatters what's left of their nerve —
-// but a steady, formed firing line brings down horses, so charging good order is suicide.
+// Shock action. A unit ordered to "charge" closes at the run (speed from the charge
+// stance); when it reaches an enemy it strikes home — cavalry with sabre and pistol,
+// infantry with the bayonet. Against shaken or broken men a charge rides/runs them down
+// and shatters what nerve is left — but a steady, formed firing line guts a charge, so
+// charging good order is suicide. Mounted (carbine) and foot (rifle-musket) both charge.
 export function updateCavalry(world: World, dt: number): void {
   for (const s of world.soldiers) {
-    if (s.status !== "active" || s.weapon !== "carbine" || s.stance !== "charge") continue;
+    if (s.status !== "active" || s.stance !== "charge") continue;
+    if (s.weapon !== "carbine" && s.weapon !== "riflemusket") continue;
     s.fireCD -= dt;
     let foe: Soldier | null = null;
     let bestD = MELEE_REACH * MELEE_REACH;
@@ -525,6 +563,12 @@ function fireShot(world: World, s: Soldier, target: Soldier, dist: number): void
   if (Math.random() < w.tracerRate) {
     world.effects.push({ kind: "tracer", x0: s.x, y0: s.y, x1: target.x, y1: target.y, ttl: 0.06 });
     spawnRicochet(world, target.x, target.y);
+  }
+  // Black-powder arms belch a thick cloud of white smoke with every shot — a firing line
+  // quickly fogs itself in. Pushed slightly toward the target (out of the muzzle).
+  if (s.weapon === "riflemusket" || s.weapon === "carbine") {
+    const a = Math.atan2(target.y - s.y, target.x - s.x);
+    world.effects.push({ kind: "smoke", x0: s.x + Math.cos(a) * 0.6, y0: s.y + Math.sin(a) * 0.6, x1: 0, y1: 0, ttl: 0.9 + Math.random() * 0.5, maxTtl: 1.4 });
   }
 
   // Hit probability.

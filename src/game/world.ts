@@ -73,6 +73,7 @@ export interface Team {
   leaderId: number;
   post: Cell | null; // AI-assigned defensive position (enemy squads)
   kind: SquadKind; // weapon mix: rifle / mg / at / mortar
+  volleyCD: number; // Civil War line infantry: shared reload timer so the squad fires by volley
 }
 
 export type EffectKind = "tracer" | "flash" | "hit" | "ap" | "spark" | "smoke" | "fire" | "lob" | "ricochet" | "blocked";
@@ -527,6 +528,7 @@ export class World {
       leaderId: -1,
       post: null,
       kind,
+      volleyCD: Math.random() * 1.5, // stagger squads' first volley a little
     };
     this.teams.push(team);
     const loadout = squadLoadout(kind, count, faction, this.era);

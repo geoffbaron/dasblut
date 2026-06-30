@@ -59,7 +59,7 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
   // Field gun (12-pdr Napoleon): direct line-of-sight artillery. At range it throws a shell
   // that bursts in the enemy ranks; up close it fires canister — a giant shotgun blast that
   // scythes down massed infantry. Slow to serve and silenced if its crew is killed.
-  cannon:      { id: "cannon",      name: "Field Gun",   rangeCells: 58, rof: 0.18, accuracy: 0.6, suppression: 0.4, lethality: 0.7, ammo: 30, tracerRate: 0, artillery: true, blastCells: 3, canisterCells: 14 },
+  cannon:      { id: "cannon",      name: "Field Gun",   rangeCells: 58, rof: 0.28, accuracy: 0.6, suppression: 0.45, lethality: 0.7, ammo: 60, tracerRate: 0, artillery: true, blastCells: 3, canisterCells: 14 },
 };
 
 export function isAntiTank(id: WeaponId): boolean {

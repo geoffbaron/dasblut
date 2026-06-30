@@ -100,7 +100,7 @@ export function buildClientWorld(setup: Setup): World {
   // Recreate the host's teams (empty rosters; soldiers attach themselves via teamId).
   world.teams = setup.teams.map((t) => ({
     id: t.id, name: t.name, faction: t.faction, color: t.color, kind: t.kind,
-    soldierIds: [], leaderId: -1, post: null,
+    soldierIds: [], leaderId: -1, post: null, volleyCD: 0,
   }));
   return world;
 }

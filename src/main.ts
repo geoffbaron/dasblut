@@ -285,12 +285,17 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
     const hasMortar = world.selectedVehicleId == null && [...world.selectedTeamIds].some((id) => world.team(id)?.kind === "mortar");
     const primaryTeam = world.selectedTeamId != null ? world.team(world.selectedTeamId) : null;
     const mortarFiring = hasMortar && primaryTeam?.kind === "mortar" && world.teamIsFiring(world.selectedTeamId!);
-    const hasCavalry = world.selectedVehicleId == null && [...world.selectedTeamIds].some((id) => world.team(id)?.kind === "cavalry");
+    // In the Civil War any foot or horse unit can be sent in with the bayonet/sabre;
+    // in WW2 only cavalry exist as chargers (none on the WW2 roster, so it stays hidden).
+    const canCharge = world.selectedVehicleId == null && [...world.selectedTeamIds].some((id) => {
+      const k = world.team(id)?.kind;
+      return k === "cavalry" || (world.era === "acw" && k === "infantry");
+    });
     for (const b of orderBtns) {
       const order = b.dataset.order!;
       let hidden = deployPhase && (order === "fire" || order === "fast" || order === "ambush" || order === "defend");
       if (order === "smoke") hidden = deployPhase || !hasMortar;
-      if (order === "charge") hidden = deployPhase || !hasCavalry; // mounted shock action only
+      if (order === "charge") hidden = deployPhase || !canCharge; // shock action (cavalry, or ACW infantry)
       b.style.display = hidden ? "none" : "";
       b.classList.toggle("armed", order === armed);
       // While a mortar is sustaining fire, label the Fire button "STOP" and pulse it.

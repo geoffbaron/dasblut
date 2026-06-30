@@ -253,7 +253,13 @@ function advance(world: World, s: Soldier, speedMul: number): void {
   const cy = Math.floor(s.y);
   const cost = world.grid.inBounds(cx, cy) ? TERRAIN[world.grid.get(cx, cy)].moveCost : 1;
   // Cavalry cover ground faster than men on foot; a heavy field gun is manhandled slowly.
-  const moveFactor = s.weapon === "carbine" ? 1.7 : s.weapon === "cannon" ? 0.4 : 1;
+  // Civil War foot soldiers hold a measured pace and only really move out at the double
+  // when ordered to charge — so a rifle-musket man is slow unless his stance is "charge".
+  const moveFactor =
+    s.weapon === "carbine" ? 1.7
+    : s.weapon === "cannon" ? 0.4
+    : s.weapon === "riflemusket" ? (s.stance === "charge" ? 1.15 : 0.55)
+    : 1;
   const speed = (BASE_MOVE_SPEED / (isFinite(cost) ? cost : 1)) * speedMul * moveFactor;
 
   let budget = speed * SIM_DT;

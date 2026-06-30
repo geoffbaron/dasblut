@@ -52,14 +52,16 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
   // Rifled musket (Springfield/Enfield): the war's main arm. A muzzleloader — deadly and
   // long-ranged for its day, but agonizingly slow to reload (~3 rounds/min), so a firing
   // line lives and dies by its volume of fire and its nerve. No tracers (black powder).
-  riflemusket: { id: "riflemusket", name: "Rifle Musket", rangeCells: 32, rof: 0.32, accuracy: 0.34, suppression: 0.07, lethality: 0.72, ammo: 40, tracerRate: 0 },
-  // Cavalry carbine (Sharps): shorter, handier, breech-loaded so it reloads faster than the
-  // infantry musket. Carried by mounted troops who skirmish, scout, and charge home.
-  carbine:     { id: "carbine",     name: "Carbine",     rangeCells: 20, rof: 0.6,  accuracy: 0.28, suppression: 0.05, lethality: 0.55, ammo: 50, tracerRate: 0 },
-  // Field gun (12-pdr Napoleon): direct line-of-sight artillery. At range it throws a shell
-  // that bursts in the enemy ranks; up close it fires canister — a giant shotgun blast that
-  // scythes down massed infantry. Slow to serve and silenced if its crew is killed.
-  cannon:      { id: "cannon",      name: "Field Gun",   rangeCells: 58, rof: 0.28, accuracy: 0.6, suppression: 0.45, lethality: 0.7, ammo: 60, tracerRate: 0, artillery: true, blastCells: 3, canisterCells: 14 },
+  // Muzzle-loader: a trained man got off only ~2-3 rounds a minute, so each volley is
+  // precious and the bayonet/charge decides what fire can't. rof ~1/14s.
+  riflemusket: { id: "riflemusket", name: "Rifle Musket", rangeCells: 32, rof: 0.071, accuracy: 0.34, suppression: 0.07, lethality: 0.72, ammo: 40, tracerRate: 0 },
+  // Cavalry carbine (Sharps): breech-loaded, so it reloads far faster than the infantry
+  // musket (~10 rounds/min). Carried by mounted troops who skirmish, scout, and charge home.
+  carbine:     { id: "carbine",     name: "Carbine",     rangeCells: 20, rof: 0.167, accuracy: 0.28, suppression: 0.05, lethality: 0.55, ammo: 50, tracerRate: 0 },
+  // Field gun (12-pdr Napoleon): direct line-of-sight artillery, slow to serve (~1 aimed
+  // round / 16s). At range it throws a shell that bursts in the enemy ranks; inside canister
+  // range the muzzle vomits a giant shotgun blast that scythes down massed infantry.
+  cannon:      { id: "cannon",      name: "Field Gun",   rangeCells: 58, rof: 0.0625, accuracy: 0.6, suppression: 0.45, lethality: 0.7, ammo: 60, tracerRate: 0, artillery: true, blastCells: 3, canisterCells: 24 },
 };
 
 export function isAntiTank(id: WeaponId): boolean {

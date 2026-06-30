@@ -377,8 +377,13 @@ export class World {
     // seasoned teams — CC's recruit/veteran/elite texture, where one squad folds under
     // fire that another shrugs off. The attacking side averages a touch higher (assault
     // troops tend to be the better units).
-    const trainOf = (f: Faction) =>
-      Math.max(0.3, Math.min(0.9, (this.roleOf(f) === "attack" ? 0.64 : 0.56) + (Math.random() - 0.5) * 0.5));
+    // WW2 attackers average a touch more veteran; in the Civil War both sides draw from the
+    // same pool (no attacker edge) so a stand-up fight is decided by ground, nerve and the
+    // bayonet — not a built-in advantage.
+    const trainOf = (f: Faction) => {
+      const base = this.era === "acw" ? 0.6 : this.roleOf(f) === "attack" ? 0.64 : 0.56;
+      return Math.max(0.3, Math.min(0.9, base + (Math.random() - 0.5) * 0.5));
+    };
     // The maps carry a WW2 order of battle; in the Civil War we reuse the same deployment
     // positions but field period units — big rifle-musket platoons with a cavalry troop.
     const orbat = (list: SquadSpawn[]) => (this.era === "ww2" ? list : acwOrbat(list));
@@ -517,7 +522,9 @@ export class World {
     // material edge to pay for crossing open ground into a dug-in defender. Support
     // teams (MG/AT/mortar) keep their fixed crews; only the rifle line swells. A meeting
     // engagement (no defender) leaves both sides at full strength, so neither is favored.
-    const reinforced = (kind === "rifle" || kind === "infantry") && this.roleOf(faction) === "attack" && this.roleOf(other(faction)) === "defend";
+    // WW2 hands the attacker a numerical edge to pay for crossing open ground; the Civil
+    // War keeps the two sides evenly matched, so only WW2 rifle squads are reinforced.
+    const reinforced = kind === "rifle" && this.roleOf(faction) === "attack" && this.roleOf(other(faction)) === "defend";
     const count = reinforced ? Math.round(spawn.count * 1.4) : spawn.count;
     const team: Team = {
       id: this.nextId++,

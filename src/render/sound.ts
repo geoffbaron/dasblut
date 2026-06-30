@@ -60,14 +60,8 @@ const ACW_CARBINE = "acw_carbine.mp3";
 const ACW_CANNON = "acw_cannon.mp3";
 const ACW_SABRE = "acw_sabre.mp3";
 const SWITCH = "UIMvmt-puzzle_UI_tab_switch-Elevenlabs.mp3"; // UI select/order click
-// German death-screams — used when an Axis soldier is killed.
-const SCREAMS = [
-  "dying_screaming_sayi_1-1781820762926.mp3",
-  "dying_screaming_sayi_2-1781820762927.mp3",
-  "dying_screaming_sayi_3-1781820762927.mp3",
-  "dying_screaming_sayi_4-1781820762927.mp3",
-];
-// A separate scream for US deaths so the two sides sound distinct.
+// A generic, non-verbal death cry, played when any soldier is killed. (The old German
+// voice screams were removed — they were jarring and wrong for the Civil War.)
 const SCREAM_US = "HMNMisc-A_male_soldier_screa-Elevenlabs.mp3";
 // Tank engine — looped continuously while a tank is on the move.
 const TANK_DRIVE = [
@@ -96,7 +90,7 @@ const SFX_DEFS: Record<SfxId, { files: string[]; vol: number }> = {
   tank_hit:       { files: [TANK_BOOM], vol: 1.0 },
   tank_destroy:   { files: [BIG_BOOM],  vol: 1.0 },
   soldier_hit:    { files: [GASP],      vol: 0.85 },
-  soldier_scream:    { files: SCREAMS,      vol: 0.95 }, // 4 random German death-screams (Axis)
+  soldier_scream:    { files: [SCREAM_US],  vol: 0.95 }, // generic death cry (no German voice)
   soldier_scream_us: { files: [SCREAM_US],  vol: 0.95 }, // US death scream
   suppress_shout: { files: [],          vol: 0.5 }, // synth fallback
   ui_select:      { files: [SWITCH],    vol: 0.5 }, // switch-flip click (selection only)

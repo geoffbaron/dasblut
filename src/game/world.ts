@@ -423,13 +423,28 @@ export class World {
     }
   }
 
-  // Spawn `count` field-gun batteries (crewed cannon teams) clustered around an anchor.
-  // In the Civil War these stand in for the WW2 tank slots.
+  // Spawn `count` field-gun batteries (crewed cannon teams). They set up BEHIND their own
+  // infantry, toward the home edge, so the guns fire over their troops' heads instead of
+  // standing out in front. Called after the infantry are placed.
   private spawnGuns(faction: Faction, count: number, cx: number, cy: number, training: number): void {
     const n = Math.max(1, Math.min(3, count));
+    // Find the rear rank of this side's already-spawned foot/horse and post the guns just
+    // behind it, centred on the line.
+    const homeDir = faction === this.southFaction ? 1 : -1; // home edge is +y (south) / -y (north)
+    let sumX = 0, m = 0, rearY = homeDir > 0 ? -Infinity : Infinity;
+    for (const s of this.soldiers) {
+      if (s.faction !== faction) continue;
+      sumX += s.x; m++;
+      if (homeDir > 0 ? s.y > rearY : s.y < rearY) rearY = s.y;
+    }
+    const baseX = m ? Math.round(sumX / m) : cx;
+    const baseY = m && isFinite(rearY)
+      ? Math.max(0, Math.min(this.grid.height - 1, Math.round(rearY + homeDir * 2)))
+      : cy;
+    const pass = unitPassable(this.grid, "cannon"); // never plant a gun inside a building
     for (let i = 0; i < n; i++) {
       const off = i === 0 ? 0 : (i % 2 === 1 ? 1 : -1) * Math.ceil(i / 2) * 4;
-      const cell = this.nearestPassable(cx + off, cy, { cx, cy });
+      const cell = this.nearestPassable(baseX + off, baseY, { cx: baseX, cy: baseY }, pass);
       const spawn: SquadSpawn = { name: n > 1 ? `Battery ${i + 1}` : "Battery", cx: cell.cx, cy: cell.cy, count: 5, kind: "artillery" };
       this.spawnSquad(spawn, faction, factionColor(this.era, faction), training);
     }

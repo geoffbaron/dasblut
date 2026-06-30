@@ -19,20 +19,12 @@ export function makeSoldierArt(teamColor: number): SoldierArt {
   };
 }
 
-// A mounted trooper: a horse drawn along the facing axis with a rider, a team-color
-// saddle blanket, and a raised sabre. Bigger than a man on foot.
+// A mounted trooper: a horse drawn along the facing axis with a rider and a team-color
+// saddle blanket. Bigger than a man on foot. (No drawn weapon — top-down it just read
+// as a stray lance/sword sticking out.)
 export function makeCavalryBody(teamColor: number): HTMLCanvasElement {
   const { c, ctx } = newCanvas();
   const hex = `#${teamColor.toString(16).padStart(6, "0")}`;
-
-  // Sabre, raised and angled forward.
-  ctx.strokeStyle = "#d8d8de";
-  ctx.lineWidth = 1.1;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(2, -3);
-  ctx.lineTo(8, -8);
-  ctx.stroke();
 
   // Horse body — a long oval along the facing (east), brown.
   const hide = ctx.createLinearGradient(0, -4, 0, 4);
@@ -98,16 +90,29 @@ export function makeCannonBody(teamColor: number): HTMLCanvasElement {
   ctx.closePath();
   ctx.fill();
 
-  // Wheels — two dark discs flanking the carriage axle.
-  ctx.fillStyle = "#2a2014";
-  for (const wy of [-3.4, 3.4]) {
+  // Axle across the carriage, with a wheel at each end. Seen from straight above, the
+  // wheels are upright discs viewed edge-on, so they read as thin rims running along the
+  // line of travel (the barrel axis) — NOT round balls.
+  ctx.strokeStyle = "#241a10";
+  ctx.lineWidth = 1.1;
+  ctx.beginPath();
+  ctx.moveTo(-1.5, -3.6);
+  ctx.lineTo(-1.5, 3.6); // axle
+  ctx.stroke();
+  for (const wy of [-3.6, 3.6]) {
+    // tyre: a long thin ellipse aligned with the barrel (the wheel's rolling direction)
+    ctx.fillStyle = "#2a2014";
     ctx.beginPath();
-    ctx.arc(-1.5, wy, 3.2, 0, Math.PI * 2);
+    ctx.ellipse(-1.5, wy, 3.2, 1.0, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = "#4a3a22";
-    ctx.lineWidth = 0.7;
+    ctx.strokeStyle = "#5a4a2c";
+    ctx.lineWidth = 0.6;
     ctx.beginPath();
-    ctx.arc(-1.5, wy, 3.2, 0, Math.PI * 2);
+    ctx.ellipse(-1.5, wy, 3.2, 1.0, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    // a couple of spoke ticks for read
+    ctx.beginPath();
+    ctx.moveTo(-3.2, wy); ctx.lineTo(0.2, wy);
     ctx.stroke();
   }
   return c;

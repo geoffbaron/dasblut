@@ -52,6 +52,7 @@ export interface Soldier {
   fireCD: number; // seconds until the next shot is ready
   firedTimer: number; // >0 shortly after firing (muzzle flash / easier to spot)
   setupTime: number; // seconds an MG has been deployed-and-stationary (gates MG fire)
+  meleeCD: number; // seconds until this man can strike again in hand-to-hand
   grenades: number; // hand grenades remaining
   grenadeCD: number; // seconds until this man can throw again
   // Psychology.
@@ -581,6 +582,7 @@ export class World {
         fireCD: Math.random() * 0.5,
         firedTimer: 0,
         setupTime: 0,
+        meleeCD: 0,
         // Riflemen and SMG men carry grenades; specialists (LMG/AT/mortar) don't.
         grenades: weapon === "rifle" || weapon === "smg" ? 5 : 0,
         grenadeCD: 0,

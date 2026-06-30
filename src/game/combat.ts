@@ -409,64 +409,79 @@ export function updateGrenades(world: World, dt: number): void {
   g.length = w;
 }
 
-const MELEE_REACH = 1.4; // cells; how close a trooper must be to strike
-const MELEE_TEMPO = 0.6; // seconds between melee blows
+const MELEE_REACH = 1.3; // cells; how close two men must be to cross steel
+const MELEE_TEMPO = 0.5; // seconds between blows
+const SCRUM_RADIUS2 = 4; // cells² (~2 cells) over which local numbers are counted
 
-// Shock action. A unit ordered to "charge" closes at the run (speed from the charge
-// stance); when it reaches an enemy it strikes home — cavalry with sabre and pistol,
-// infantry with the bayonet. Against shaken or broken men a charge rides/runs them down
-// and shatters what nerve is left — but a steady, formed firing line guts a charge, so
-// charging good order is suicide. Mounted (carbine) and foot (rifle-musket) both charge.
-export function updateCavalry(world: World, dt: number): void {
+// Hand-to-hand. Unlike fire, melee is MUTUAL: every man in contact with an enemy — the
+// charger AND the man he's hit — trades blows. The clash is decided by impetus (a unit at
+// the charge hits far harder), local numbers (the side with more men in the scrum grinds
+// the other down), morale and training, and the defender's cover. Routing or cowering men
+// don't fight — they're cut down or run. Both cavalry (sabre) and infantry (bayonet) brawl.
+export function updateMelee(world: World, dt: number): void {
   for (const s of world.soldiers) {
-    if (s.status !== "active" || s.stance !== "charge") continue;
-    if (s.weapon !== "carbine" && s.weapon !== "riflemusket") continue;
-    s.fireCD -= dt;
+    if (s.status !== "active" || s.state === "routing" || s.state === "panicked") continue;
+    // nearest enemy within reach — the man we're locked with
     let foe: Soldier | null = null;
-    let bestD = MELEE_REACH * MELEE_REACH;
     for (const e of world.soldiers) {
       if (e.faction === s.faction || e.status !== "active") continue;
-      const d = (e.x - s.x) ** 2 + (e.y - s.y) ** 2;
-      if (d < bestD) { bestD = d; foe = e; }
+      const dx = e.x - s.x, dy = e.y - s.y;
+      if (dx * dx + dy * dy <= MELEE_REACH * MELEE_REACH) { foe = e; break; }
     }
-    if (!foe) continue;
+    if (!foe) { s.meleeCD = 0; continue; }
     s.facing = Math.atan2(foe.y - s.y, foe.x - s.x);
-    if (s.fireCD > 0) continue;
-    s.fireCD = MELEE_TEMPO;
-    resolveMelee(world, s, foe);
+    s.meleeCD -= dt;
+    if (s.meleeCD > 0) continue;
+    s.meleeCD = MELEE_TEMPO * (0.8 + Math.random() * 0.4);
+    meleeStrike(world, s, foe);
   }
 }
 
-function resolveMelee(world: World, trooper: Soldier, foe: Soldier): void {
-  const broken = foe.state === "pinned" || foe.state === "panicked" || foe.state === "routing" || foe.state === "shaken";
-  const cell = world.grid.inBounds(Math.floor(foe.x), Math.floor(foe.y)) ? TERRAIN[world.grid.get(Math.floor(foe.x), Math.floor(foe.y))] : null;
-  const cover = cell ? cell.cover : 0;
+function meleeStrike(world: World, s: Soldier, foe: Soldier): void {
+  // Local odds: who has the weight of men in the immediate press (s counts for his side).
+  let friends = 1, foes = 0;
+  for (const o of world.soldiers) {
+    if (o.status !== "active" || o === s) continue;
+    const dx = o.x - s.x, dy = o.y - s.y;
+    if (dx * dx + dy * dy <= SCRUM_RADIUS2) (o.faction === s.faction ? friends++ : foes++);
+  }
+  const odds = friends / (friends + foes); // 0.5 = even, >0.5 = s outnumbers
+  const charging = s.stance === "charge";
+  const foeWavering = foe.state !== "steady";
+  const fc = world.grid.inBounds(Math.floor(foe.x), Math.floor(foe.y)) ? TERRAIN[world.grid.get(Math.floor(foe.x), Math.floor(foe.y))] : null;
+  const cover = fc ? fc.cover : 0;
 
-  sound.play("melee", trooper.x, trooper.y);
-  world.effects.push({ kind: "hit", x0: foe.x, y0: foe.y, x1: foe.x, y1: foe.y, ttl: 0.22 });
+  // Clash feedback: the ring of steel, a struck marker, a spark between the two men, dust.
+  sound.play("melee", s.x, s.y);
+  const mx = (s.x + foe.x) / 2, my = (s.y + foe.y) / 2;
+  world.effects.push({ kind: "hit", x0: foe.x, y0: foe.y, x1: foe.x, y1: foe.y, ttl: 0.2 });
+  world.effects.push({ kind: "spark", x0: mx, y0: my, x1: mx + (Math.random() - 0.5) * 1.5, y1: my + (Math.random() - 0.5) * 1.5, ttl: 0.16 });
 
-  // A charge is terror as much as steel: it hammers the morale of the man struck and the
-  // men around him. Cavalry loose in the ranks is how a line breaks and routs.
-  foe.morale = Math.max(0, foe.morale - 0.3);
-  addSuppression(foe, 0.45);
+  // Melee is terror: it hammers the morale of the man struck and shakes the men at his
+  // back. Kept moderate so a losing unit still trades a few blows before it breaks rather
+  // than evaporating the instant contact is made.
+  const shock = charging ? 0.16 : 0.1;
+  foe.morale = Math.max(0, foe.morale - shock);
+  addSuppression(foe, charging ? 0.35 : 0.22);
   for (const o of world.soldiers) {
     if (o.faction !== foe.faction || o.status !== "active" || o === foe) continue;
-    const d2 = (o.x - foe.x) ** 2 + (o.y - foe.y) ** 2;
-    if (d2 <= 9) { o.morale = Math.max(0, o.morale - 0.12); addSuppression(o, 0.2); }
+    const dx = o.x - foe.x, dy = o.y - foe.y;
+    if (dx * dx + dy * dy <= 9) { o.morale = Math.max(0, o.morale - shock * 0.4); addSuppression(o, 0.12); }
   }
 
-  // Cut him down — easy against a man already wavering, hard against one standing firm in cover.
-  let kill = (broken ? 0.65 : 0.28) * (1 - cover * 0.5) * (0.7 + 0.3 * trooper.training);
+  // Cut him down. Charging impetus and the weight of numbers carry the scrum; a wavering
+  // man is easy meat, a steady man behind a wall or hedge is hard to get at. Numbers tilt
+  // the odds but don't make it a one-sided massacre — the loser still draws blood.
+  let kill = 0.14;
+  if (charging) kill += 0.18;
+  if (foeWavering) kill += 0.14;
+  kill *= 0.65 + 0.7 * odds;
+  kill *= 1 - cover * 0.4;
+  kill *= 0.7 + 0.3 * s.training;
+  kill = Math.max(0.02, Math.min(0.8, kill));
   if (Math.random() < kill) {
-    if (Math.random() < 0.6) killSoldier(world, foe, 1.4); // a sabring shocks the squad harder
+    if (Math.random() < 0.6) killSoldier(world, foe, 1.4); // a man cut down in the melee shakes his fellows hard
     else woundSoldier(world, foe);
-  }
-
-  // The trooper's own risk: a formed, steady line shoots and bayonets horses; a broken mob can't.
-  const risk = (broken ? 0.05 : 0.22) * (1 + cover * 0.4) * (1.1 - trooper.training * 0.4);
-  if (Math.random() < risk) {
-    if (Math.random() < 0.5) killSoldier(world, trooper);
-    else woundSoldier(world, trooper);
   }
 }
 

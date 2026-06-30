@@ -37,7 +37,7 @@ export const TERRAIN: Record<Terrain, TerrainDef> = {
   [Terrain.Wall]:   { name: "Building",    color: 0x4a4036, moveCost: Infinity, cover: 0.8,  concealment: 0.8,  blocksSight: true  },
   [Terrain.Rubble]: { name: "Rubble",      color: 0x57514a, moveCost: 1.6,      cover: 0.45, concealment: 0.4,  blocksSight: false },
   [Terrain.Hedge]:  { name: "Hedge",       color: 0x445a30, moveCost: 1.8,      cover: 0.5,  concealment: 0.55, blocksSight: true  },
-  [Terrain.Floor]:  { name: "Building",    color: 0x6a5d4a, moveCost: 1,        cover: 0.6,  concealment: 0.5,  blocksSight: false },
+  [Terrain.Floor]:  { name: "Building",    color: 0x6a5d4a, moveCost: 1,        cover: 0.6,  concealment: 0.5,  blocksSight: true  },
   [Terrain.Window]: { name: "Window",      color: 0x6a5d4a, moveCost: 2.5,      cover: 0.45, concealment: 0.4,  blocksSight: false },
 };
 

@@ -220,6 +220,10 @@
       <div class="bar">
         <input id="search" type="text" placeholder="Search a place (e.g. Carentan, Bastogne, your street)…" />
         <button id="searchBtn">Search</button>
+        <select id="era" title="Which war?">
+          <option value="ww2">⚔ World War II</option>
+          <option value="acw">⚔ US Civil War</option>
+        </select>
         <select id="gameMode" title="Who attacks and who defends?">
           <option value="axis-attacks">Axis attacks · US defends</option>
           <option value="us-attacks">US attacks · Axis defends</option>
@@ -271,6 +275,7 @@
       <button data-order="ambush" data-key="t">Ambush<br><span class="k">T</span></button>
       <button data-order="fire"   data-key="f">Fire<br><span class="k">F</span></button>
       <button data-order="smoke"  data-key="g">Smoke<br><span class="k">G</span></button>
+      <button data-order="charge" data-key="c">Charge<br><span class="k">C</span></button>
     </div>
     <div id="deployBar">
       <div id="deployLabel">DEPLOYMENT PHASE — position your squads in the blue zone · press O to scout the objective</div>
@@ -281,10 +286,10 @@
     <div id="tutorial">
       <div class="tcard">
         <h1>DAS BLUT</h1>
-        <p class="sub">Close-Combat-style WW2 tactics. Here's how to play.</p>
+        <p class="sub" id="tutSub">Close-Combat-style WW2 tactics. Here's how to play.</p>
 
         <h2>THE MISSION</h2>
-        <p>You command the <b>US assault</b> (blue). Take the crossroads <b>objective</b> and hold it for <b>60 seconds</b> before the clock runs out. The <b>Germans</b> (red) defend it.</p>
+        <p id="tutMission">You command the <b>US assault</b> (blue). Take the crossroads <b>objective</b> and hold it for <b>60 seconds</b> before the clock runs out. The <b>Germans</b> (red) defend it.</p>
 
         <h2>DEPLOYMENT</h2>
         <p>First, position your squads anywhere in the <b>blue zone</b> (drag them there). When you're set, hit <b>⚔ LAUNCH ATTACK</b>. Press <span class="key">O</span> any time to look at the objective.</p>
@@ -305,12 +310,13 @@
           <div class="trow"><span class="key">T</span><span>Ambush — hold fire for a deadly first volley</span></div>
           <div class="trow"><span class="key">F</span><span>Fire — click an enemy to focus, or ground to suppress</span></div>
           <div class="trow"><span class="key">G</span><span>Smoke — mortar teams: screen an advance</span></div>
+          <div class="trow" id="tutChargeRow" style="display:none"><span class="key">C</span><span>Charge — cavalry: gallop in and ride the enemy down</span></div>
           <div class="trow"><span class="key">Space</span><span>Pause / resume</span></div>
         </div>
         <p style="margin-top:8px">Right-drag to <b>pan</b> · scroll to <b>zoom</b> · arrow keys also pan.</p>
 
         <h2>YOUR UNITS</h2>
-        <ul>
+        <ul id="tutUnits">
           <li><b>RIFLE</b> — line infantry; the backbone of the assault.</li>
           <li><b>MG</b> — light machine gun; superb at <b>suppressing</b> the enemy so others can move.</li>
           <li><b>AT</b> — bazooka team; kills tanks — aim for the <b>flank or rear</b>.</li>

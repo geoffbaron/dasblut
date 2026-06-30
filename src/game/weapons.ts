@@ -2,7 +2,9 @@
 // the map's scale and for Close Combat's feel: fire mostly *suppresses*; kills are
 // the exception, not the rule. rof = rounds/sec of effective aimed fire.
 
-export type WeaponId = "rifle" | "smg" | "lmg" | "bazooka" | "panzerfaust" | "mortar";
+export type WeaponId =
+  | "rifle" | "smg" | "lmg" | "bazooka" | "panzerfaust" | "mortar" // WW2
+  | "riflemusket" | "carbine" | "cannon"; // American Civil War
 
 export interface Weapon {
   id: WeaponId;
@@ -26,6 +28,11 @@ export interface Weapon {
   minRangeCells?: number;
   /** Blast radius in cells for area weapons (mortar HE). */
   blastCells?: number;
+  /** Direct-fire artillery (a cannon): needs line of sight, lobs a shell that bursts at the
+   *  aimpoint. Inside `canisterCells` it switches to canister — a wider, deadlier anti-personnel cone. */
+  artillery?: boolean;
+  /** Range at/under which a cannon fires canister instead of shell. */
+  canisterCells?: number;
 }
 
 export const WEAPONS: Record<WeaponId, Weapon> = {
@@ -40,6 +47,19 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
   // heavy on suppression with a real casualty radius. Slow, finite bombs, and blind
   // up close — it needs the player to call the shot.
   mortar:      { id: "mortar",      name: "Mortar",      rangeCells: 70, rof: 0.25, accuracy: 0.5, suppression: 0.5, lethality: 0.6, ammo: 20, tracerRate: 0, indirect: true, minRangeCells: 8, blastCells: 3 },
+
+  // --- American Civil War ---
+  // Rifled musket (Springfield/Enfield): the war's main arm. A muzzleloader — deadly and
+  // long-ranged for its day, but agonizingly slow to reload (~3 rounds/min), so a firing
+  // line lives and dies by its volume of fire and its nerve. No tracers (black powder).
+  riflemusket: { id: "riflemusket", name: "Rifle Musket", rangeCells: 32, rof: 0.32, accuracy: 0.34, suppression: 0.07, lethality: 0.72, ammo: 40, tracerRate: 0 },
+  // Cavalry carbine (Sharps): shorter, handier, breech-loaded so it reloads faster than the
+  // infantry musket. Carried by mounted troops who skirmish, scout, and charge home.
+  carbine:     { id: "carbine",     name: "Carbine",     rangeCells: 20, rof: 0.6,  accuracy: 0.28, suppression: 0.05, lethality: 0.55, ammo: 50, tracerRate: 0 },
+  // Field gun (12-pdr Napoleon): direct line-of-sight artillery. At range it throws a shell
+  // that bursts in the enemy ranks; up close it fires canister — a giant shotgun blast that
+  // scythes down massed infantry. Slow to serve and silenced if its crew is killed.
+  cannon:      { id: "cannon",      name: "Field Gun",   rangeCells: 58, rof: 0.18, accuracy: 0.6, suppression: 0.4, lethality: 0.7, ammo: 30, tracerRate: 0, artillery: true, blastCells: 3, canisterCells: 14 },
 };
 
 export function isAntiTank(id: WeaponId): boolean {

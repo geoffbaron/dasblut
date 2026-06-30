@@ -19,6 +19,100 @@ export function makeSoldierArt(teamColor: number): SoldierArt {
   };
 }
 
+// A mounted trooper: a horse drawn along the facing axis with a rider, a team-color
+// saddle blanket, and a raised sabre. Bigger than a man on foot.
+export function makeCavalryBody(teamColor: number): HTMLCanvasElement {
+  const { c, ctx } = newCanvas();
+  const hex = `#${teamColor.toString(16).padStart(6, "0")}`;
+
+  // Sabre, raised and angled forward.
+  ctx.strokeStyle = "#d8d8de";
+  ctx.lineWidth = 1.1;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(2, -3);
+  ctx.lineTo(8, -8);
+  ctx.stroke();
+
+  // Horse body — a long oval along the facing (east), brown.
+  const hide = ctx.createLinearGradient(0, -4, 0, 4);
+  hide.addColorStop(0, "#5b4630");
+  hide.addColorStop(1, "#3d2e1d");
+  ctx.fillStyle = hide;
+  ctx.beginPath();
+  ctx.ellipse(-0.5, 1.2, 8.5, 3.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Legs (simple darker stubs).
+  ctx.strokeStyle = "#2c2114";
+  ctx.lineWidth = 1.2;
+  for (const lx of [-6, -3, 3, 6]) { ctx.beginPath(); ctx.moveTo(lx, 3); ctx.lineTo(lx, 6); ctx.stroke(); }
+  // Head and neck forward.
+  ctx.fillStyle = "#43331f";
+  ctx.beginPath();
+  ctx.ellipse(8.5, -0.5, 2.6, 1.8, -0.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Rider torso with team-color blanket, sat over the withers.
+  ctx.fillStyle = hex;
+  ctx.beginPath();
+  ctx.ellipse(-1, 0, 3, 3.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#2f3420";
+  ctx.beginPath();
+  ctx.arc(0.4, -0.3, 2, 0, Math.PI * 2); // head/kepi
+  ctx.fill();
+  return c;
+}
+
+// A field gun: a long dark barrel along the facing, a wooden carriage, and two spoked
+// wheels. A small team-color touch on the trail so you can tell whose battery it is.
+export function makeCannonBody(teamColor: number): HTMLCanvasElement {
+  const { c, ctx } = newCanvas();
+  const hex = `#${teamColor.toString(16).padStart(6, "0")}`;
+
+  // Trail / carriage stretching behind the muzzle.
+  ctx.strokeStyle = "#5a4326";
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(-7, 1.5);
+  ctx.lineTo(2, 0);
+  ctx.stroke();
+  ctx.strokeStyle = hex; // team band at the trail spade
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(-7.5, 1.5);
+  ctx.lineTo(-5.5, 1.5);
+  ctx.stroke();
+
+  // The barrel — a tapering dark bronze tube pointing east.
+  const barrel = ctx.createLinearGradient(0, -1.5, 0, 1.5);
+  barrel.addColorStop(0, "#8a8d6a");
+  barrel.addColorStop(1, "#3f4032");
+  ctx.fillStyle = barrel;
+  ctx.beginPath();
+  ctx.moveTo(-1, -1.8);
+  ctx.lineTo(9, -1.1);
+  ctx.lineTo(9, 1.1);
+  ctx.lineTo(-1, 1.8);
+  ctx.closePath();
+  ctx.fill();
+
+  // Wheels — two dark discs flanking the carriage axle.
+  ctx.fillStyle = "#2a2014";
+  for (const wy of [-3.4, 3.4]) {
+    ctx.beginPath();
+    ctx.arc(-1.5, wy, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#4a3a22";
+    ctx.lineWidth = 0.7;
+    ctx.beginPath();
+    ctx.arc(-1.5, wy, 3.2, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  return c;
+}
+
 // A fallen man — slumped, no raised weapon, drawn dark. Shared across factions.
 export function makeCasualtyCanvas(): HTMLCanvasElement {
   const { c, ctx } = newCanvas();

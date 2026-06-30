@@ -28,7 +28,11 @@ export type SfxId =
   | "obj_lost"
   | "tank_engine"
   | "ambient"
-  | "mortar";
+  | "mortar"
+  | "riflemusket"
+  | "carbine"
+  | "cannon"
+  | "melee";
 
 // Maps each game event to one or more real audio files in public/sfx/ (filenames are
 // the exact drop-in names, including extension — they're URL-encoded at load time so
@@ -97,6 +101,11 @@ const SFX_DEFS: Record<SfxId, { files: string[]; vol: number }> = {
   tank_engine:    { files: TANK_DRIVE,  vol: 0.45 }, // looped while a tank drives
   ambient:        { files: AMBIENT,     vol: 0.3 },  // low distant battlefield bed
   mortar:         { files: [MORTAR_FIRE], vol: 0.9 }, // tube thump when a mortar fires
+  // American Civil War — reuse the closest WW2 samples; melee falls back to synth.
+  riflemusket:    { files: [RIFLE],     vol: 0.9 }, // single black-powder report
+  carbine:        { files: [RIFLE],     vol: 0.75 },
+  cannon:         { files: [TANK_BOOM], vol: 1.0 }, // field-gun discharge
+  melee:          { files: [],          vol: 0.6 }, // synth clash (sabre/bayonet)
 };
 
 // Maximum audible sounds per frame to avoid an audio avalanche during heavy combat.

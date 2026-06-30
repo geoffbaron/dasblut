@@ -33,8 +33,10 @@ export function commandAI(world: World, dt: number): void {
     if (men.every((s) => s.state === "panicked" || s.state === "routing")) return; // broken — let them run
 
     const o = objs[idx % objs.length];
-    if (team.kind === "mg") commandSupport(world, team, men, o, foe);
+    if (team.kind === "mg") commandSupport(world, team, men, o, foe, WEAPONS.lmg.rangeCells);
+    else if (team.kind === "artillery") commandSupport(world, team, men, o, foe, WEAPONS.cannon.rangeCells * 0.7);
     else if (team.kind === "mortar") commandMortar(world, team, men, objs, foe);
+    else if (team.kind === "cavalry") commandCavalry(world, team, men, o, idx, aiTeams.length, foe, needs, changed);
     else commandAssault(world, team, men, o, idx, aiTeams.length, foe, needs, changed, team.kind === "at");
   });
 
@@ -54,9 +56,8 @@ export function commandAI(world: World, dt: number): void {
 // Machine gun = base of fire. Set up in cover with a clear line to the objective and rake
 // it: suppress a spotted enemy near the flag, otherwise hold and watch the arc. The MG
 // never rushes onto the objective itself — it anchors the squad's advance from behind.
-function commandSupport(world: World, team: Team, men: Soldier[], o: Objective, foe: Faction): void {
+function commandSupport(world: World, team: Team, men: Soldier[], o: Objective, foe: Faction, range: number): void {
   const a = men[0];
-  const range = WEAPONS.lmg.rangeCells;
   const d = Math.hypot(a.x - o.cx, a.y - o.cy);
   const los = hasLOS(world.grid, Math.floor(a.x), Math.floor(a.y), o.cx, o.cy);
   if (los && d >= 4 && d <= range * 0.9) {
@@ -110,6 +111,34 @@ function commandAssault(
   } else if (!defending(men)) {
     world.orderPosture(team.id, "defend");
   }
+}
+
+// Cavalry skirmish with carbines like assault troops, but seize the chance to charge: if
+// an enemy is right on top of them, or a wavering one is within a short gallop, they ride
+// it down (the melee is resolved in updateCavalry). A mauled troop pulls back instead.
+function commandCavalry(
+  world: World, team: Team, men: Soldier[], o: Objective, idx: number, n: number,
+  foe: Faction, needs: (o: Objective) => boolean, changed: boolean,
+): void {
+  if (!isMauled(men)) {
+    const a = men[0];
+    let tgt: Soldier | null = null;
+    let bestD = Infinity;
+    for (const e of world.soldiers) {
+      if (e.faction !== foe || e.status !== "active" || !e.seen) continue;
+      const d = (e.x - a.x) ** 2 + (e.y - a.y) ** 2;
+      if (d < bestD) { bestD = d; tgt = e; }
+    }
+    if (tgt) {
+      const d = Math.sqrt(bestD);
+      const wavering = tgt.state !== "steady";
+      if (d <= 6 || (wavering && d <= 12)) {
+        world.orderMove(team.id, { cx: Math.floor(tgt.x), cy: Math.floor(tgt.y) }, "charge");
+        return;
+      }
+    }
+  }
+  commandAssault(world, team, men, o, idx, n, foe, needs, changed, false);
 }
 
 // --- helpers ---

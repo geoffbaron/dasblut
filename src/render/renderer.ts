@@ -1,11 +1,11 @@
 import { Application, Container, Graphics, Sprite, Texture } from "pixi.js";
 import { CELL_SIZE, OBJECTIVE_HOLD_TO_WIN, SMOKE_LOS_BLOCK } from "../game/constants.ts";
 import { VEHICLES } from "../game/vehicleDefs.ts";
-import { MoraleState, World } from "../game/world.ts";
+import { factionColor, MoraleState, World } from "../game/world.ts";
 import { Terrain, TERRAIN } from "../game/terrain.ts";
 import { WEAPONS } from "../game/weapons.ts";
 import { BuildingArt, paintBattlefield } from "./paint.ts";
-import { makeCasualtyCanvas, makeSoldierArt } from "./soldierArt.ts";
+import { makeCannonBody, makeCasualtyCanvas, makeCavalryBody, makeSoldierArt } from "./soldierArt.ts";
 import { makeVehicleArt, VehicleArt } from "./vehicleArt.ts";
 import { sound } from "./sound.ts";
 
@@ -44,7 +44,7 @@ export class Renderer {
 
   private shadowTex!: Texture;
   private casualtyTex!: Texture;
-  private bodyTexByColor = new Map<number, Texture>();
+  private bodyTexByColor = new Map<string, Texture>();
   private sprites = new Map<number, { shadow: Sprite; body: Sprite; alive: boolean }>();
   private vehSprites = new Map<
     number,
@@ -176,14 +176,14 @@ export class Renderer {
 
   // Create a soldier's sprites if they don't exist yet. Built lazily so client views,
   // which receive units via network snapshots after init, get sprites on demand too.
-  private ensureSoldierSprite(world: World, s: { id: number; teamId: number; faction: string }) {
+  private ensureSoldierSprite(world: World, s: { id: number; teamId: number; faction: string; weapon: string }) {
     let sp = this.sprites.get(s.id);
     if (sp) return sp;
     const color = world.team(s.teamId)?.color ?? (s.faction === "us" ? 0x4f7fd1 : 0xc4514a);
     const shadow = new Sprite(this.shadowTex);
     shadow.anchor.set(0.5);
     shadow.scale.set(1 / 3);
-    const body = new Sprite(this.bodyTexture(color));
+    const body = new Sprite(this.bodyTexture(color, s.weapon));
     body.anchor.set(0.5);
     body.scale.set(1 / 3);
     this.shadowLayer.addChild(shadow);
@@ -193,11 +193,20 @@ export class Renderer {
     return sp;
   }
 
-  private bodyTexture(color: number): Texture {
-    let tex = this.bodyTexByColor.get(color);
+  // The kind of sprite a weapon implies: a cannon draws a field gun, a carbine a mounted
+  // trooper, everything else a man on foot.
+  private artKind(weapon: string): "cannon" | "cavalry" | "soldier" {
+    return weapon === "cannon" ? "cannon" : weapon === "carbine" ? "cavalry" : "soldier";
+  }
+
+  private bodyTexture(color: number, weapon: string): Texture {
+    const kind = this.artKind(weapon);
+    const key = `${kind}:${color}`;
+    let tex = this.bodyTexByColor.get(key);
     if (!tex) {
-      tex = Texture.from(makeSoldierArt(color).body);
-      this.bodyTexByColor.set(color, tex);
+      const art = kind === "cannon" ? makeCannonBody(color) : kind === "cavalry" ? makeCavalryBody(color) : makeSoldierArt(color).body;
+      tex = Texture.from(art);
+      this.bodyTexByColor.set(key, tex);
     }
     return tex;
   }
@@ -540,8 +549,8 @@ export class Renderer {
     const mw = world.grid.width * CELL_SIZE;
     const mh = world.grid.height * CELL_SIZE;
     const northFaction = world.southFaction === "us" ? "axis" : "us";
-    const southCol = world.southFaction === "us" ? 0x4f7fd1 : 0xc4514a;
-    const northCol = northFaction === "us" ? 0x4f7fd1 : 0xc4514a;
+    const southCol = factionColor(world.era, world.southFaction);
+    const northCol = factionColor(world.era, northFaction);
 
     // South band — the faction deploying along the bottom edge.
     const sY = world.deploySouthY0 * CELL_SIZE;
@@ -560,7 +569,7 @@ export class Renderer {
     for (const o of world.objectives) {
       const cx = (o.cx + 0.5) * CELL_SIZE;
       const cy = (o.cy + 0.5) * CELL_SIZE;
-      const col = o.owner === "us" ? 0x4f7fd1 : o.owner === "axis" ? 0xc4514a : 0xbfb38a;
+      const col = o.owner === "neutral" ? 0xbfb38a : factionColor(world.era, o.owner);
 
       // Capture zone — slightly more opaque so it punches through building rooftops.
       g.circle(cx, cy, o.radius * CELL_SIZE).fill({ color: col, alpha: o.contested ? 0.22 : 0.12 });
@@ -572,7 +581,7 @@ export class Renderer {
       let arcCol = col;
       if (o.capturing) {
         frac = o.progress;
-        arcCol = o.capturing === "us" ? 0x4f7fd1 : 0xc4514a;
+        arcCol = factionColor(world.era, o.capturing);
       } else if (o.owner === world.player) {
         frac = holdFrac;
         arcCol = 0x6fcf6f;
@@ -610,7 +619,7 @@ export class Renderer {
       if (down === sp.alive) {
         // Status changed → swap texture.
         const col = world.team(s.teamId)?.color ?? (s.faction === "us" ? 0x4f7fd1 : 0xc4514a);
-        sp.body.texture = down ? this.casualtyTex : this.bodyTexture(col);
+        sp.body.texture = down ? this.casualtyTex : this.bodyTexture(col, s.weapon);
         sp.body.alpha = down ? (s.status === "dead" ? 0.85 : 0.95) : 1;
         sp.alive = !down;
       }

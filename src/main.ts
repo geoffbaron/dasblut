@@ -3,7 +3,7 @@ import { BATTLE_TIME_S, OBJECTIVE_HOLD_TO_WIN, SPEED_STEPS, VIS_INTERVAL } from 
 import { GameMap } from "./game/gamemap.ts";
 import { step } from "./game/sim.ts";
 import { Cell } from "./game/pathfinding.ts";
-import { DEFAULT_SETUP, Faction, GameSetup, Stance, World } from "./game/world.ts";
+import { DEFAULT_SETUP, factionName, Faction, GameSetup, Stance, World } from "./game/world.ts";
 import { WEAPONS } from "./game/weapons.ts";
 import { VEHICLES } from "./game/vehicleDefs.ts";
 import { updateVisibility } from "./game/visibility.ts";
@@ -17,7 +17,7 @@ import {
 } from "./net/snapshot.ts";
 
 // Armed map-click order: which movement/fire order a left-click issues.
-type ArmedOrder = "move" | "fast" | "sneak" | "fire" | "smoke";
+type ArmedOrder = "move" | "fast" | "sneak" | "fire" | "smoke" | "charge";
 
 // --- Multiplayer bootstrap ---------------------------------------------------------
 // The host runs the authoritative sim and plays US (the normal single-player flow,
@@ -86,7 +86,6 @@ function maybeStartClient(): void {
 
 // === Shared HUD ====================================================================
 
-const SIDE_LABEL: Record<Faction, string> = { us: "US", axis: "AXIS" };
 
 // An order issuer: the host applies orders to the world directly; a client relays
 // them to the host over the network (and only an active German commander may do so).
@@ -151,6 +150,8 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
   const statusEl = document.getElementById("status")!;
   const clockEl = document.getElementById("clock")!;
   const forcesEl = document.getElementById("forces")!;
+  // Side label follows the era (US/WEHRMACHT in WW2, UNION/CONFEDERATE in the Civil War).
+  const sideLabel = (f: Faction) => factionName(world.era, f).toUpperCase();
   const objectiveEl = document.getElementById("objective")!;
   const bannerEl = document.getElementById("banner")!;
   const bannerBig = document.getElementById("bannerBig")!;
@@ -195,8 +196,8 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
       if (s.faction === (side ?? "us")) mine++;
       else { enemyTotal++; if (s.seen) enemySeen++; }
     }
-    if (side) forcesEl.textContent = `${SIDE_LABEL[side]} ${mine} · ${SIDE_LABEL[enemy]} ${enemySeen > 0 ? enemySeen + " seen" : "?"}`;
-    else forcesEl.textContent = `US ${mine} · AXIS ${enemyTotal}`;
+    if (side) forcesEl.textContent = `${sideLabel(side)} ${mine} · ${sideLabel(enemy)} ${enemySeen > 0 ? enemySeen + " seen" : "?"}`;
+    else forcesEl.textContent = `${sideLabel("us")} ${mine} · ${sideLabel("axis")} ${enemyTotal}`;
 
     {
       const objs = world.objectives;
@@ -208,16 +209,16 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
       let line: string;
       if (holder && world.roleOf(holder) === "attack") {
         const c = holder === world.player ? "hold" : holder;
-        line = `<span class="obj-${c}">${SIDE_LABEL[holder]} HOLD ${Math.ceil(world.objHoldTimer)} / ${OBJECTIVE_HOLD_TO_WIN}s</span>`;
+        line = `<span class="obj-${c}">${sideLabel(holder)} HOLD ${Math.ceil(world.objHoldTimer)} / ${OBJECTIVE_HOLD_TO_WIN}s</span>`;
       } else if (total === 1) {
         const o = objs[0];
         if (contested) line = `<span class="obj-contested">CONTESTED</span>`;
-        else if (o.capturing) line = `<span class="obj-${o.capturing}">${SIDE_LABEL[o.capturing as Faction]} capturing… ${Math.round(o.progress * 100)}%</span>`;
+        else if (o.capturing) line = `<span class="obj-${o.capturing}">${sideLabel(o.capturing as Faction)} capturing… ${Math.round(o.progress * 100)}%</span>`;
         else if (o.owner === "neutral") line = `<span class="obj-contested">UP FOR GRABS</span>`;
-        else line = `<span class="obj-${o.owner}">${SIDE_LABEL[o.owner as Faction]} holds</span>`;
+        else line = `<span class="obj-${o.owner}">${sideLabel(o.owner as Faction)} holds</span>`;
       } else {
         const cls = myOwned >= total - myOwned ? `obj-${world.player}` : `obj-${foe}`;
-        line = `<span class="${cls}">${SIDE_LABEL[world.player]} ${myOwned} / ${total}</span>` + (contested ? ` <span class="obj-contested">· contested</span>` : "");
+        line = `<span class="${cls}">${sideLabel(world.player)} ${myOwned} / ${total}</span>` + (contested ? ` <span class="obj-contested">· contested</span>` : "");
       }
       objectiveEl.innerHTML = `<div class="obj-title">${total > 1 ? "OBJECTIVES" : "OBJECTIVE"}</div><div>${line}</div>`;
     }
@@ -284,10 +285,12 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
     const hasMortar = world.selectedVehicleId == null && [...world.selectedTeamIds].some((id) => world.team(id)?.kind === "mortar");
     const primaryTeam = world.selectedTeamId != null ? world.team(world.selectedTeamId) : null;
     const mortarFiring = hasMortar && primaryTeam?.kind === "mortar" && world.teamIsFiring(world.selectedTeamId!);
+    const hasCavalry = world.selectedVehicleId == null && [...world.selectedTeamIds].some((id) => world.team(id)?.kind === "cavalry");
     for (const b of orderBtns) {
       const order = b.dataset.order!;
       let hidden = deployPhase && (order === "fire" || order === "fast" || order === "ambush" || order === "defend");
       if (order === "smoke") hidden = deployPhase || !hasMortar;
+      if (order === "charge") hidden = deployPhase || !hasCavalry; // mounted shock action only
       b.style.display = hidden ? "none" : "";
       b.classList.toggle("armed", order === armed);
       // While a mortar is sustaining fire, label the Fire button "STOP" and pulse it.
@@ -385,7 +388,7 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
   for (const b of orderBtns) b.addEventListener("click", () => pickOrder(b.dataset.order!));
 
   // --- roster ---
-  const KIND_LABEL: Record<string, string> = { rifle: "RIFLE", mg: "MG", at: "AT", mortar: "MORTAR" };
+  const KIND_LABEL: Record<string, string> = { rifle: "RIFLE", mg: "MG", at: "AT", mortar: "MORTAR", infantry: "INFANTRY", cavalry: "CAVALRY", artillery: "ARTILLERY" };
   interface RosterCard { el: HTMLDivElement; count: HTMLSpanElement; moraleFill: HTMLDivElement; ammoFill: HTMLDivElement; strFill: HTMLDivElement; }
   const rosterCards = new Map<number, RosterCard>();
   const vehicleCards = new Map<number, RosterCard>();
@@ -513,7 +516,7 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
   const input = new Input(renderer, world, onSel, handleOrder, onBox, inputSide);
 
   if (canCommand) {
-    const ORDER_KEYS: Record<string, string> = { q: "move", w: "fast", e: "sneak", r: "defend", t: "ambush", f: "fire", g: "smoke" };
+    const ORDER_KEYS: Record<string, string> = { q: "move", w: "fast", e: "sneak", r: "defend", t: "ambush", f: "fire", g: "smoke", c: "charge" };
     window.addEventListener("keydown", (e) => {
       if (e.key.toLowerCase() === "o") { renderer.centerOnObjective(world); return; }
       const order = ORDER_KEYS[e.key.toLowerCase()];
@@ -553,9 +556,32 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
 
 // === Host (US) / offline single-player =============================================
 
+// Rewrite the help/tutorial card to match the era, so opening Help mid-battle reflects
+// whether you're fighting WW2 or the Civil War (units, mission flavour, the charge order).
+function applyEraTutorial(world: World): void {
+  const acw = world.era === "acw";
+  const set = (id: string, html: string) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+  set("tutSub", acw ? "Close-Combat-style US Civil War tactics. Here's how to play." : "Close-Combat-style WW2 tactics. Here's how to play.");
+  set("tutMission", acw
+    ? "Take the crossroads <b>objective</b> and hold it for <b>60 seconds</b> before the clock runs out. Union (blue) and Confederate (grey) fight for the ground."
+    : "Take the crossroads <b>objective</b> and hold it for <b>60 seconds</b> before the clock runs out. US (blue) and the Germans (red) fight for the ground.");
+  set("tutUnits", acw
+    ? "<li><b>INFANTRY</b> — big rifle-musket platoons; deadly volleys, but a slow muzzle-loading reload.</li>"
+      + "<li><b>CAVALRY</b> — mounted carbines; fast skirmishers that can <b>charge</b> and ride down shaken men.</li>"
+      + "<li><b>ARTILLERY</b> — a field-gun battery; shells at range, <b>canister</b> up close. Kill the crew to silence it.</li>"
+    : "<li><b>RIFLE</b> — line infantry; the backbone of the assault.</li>"
+      + "<li><b>MG</b> — light machine gun; superb at <b>suppressing</b> the enemy so others can move.</li>"
+      + "<li><b>AT</b> — bazooka team; kills tanks — aim for the <b>flank or rear</b>.</li>"
+      + "<li><b>MORTAR</b> — one tube, slow to reload; lobs HE or <b>smoke</b> over walls. You must call the shot.</li>"
+      + "<li><b>TANK</b> — your Sherman; click to direct its fire.</li>");
+  const chargeRow = document.getElementById("tutChargeRow");
+  if (chargeRow) chargeRow.style.display = acw ? "" : "none";
+}
+
 async function startGame(map: GameMap, objectiveCount = 1, setup: GameSetup = DEFAULT_SETUP) {
   const mount = document.getElementById("app")!;
   const world = new World(map, objectiveCount, setup);
+  applyEraTutorial(world);
   updateVisibility(world, VIS_INTERVAL);
   const renderer = new Renderer();
   await renderer.init(mount, world);

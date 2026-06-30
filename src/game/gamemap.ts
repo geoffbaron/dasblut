@@ -36,7 +36,7 @@ export interface SquadSpawn {
   cx: number;
   cy: number;
   count: number;
-  kind?: "rifle" | "mg" | "at" | "mortar";
+  kind?: "rifle" | "mg" | "at" | "mortar" | "infantry" | "cavalry" | "artillery";
 }
 
 export interface VehicleSpawn {

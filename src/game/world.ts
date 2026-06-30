@@ -11,7 +11,10 @@ export type Status = "active" | "wounded" | "dead" | "surrendered";
 export type MoraleState = "steady" | "shaken" | "pinned" | "panicked" | "routing";
 // Posture the player commands. Move/Fast/Sneak are movement orders; Defend/Ambush
 // are held positions. Governs speed, whether/when men fire, and how easily spotted.
-export type Stance = "move" | "fast" | "sneak" | "defend" | "ambush";
+export type Stance = "move" | "fast" | "sneak" | "defend" | "ambush" | "charge";
+
+// The setting a battle is fought in. Each era swaps the whole armoury and unit roster.
+export type Era = "ww2" | "acw";
 
 // A deliberately small, ECS-flavored world: flat arrays of entities with plain
 // component data. Enough structure to grow into a real ECS later, no ceremony now.
@@ -162,9 +165,12 @@ const FORMATION_SPACING = 0.42;
 // Squad templates decide the weapon mix. The first man is always the leader (SMG);
 // the rest follow the list, padded with riflemen. This is what makes an AT or
 // mortar team meaningfully different from a rifle squad.
-export type SquadKind = "rifle" | "mg" | "at" | "mortar";
+export type SquadKind =
+  | "rifle" | "mg" | "at" | "mortar" // WW2
+  | "infantry" | "cavalry" | "artillery"; // ACW
 
-function squadLoadout(kind: SquadKind, count: number, faction: Faction): WeaponId[] {
+function squadLoadout(kind: SquadKind, count: number, faction: Faction, era: Era): WeaponId[] {
+  if (era === "acw") return acwLoadout(kind, count);
   const at: WeaponId = faction === "us" ? "bazooka" : "panzerfaust";
   const tail: WeaponId[] =
     kind === "mg" ? ["lmg", "lmg", "rifle"]
@@ -176,21 +182,62 @@ function squadLoadout(kind: SquadKind, count: number, faction: Faction): WeaponI
   return out;
 }
 
+// Civil War loadouts. A line-infantry platoon is all rifle muskets; cavalry all carbines;
+// an artillery section is a crew of cannoneers (rifle muskets for self-defence) serving a
+// single field gun — kill the crew and the gun falls silent.
+function acwLoadout(kind: SquadKind, count: number): WeaponId[] {
+  if (kind === "cavalry") return Array.from({ length: count }, () => "carbine" as WeaponId);
+  if (kind === "artillery") {
+    const out: WeaponId[] = ["riflemusket"]; // the gun sergeant
+    for (let i = 1; i < count; i++) out.push(i === 1 ? "cannon" : "riflemusket"); // one gun + crew
+    return out;
+  }
+  return Array.from({ length: count }, () => "riflemusket" as WeaponId); // line infantry
+}
+
+// Remap a WW2 spawn list to a Civil War order of battle, keeping the deployment
+// positions: large rifle-musket platoons with one mounted cavalry troop among them.
+// (Artillery is added separately from the support-unit selector.)
+function acwOrbat(list: SquadSpawn[]): SquadSpawn[] {
+  const ord = ["1st", "2nd", "3rd", "4th", "5th", "6th"];
+  return list.map((s, i) => {
+    const cav = i === 2; // the middle slot rides
+    return {
+      name: cav ? "Cavalry Troop" : `${ord[i] ?? i + 1} Platoon`,
+      cx: s.cx, cy: s.cy,
+      count: cav ? 10 : 18,
+      kind: cav ? "cavalry" : "infantry",
+    };
+  });
+}
+
 export type Role = "attack" | "defend";
 
 // How a battle is configured: who the human commands, each side's role (attack the
 // objectives or defend them), and how many tanks each side fields (1-3).
 export interface GameSetup {
+  era: Era;
   player: Faction;
   usRole: Role;
   axisRole: Role;
-  usTanks: number;
+  usTanks: number; // in ACW these count field guns instead of tanks
   axisTanks: number;
 }
 
 export const DEFAULT_SETUP: GameSetup = {
-  player: "axis", usRole: "defend", axisRole: "attack", usTanks: 1, axisTanks: 1,
+  era: "ww2", player: "axis", usRole: "defend", axisRole: "attack", usTanks: 1, axisTanks: 1,
 };
+
+// The two sides' display names and colours, per era. Internally the factions stay
+// "us"/"axis"; only their presentation changes.
+export function factionName(era: Era, f: Faction): string {
+  if (era === "acw") return f === "us" ? "Union" : "Confederate";
+  return f === "us" ? "US" : "Wehrmacht";
+}
+export function factionColor(era: Era, f: Faction): number {
+  if (f === "us") return era === "acw" ? 0x3f6fc4 : 0x4f7fd1; // Union / US blue
+  return era === "acw" ? 0x8d8f99 : 0xc4514a; // Confederate grey / German red
+}
 
 function other(f: Faction): Faction { return f === "us" ? "axis" : "us"; }
 
@@ -212,6 +259,9 @@ export class World {
   aiFaction: Faction = "us";
   usRole: Role = "defend";
   axisRole: Role = "attack";
+  // Which historical setting this battle is fought in — picks the weapons, unit types,
+  // vehicles, and the two sides' names/colors. WW2: US vs Wehrmacht. ACW: Union vs Confederate.
+  era: Era = "ww2";
   // The faction deploying along the south edge; the other deploys north.
   southFaction: Faction = "axis";
   // Deployment bands (grid rows): south band [deploySouthY0, height), north [0, deployNorthY1).
@@ -262,6 +312,7 @@ export class World {
     this.mapName = map.name;
     this.grid = map.grid;
     this.features = map.features;
+    this.era = setup.era;
     this.player = setup.player;
     this.aiFaction = other(setup.player);
     this.usRole = setup.usRole;
@@ -292,21 +343,32 @@ export class World {
 
     // map.spawns.us is always the south positions, map.spawns.axis the north ones; the
     // faction occupying each depends on who's attacking from where.
-    const colorOf = (f: Faction) => (f === "us" ? 0x4f7fd1 : 0xc4514a);
+    const colorOf = (f: Faction) => factionColor(this.era, f);
     // Each squad's veterancy is rolled on its own, so a force is a mix of green and
     // seasoned teams — CC's recruit/veteran/elite texture, where one squad folds under
     // fire that another shrugs off. The attacking side averages a touch higher (assault
     // troops tend to be the better units).
     const trainOf = (f: Faction) =>
       Math.max(0.3, Math.min(0.9, (this.roleOf(f) === "attack" ? 0.64 : 0.56) + (Math.random() - 0.5) * 0.5));
-    for (const s of map.spawns.us) this.spawnSquad(s, this.southFaction, colorOf(this.southFaction), trainOf(this.southFaction));
-    for (const s of map.spawns.axis) this.spawnSquad(s, northFaction, colorOf(northFaction), trainOf(northFaction));
+    // The maps carry a WW2 order of battle; in the Civil War we reuse the same deployment
+    // positions but field period units — big rifle-musket platoons with a cavalry troop.
+    const orbat = (list: SquadSpawn[]) => (this.era === "ww2" ? list : acwOrbat(list));
+    for (const s of orbat(map.spawns.us)) this.spawnSquad(s, this.southFaction, colorOf(this.southFaction), trainOf(this.southFaction));
+    for (const s of orbat(map.spawns.axis)) this.spawnSquad(s, northFaction, colorOf(northFaction), trainOf(northFaction));
 
-    // Tanks: each side's own class, count from the setup, clustered at its band anchor.
+    // Heavy support, clustered at each side's band anchor. WW2 fields tanks; the Civil War
+    // fields field-gun batteries. The 1-3 selector counts whichever the era uses.
     const southAnchor = map.spawns.usVehicles[0] ?? { cx: (this.grid.width / 2) | 0, cy: this.grid.height - 5 };
     const northAnchor = map.spawns.axisVehicles[0] ?? { cx: (this.grid.width / 2) | 0, cy: 5 };
-    this.spawnTanks(this.southFaction, this.southFaction === "us" ? setup.usTanks : setup.axisTanks, southAnchor.cx, southAnchor.cy, -Math.PI / 2);
-    this.spawnTanks(northFaction, northFaction === "us" ? setup.usTanks : setup.axisTanks, northAnchor.cx, northAnchor.cy, Math.PI / 2);
+    const southCount = this.southFaction === "us" ? setup.usTanks : setup.axisTanks;
+    const northCount = northFaction === "us" ? setup.usTanks : setup.axisTanks;
+    if (this.era === "ww2") {
+      this.spawnTanks(this.southFaction, southCount, southAnchor.cx, southAnchor.cy, -Math.PI / 2);
+      this.spawnTanks(northFaction, northCount, northAnchor.cx, northAnchor.cy, Math.PI / 2);
+    } else {
+      this.spawnGuns(this.southFaction, southCount, southAnchor.cx, southAnchor.cy, trainOf(this.southFaction));
+      this.spawnGuns(northFaction, northCount, northAnchor.cx, northAnchor.cy, trainOf(northFaction));
+    }
   }
 
   roleOf(f: Faction): Role { return f === "us" ? this.usRole : this.axisRole; }
@@ -330,6 +392,18 @@ export class World {
       const off = i === 0 ? 0 : (i % 2 === 1 ? 1 : -1) * Math.ceil(i / 2) * 3;
       const cell = this.nearestVehicleCell(cx + off, cy);
       this.spawnVehicle(cls, cell.cx, cell.cy, facing);
+    }
+  }
+
+  // Spawn `count` field-gun batteries (crewed cannon teams) clustered around an anchor.
+  // In the Civil War these stand in for the WW2 tank slots.
+  private spawnGuns(faction: Faction, count: number, cx: number, cy: number, training: number): void {
+    const n = Math.max(1, Math.min(3, count));
+    for (let i = 0; i < n; i++) {
+      const off = i === 0 ? 0 : (i % 2 === 1 ? 1 : -1) * Math.ceil(i / 2) * 4;
+      const cell = this.nearestPassable(cx + off, cy, { cx, cy });
+      const spawn: SquadSpawn = { name: n > 1 ? `Battery ${i + 1}` : "Battery", cx: cell.cx, cy: cell.cy, count: 5, kind: "artillery" };
+      this.spawnSquad(spawn, faction, factionColor(this.era, faction), training);
     }
   }
 
@@ -399,7 +473,7 @@ export class World {
     // material edge to pay for crossing open ground into a dug-in defender. Support
     // teams (MG/AT/mortar) keep their fixed crews; only the rifle line swells. A meeting
     // engagement (no defender) leaves both sides at full strength, so neither is favored.
-    const reinforced = kind === "rifle" && this.roleOf(faction) === "attack" && this.roleOf(other(faction)) === "defend";
+    const reinforced = (kind === "rifle" || kind === "infantry") && this.roleOf(faction) === "attack" && this.roleOf(other(faction)) === "defend";
     const count = reinforced ? Math.round(spawn.count * 1.4) : spawn.count;
     const team: Team = {
       id: this.nextId++,
@@ -412,7 +486,7 @@ export class World {
       kind,
     };
     this.teams.push(team);
-    const loadout = squadLoadout(kind, count, faction);
+    const loadout = squadLoadout(kind, count, faction, this.era);
     for (let i = 0; i < count; i++) {
       const f = FORMATION[i % FORMATION.length];
       const sx = spawn.cx + f.ox * FORMATION_SPACING + 0.5;

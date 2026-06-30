@@ -20,14 +20,38 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
   // The mode dropdown encodes both who the human plays and each side's role.
   const setup = (): GameSetup => {
     const mode = (document.getElementById("gameMode") as HTMLSelectElement)?.value || "axis-attacks";
+    const era = ((document.getElementById("era") as HTMLSelectElement)?.value === "acw" ? "acw" : "ww2") as GameSetup["era"];
     const usTanks = tanks("usTanks"), axisTanks = tanks("axisTanks");
     switch (mode) {
-      case "us-attacks":   return { player: "us",   usRole: "attack", axisRole: "defend", usTanks, axisTanks };
-      case "meeting-axis": return { player: "axis", usRole: "attack", axisRole: "attack", usTanks, axisTanks };
-      case "meeting-us":   return { player: "us",   usRole: "attack", axisRole: "attack", usTanks, axisTanks };
-      default:             return { player: "axis", usRole: "defend", axisRole: "attack", usTanks, axisTanks };
+      case "us-attacks":   return { era, player: "us",   usRole: "attack", axisRole: "defend", usTanks, axisTanks };
+      case "meeting-axis": return { era, player: "axis", usRole: "attack", axisRole: "attack", usTanks, axisTanks };
+      case "meeting-us":   return { era, player: "us",   usRole: "attack", axisRole: "attack", usTanks, axisTanks };
+      default:             return { era, player: "axis", usRole: "defend", axisRole: "attack", usTanks, axisTanks };
     }
   };
+
+  // Relabel the mode/support dropdowns to match the chosen era (Union/Confederate &
+  // guns in the Civil War, US/Axis & tanks in WW2). Option values are unchanged.
+  const relabel = () => {
+    const acw = (document.getElementById("era") as HTMLSelectElement)?.value === "acw";
+    const blue = acw ? "Union" : "US";
+    const red = acw ? "Confederate" : "Axis";
+    const unit = (n: number) => (acw ? `${n} gun${n > 1 ? "s" : ""}` : `${n} tank${n > 1 ? "s" : ""}`);
+    const opt = (sel: string, vals: Record<string, string>) => {
+      const el = document.getElementById(sel) as HTMLSelectElement | null;
+      if (el) for (const o of Array.from(el.options)) if (vals[o.value]) o.textContent = vals[o.value];
+    };
+    opt("gameMode", {
+      "axis-attacks": `${red} attacks · ${blue} defends`,
+      "us-attacks": `${blue} attacks · ${red} defends`,
+      "meeting-axis": `Meeting — both attack (play ${red})`,
+      "meeting-us": `Meeting — both attack (play ${blue})`,
+    });
+    opt("usTanks", { "1": `${blue}: ${unit(1)}`, "2": `${blue}: ${unit(2)}`, "3": `${blue}: ${unit(3)}` });
+    opt("axisTanks", { "1": `${red}: ${unit(1)}`, "2": `${red}: ${unit(2)}`, "3": `${red}: ${unit(3)}` });
+  };
+  document.getElementById("era")?.addEventListener("change", relabel);
+  relabel();
 
   const map = L.map("map", { zoomControl: true, attributionControl: false }).setView([49.3033, -1.2456], 16); // Carentan
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);

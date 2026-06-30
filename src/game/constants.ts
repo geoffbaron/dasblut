@@ -36,7 +36,7 @@ export const COHESION_LEAD = 0.7;  // a man out front of the squad eases to this
 export const REGROUP_DIST = 4.5;   // an idle man this far from the squad re-paths to rejoin
 
 // --- Orders / stances (Phase 3) ---
-export const STANCE_SPEED = { move: 1, fast: 1.6, sneak: 0.5, defend: 0, ambush: 0 } as const;
+export const STANCE_SPEED = { move: 1, fast: 1.6, sneak: 0.5, defend: 0, ambush: 0, charge: 2.0 } as const;
 export const AMBUSH_RANGE = 9; // cells; ambushers hold fire until an enemy is this close
 export const AMBUSH_BONUS_TIME = 3; // seconds the first-volley bonus lasts
 export const AMBUSH_ACC_MULT = 1.7; // accuracy/suppression multiplier on the opening burst

@@ -1,6 +1,6 @@
 import { acquireTargets, ensureFleeGoal } from "./ai.ts";
 import { commandAI } from "./axisAI.ts";
-import { resolveFire, updateGrenades } from "./combat.ts";
+import { resolveFire, updateCavalry, updateGrenades } from "./combat.ts";
 import {
   BASE_MOVE_SPEED,
   BATTLE_TIME_S,
@@ -58,6 +58,7 @@ export function step(world: World): void {
   acquireTargets(world);
   resolveFire(world, SIM_DT);
   updateGrenades(world, SIM_DT); // detonate grenades whose fuse has run out
+  updateCavalry(world, SIM_DT); // resolve mounted charges into melee
   updateVehicles(world);
   updateMorale(world, SIM_DT);
   moveSoldiers(world);
@@ -249,7 +250,8 @@ function advance(world: World, s: Soldier, speedMul: number): void {
   const cx = Math.floor(s.x);
   const cy = Math.floor(s.y);
   const cost = world.grid.inBounds(cx, cy) ? TERRAIN[world.grid.get(cx, cy)].moveCost : 1;
-  const speed = (BASE_MOVE_SPEED / (isFinite(cost) ? cost : 1)) * speedMul;
+  const mounted = s.weapon === "carbine" ? 1.7 : 1; // cavalry cover ground faster than men on foot
+  const speed = (BASE_MOVE_SPEED / (isFinite(cost) ? cost : 1)) * speedMul * mounted;
 
   let budget = speed * SIM_DT;
   while (budget > 0 && s.path) {

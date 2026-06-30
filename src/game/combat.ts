@@ -39,6 +39,32 @@ export function resolveFire(world: World, dt: number): void {
     const w = WEAPONS[s.weapon];
     const rateMul = s.state === "pinned" ? 0.35 : s.state === "shaken" ? 0.75 : 1;
 
+    // Field gun: direct line-of-sight artillery. Fires at a player-designated cell
+    // (bombardment) or, failing that, an acquired enemy. Long range with a shell that
+    // bursts in the ranks; close in it switches to canister (handled in cannonShot).
+    if (w.artillery) {
+      let ax = 0, ay = 0, ok = false;
+      if (s.fireCell && hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), s.fireCell.cx, s.fireCell.cy, world.smokeGrid)) {
+        ax = s.fireCell.cx + 0.5; ay = s.fireCell.cy + 0.5; ok = true;
+      } else if (s.targetId != null) {
+        const t = world.soldier(s.targetId);
+        if (t && t.status === "active") { ax = t.x; ay = t.y; ok = true; } else s.targetId = null;
+      }
+      if (ok) {
+        const d = Math.hypot(ax - s.x, ay - s.y);
+        if (d <= w.rangeCells && hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), Math.floor(ax), Math.floor(ay), world.smokeGrid)) {
+          s.fireCD -= dt * rateMul;
+          if (s.fireCD <= 0 && s.ammo > 0) {
+            s.fireCD = 1 / w.rof;
+            s.ammo--;
+            s.firedTimer = 0.6;
+            cannonShot(world, s, ax, ay, d);
+          }
+        }
+      }
+      continue;
+    }
+
     // Anti-tank fire: a bazooka/Panzerfaust man engaging armor.
     if (s.targetVehId != null && w.penetration != null) {
       const veh = world.vehicle(s.targetVehId);
@@ -209,6 +235,40 @@ function mortarShot(world: World, s: Soldier): void {
   }
 }
 
+// A field-gun discharge. Beyond canister range it lobs a shell that bursts at the
+// aimpoint; inside canister range the muzzle vomits a cone of balls that scythes a wide,
+// shallow swath of infantry. Black-powder muzzle smoke marks every shot. Only the
+// enemies of the firing side are caught — gunners fire over their own ranks.
+function cannonShot(world: World, s: Soldier, tx: number, ty: number, dist: number): void {
+  const w = WEAPONS[s.weapon];
+  const canister = dist <= (w.canisterCells ?? 0);
+
+  sound.play("cannon", s.x, s.y);
+  world.effects.push({ kind: "flash", x0: s.x, y0: s.y, x1: s.x, y1: s.y, ttl: 0.18 });
+  world.effects.push({ kind: "smoke", x0: s.x, y0: s.y, x1: 0, y1: 0, ttl: 1.6, maxTtl: 1.6 }); // muzzle cloud
+  world.effects.push({ kind: "ap", x0: s.x, y0: s.y, x1: tx, y1: ty, ttl: 0.16 }); // round in flight
+  sound.play("explosion", tx, ty);
+  world.effects.push({ kind: "flash", x0: tx, y0: ty, x1: tx, y1: ty, ttl: 0.12 });
+  world.effects.push({ kind: "fire", x0: tx, y0: ty, x1: tx, y1: ty, ttl: 0.4 });
+  world.effects.push({ kind: "hit", x0: tx, y0: ty, x1: tx, y1: ty, ttl: 0.32 });
+  world.effects.push({ kind: "smoke", x0: tx, y0: ty, x1: 0, y1: 0, ttl: 1.5, maxTtl: 1.5 });
+
+  const radius = canister ? 4.5 : (w.blastCells ?? 3);
+  const kill = canister ? 0.6 : 0.5;
+  damageBuildings(world, Math.floor(tx), Math.floor(ty), w.blastCells ?? 3, 1.2);
+  for (const e of world.soldiers) {
+    if (e.faction === s.faction || e.status !== "active") continue;
+    const d = Math.hypot(e.x - tx, e.y - ty);
+    if (d > radius) continue;
+    const falloff = 1 - d / radius;
+    addSuppression(e, w.suppression * falloff);
+    if (Math.random() < kill * falloff) {
+      if (Math.random() < 0.6) killSoldier(world, e);
+      else woundSoldier(world, e);
+    }
+  }
+}
+
 // A smoke round: lands near the aimpoint, pops a small puff on impact, and drops a
 // burning canister that emits a screen which blooms over a few seconds and lasts most
 // of a minute (see updateSmoke). No casualties — this is for covering an advance.
@@ -311,6 +371,65 @@ export function updateGrenades(world: World, dt: number): void {
     detonateGrenade(world, g[i]);
   }
   g.length = w;
+}
+
+const MELEE_REACH = 1.4; // cells; how close a trooper must be to strike
+const MELEE_TEMPO = 0.6; // seconds between melee blows
+
+// Mounted shock action. A cavalryman ordered to "charge" gallops in (the speed comes from
+// the charge stance); when he reaches an enemy he strikes with sabre and pistol. Against
+// shaken or broken men a charge rides them down and shatters what's left of their nerve —
+// but a steady, formed firing line brings down horses, so charging good order is suicide.
+export function updateCavalry(world: World, dt: number): void {
+  for (const s of world.soldiers) {
+    if (s.status !== "active" || s.weapon !== "carbine" || s.stance !== "charge") continue;
+    s.fireCD -= dt;
+    let foe: Soldier | null = null;
+    let bestD = MELEE_REACH * MELEE_REACH;
+    for (const e of world.soldiers) {
+      if (e.faction === s.faction || e.status !== "active") continue;
+      const d = (e.x - s.x) ** 2 + (e.y - s.y) ** 2;
+      if (d < bestD) { bestD = d; foe = e; }
+    }
+    if (!foe) continue;
+    s.facing = Math.atan2(foe.y - s.y, foe.x - s.x);
+    if (s.fireCD > 0) continue;
+    s.fireCD = MELEE_TEMPO;
+    resolveMelee(world, s, foe);
+  }
+}
+
+function resolveMelee(world: World, trooper: Soldier, foe: Soldier): void {
+  const broken = foe.state === "pinned" || foe.state === "panicked" || foe.state === "routing" || foe.state === "shaken";
+  const cell = world.grid.inBounds(Math.floor(foe.x), Math.floor(foe.y)) ? TERRAIN[world.grid.get(Math.floor(foe.x), Math.floor(foe.y))] : null;
+  const cover = cell ? cell.cover : 0;
+
+  sound.play("melee", trooper.x, trooper.y);
+  world.effects.push({ kind: "hit", x0: foe.x, y0: foe.y, x1: foe.x, y1: foe.y, ttl: 0.22 });
+
+  // A charge is terror as much as steel: it hammers the morale of the man struck and the
+  // men around him. Cavalry loose in the ranks is how a line breaks and routs.
+  foe.morale = Math.max(0, foe.morale - 0.3);
+  addSuppression(foe, 0.45);
+  for (const o of world.soldiers) {
+    if (o.faction !== foe.faction || o.status !== "active" || o === foe) continue;
+    const d2 = (o.x - foe.x) ** 2 + (o.y - foe.y) ** 2;
+    if (d2 <= 9) { o.morale = Math.max(0, o.morale - 0.12); addSuppression(o, 0.2); }
+  }
+
+  // Cut him down — easy against a man already wavering, hard against one standing firm in cover.
+  let kill = (broken ? 0.65 : 0.28) * (1 - cover * 0.5) * (0.7 + 0.3 * trooper.training);
+  if (Math.random() < kill) {
+    if (Math.random() < 0.6) killSoldier(world, foe, 1.4); // a sabring shocks the squad harder
+    else woundSoldier(world, foe);
+  }
+
+  // The trooper's own risk: a formed, steady line shoots and bayonets horses; a broken mob can't.
+  const risk = (broken ? 0.05 : 0.22) * (1 + cover * 0.4) * (1.1 - trooper.training * 0.4);
+  if (Math.random() < risk) {
+    if (Math.random() < 0.5) killSoldier(world, trooper);
+    else woundSoldier(world, trooper);
+  }
 }
 
 function detonateGrenade(world: World, g: PendingGrenade): void {

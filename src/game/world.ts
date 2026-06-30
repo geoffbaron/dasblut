@@ -162,6 +162,25 @@ const FORMATION: { ox: number; oy: number }[] = [
 // lands as a recognizable clump the player can grab, not a scattered line.
 const FORMATION_SPACING = 0.42;
 
+// A soldier's slot within his unit. WW2 squads use the loose blob above. Civil War units
+// fall in shoulder-to-shoulder: infantry and cavalry form a wide two-rank LINE (men along
+// the x axis, facing the enemy across the field), while a gun crew clusters tight around
+// its piece. Offsets are returned in cells for ACW (used directly) and in blob units for
+// WW2 (scaled by FORMATION_SPACING at spawn).
+function formationSlot(era: Era, kind: SquadKind, i: number, count: number): { ox: number; oy: number } {
+  if (era !== "acw") return FORMATION[i % FORMATION.length];
+  if (kind === "artillery") {
+    const crew = [{ ox: 0, oy: 0 }, { ox: -0.9, oy: 0.7 }, { ox: 0.9, oy: 0.7 }, { ox: -0.9, oy: -0.7 }, { ox: 0.9, oy: -0.7 }];
+    return crew[i % crew.length];
+  }
+  const ranks = 2;
+  const perRank = Math.ceil(count / ranks);
+  const col = i % perRank;
+  const rank = Math.floor(i / perRank);
+  const spacing = kind === "cavalry" ? 1.1 : 0.8; // horsemen need more elbow room
+  return { ox: (col - (perRank - 1) / 2) * spacing, oy: rank * 0.9 };
+}
+
 // Squad templates decide the weapon mix. The first man is always the leader (SMG);
 // the rest follow the list, padded with riflemen. This is what makes an AT or
 // mortar team meaningfully different from a rifle squad.
@@ -488,9 +507,13 @@ export class World {
     this.teams.push(team);
     const loadout = squadLoadout(kind, count, faction, this.era);
     for (let i = 0; i < count; i++) {
-      const f = FORMATION[i % FORMATION.length];
-      const sx = spawn.cx + f.ox * FORMATION_SPACING + 0.5;
-      const sy = spawn.cy + f.oy * FORMATION_SPACING + 0.5;
+      // Civil War units fall in as a formed line (offsets already in cells); WW2 squads
+      // use the loose-blob template scaled tight. The same per-man offset (ox,oy) drives
+      // both this spawn and every later move/regroup, so a line re-forms when it advances.
+      const f = formationSlot(this.era, kind, i, count);
+      const spawnScale = this.era === "acw" ? 1 : FORMATION_SPACING;
+      const sx = spawn.cx + f.ox * spawnScale + 0.5;
+      const sy = spawn.cy + f.oy * spawnScale + 0.5;
       const isLeader = i === 0;
       const weapon: WeaponId = loadout[i] ?? "rifle";
       const s: Soldier = {
@@ -587,7 +610,9 @@ export class World {
       s.manualVehId = null;
       s.fireCell = null;
       s.fireSmoke = false;
-      const goal = this.nearestPassable(target.cx + s.ox, target.cy + s.oy, target);
+      // Round the per-man formation offset to a whole cell — ox/oy can be fractional
+      // (Civil War line spacing), and grid lookups need integer coordinates.
+      const goal = this.nearestPassable(Math.round(target.cx + s.ox), Math.round(target.cy + s.oy), target);
       const start: Cell = { cx: Math.floor(s.x), cy: Math.floor(s.y) };
       const raw = findPath(this.grid, start, goal);
       if (raw && raw.length > 1) {

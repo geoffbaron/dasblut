@@ -202,6 +202,7 @@ function teamCenters(world: World): Map<number, Pt2> {
 function cohesionFactor(s: Soldier, center: Pt2 | undefined): number {
   if (!center || !s.path) return 1;
   if (s.stance === "defend" || s.stance === "ambush") return 1; // held posture: don't shuffle
+  if (s.weapon === "cannon") return 1; // the gun plods at its own slow pace, never hurried by the crew
   const toCx = center.x - s.x;
   const toCy = center.y - s.y;
   const d = Math.hypot(toCx, toCy);
@@ -250,8 +251,9 @@ function advance(world: World, s: Soldier, speedMul: number): void {
   const cx = Math.floor(s.x);
   const cy = Math.floor(s.y);
   const cost = world.grid.inBounds(cx, cy) ? TERRAIN[world.grid.get(cx, cy)].moveCost : 1;
-  const mounted = s.weapon === "carbine" ? 1.7 : 1; // cavalry cover ground faster than men on foot
-  const speed = (BASE_MOVE_SPEED / (isFinite(cost) ? cost : 1)) * speedMul * mounted;
+  // Cavalry cover ground faster than men on foot; a heavy field gun is manhandled slowly.
+  const moveFactor = s.weapon === "carbine" ? 1.7 : s.weapon === "cannon" ? 0.4 : 1;
+  const speed = (BASE_MOVE_SPEED / (isFinite(cost) ? cost : 1)) * speedMul * moveFactor;
 
   let budget = speed * SIM_DT;
   while (budget > 0 && s.path) {

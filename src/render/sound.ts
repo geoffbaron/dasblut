@@ -136,6 +136,9 @@ export class SoundManager {
   private engines = new Map<number, { howl: Howl; sid: number }>();
   // Seconds until the next random distant-ambience cue.
   private ambientTimer = 6;
+  // The era picks the ambient bed: WW2 = planes & far-off small arms; the Civil War =
+  // faint distant musketry and gunnery (no aircraft). Set from main.ts when a battle starts.
+  era: "ww2" | "acw" = "ww2";
 
   constructor() {
     Howler.volume(this.masterVol);
@@ -229,6 +232,16 @@ export class SoundManager {
     this.ambientTimer -= dtSec;
     if (this.ambientTimer > 0) return;
     this.ambientTimer = 14 + Math.random() * 16; // next cue in 14–30s
+    // Civil War: no aircraft or modern small-arms bed — instead a faint, far-off din of
+    // black-powder volley fire and the occasional gun, built from the period samples.
+    if (this.era === "acw") {
+      const howl = this.pickHowl(Math.random() < 0.75 ? "riflemusket" : "cannon");
+      if (!howl) return;
+      const sid = howl.play();
+      howl.volume(0.16, sid); // distant
+      howl.stereo((Math.random() * 2 - 1) * 0.75, sid);
+      return;
+    }
     const howl = this.pickHowl("ambient");
     if (!howl) return;
     const sid = howl.play();

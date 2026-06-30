@@ -356,13 +356,21 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
         } else if (foe) issuer.fireUnit(primary, foe.id);
         else issuer.areaFire(primary, cell);
       }
+    } else if (teamIds.length === 1) {
+      if (!issuer.move(teamIds[0], cell, armed as Stance)) { flagBlocked(x, y); refreshStatus(); return; }
     } else {
-      const n = teamIds.length;
+      // Move the group as a body: keep each squad's position relative to the group's
+      // centre, so the formation advances intact instead of collapsing onto one point.
+      const centers = teamIds.map((tid) => teamCenter(world, tid)).filter((c): c is { x: number; y: number } => c != null);
+      const gx = centers.reduce((s, c) => s + c.x, 0) / (centers.length || 1);
+      const gy = centers.reduce((s, c) => s + c.y, 0) / (centers.length || 1);
       let anyOk = false;
-      teamIds.forEach((tid, i) => {
-        const col = Math.round(i - (n - 1) / 2);
-        if (issuer.move(tid, { cx: cell.cx + col * 4, cy: cell.cy }, armed as Stance)) anyOk = true;
-      });
+      for (const tid of teamIds) {
+        const c = teamCenter(world, tid);
+        if (!c) continue;
+        const goal = { cx: Math.round(cell.cx + (c.x - gx)), cy: Math.round(cell.cy + (c.y - gy)) };
+        if (issuer.move(tid, goal, armed as Stance)) anyOk = true;
+      }
       if (!anyOk) { flagBlocked(x, y); refreshStatus(); return; }
     }
     sound.playUI("ui_order");
@@ -410,9 +418,17 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
         `<div class="rbars"><div class="rbar"><span class="rlabel">S</span><div class="rtrack"><div class="rfill" data-k="str"></div></div></div>` +
         `<div class="rbar"><span class="rlabel">M</span><div class="rtrack"><div class="rfill" data-k="mor"></div></div></div>` +
         `<div class="rbar"><span class="rlabel">A</span><div class="rtrack"><div class="rfill" data-k="ammo"></div></div></div></div>`;
-      el.addEventListener("click", () => {
-        world.selectedTeamId = team.id; world.selectedTeamIds = new Set([team.id]); world.selectedVehicleId = null;
-        armed = "move"; sound.playUI("ui_select"); renderer.centerOnTeam(world, team.id);
+      el.addEventListener("click", (e) => {
+        if (e.shiftKey && world.selectedVehicleId == null) {
+          // Shift-click a card to add/remove that squad from the current group.
+          if (world.selectedTeamIds.has(team.id)) world.selectedTeamIds.delete(team.id);
+          else world.selectedTeamIds.add(team.id);
+          world.selectedTeamId = world.selectedTeamIds.size ? [...world.selectedTeamIds][world.selectedTeamIds.size - 1] : null;
+        } else {
+          world.selectedTeamId = team.id; world.selectedTeamIds = new Set([team.id]); renderer.centerOnTeam(world, team.id);
+        }
+        world.selectedVehicleId = null;
+        armed = "move"; sound.playUI("ui_select");
         updateOrdersBar(); refreshStatus(); refreshRoster();
       });
       rosterEl.appendChild(el);
@@ -497,11 +513,11 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
     if (canCommand && hasSel) sound.playUI("ui_select");
     updateOrdersBar(); refreshStatus(); refreshRoster();
   };
-  const onBox = (sx0: number, sy0: number, sx1: number, sy1: number) => {
+  const onBox = (sx0: number, sy0: number, sx1: number, sy1: number, additive = false) => {
     if (!canCommand) return;
     const a = renderer.screenToWorld(Math.min(sx0, sx1), Math.min(sy0, sy1));
     const b = renderer.screenToWorld(Math.max(sx0, sx1), Math.max(sy0, sy1));
-    const ids = new Set<number>();
+    const ids = additive ? new Set(world.selectedTeamIds) : new Set<number>();
     for (const team of world.teams) {
       if (team.faction !== side) continue;
       for (const sid of team.soldierIds) {
@@ -510,15 +526,36 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
       }
     }
     if (ids.size === 0) return;
-    world.selectedTeamIds = ids; world.selectedTeamId = [...ids][0]; world.selectedVehicleId = null;
+    world.selectedTeamIds = ids; world.selectedTeamId = [...ids][ids.size - 1]; world.selectedVehicleId = null;
     onSel();
   };
   const input = new Input(renderer, world, onSel, handleOrder, onBox, inputSide);
 
   if (canCommand) {
     const ORDER_KEYS: Record<string, string> = { q: "move", w: "fast", e: "sneak", r: "defend", t: "ambush", f: "fire", g: "smoke", c: "charge" };
+    // Control groups: Ctrl/Cmd+1‥9 stores the current squad selection; 1‥9 recalls it
+    // (RTS-style), so you can keep, say, your firing line on 1 and your flanking force on 2.
+    const groups = new Map<number, number[]>();
     window.addEventListener("keydown", (e) => {
       if (e.key.toLowerCase() === "o") { renderer.centerOnObjective(world); return; }
+      if (/^[1-9]$/.test(e.key)) {
+        const g = parseInt(e.key, 10);
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          groups.set(g, [...world.selectedTeamIds]);
+          sound.playUI("ui_select");
+        } else {
+          const live = (groups.get(g) ?? []).filter((id) => world.team(id)?.soldierIds.some((sid) => world.soldier(sid)?.status === "active"));
+          if (live.length) {
+            world.selectedTeamIds = new Set(live);
+            world.selectedTeamId = live[live.length - 1];
+            world.selectedVehicleId = null;
+            onSel();
+            renderer.centerOnTeam(world, live[0]);
+          }
+        }
+        return;
+      }
       const order = ORDER_KEYS[e.key.toLowerCase()];
       if (order && (world.selectedTeamId != null || world.selectedVehicleId != null)) pickOrder(order);
     });
@@ -556,6 +593,19 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
 
 // === Host (US) / offline single-player =============================================
 
+// Centre of mass of a team's still-standing men — used to move a multi-squad group as a
+// body while keeping each squad's place in the formation.
+function teamCenter(world: World, teamId: number): { x: number; y: number } | null {
+  const team = world.team(teamId);
+  if (!team) return null;
+  let x = 0, y = 0, n = 0;
+  for (const id of team.soldierIds) {
+    const s = world.soldier(id);
+    if (s && s.status === "active") { x += s.x; y += s.y; n++; }
+  }
+  return n ? { x: x / n, y: y / n } : null;
+}
+
 // Rewrite the help/tutorial card to match the era, so opening Help mid-battle reflects
 // whether you're fighting WW2 or the Civil War (units, mission flavour, the charge order).
 function applyEraTutorial(world: World): void {
@@ -581,6 +631,7 @@ function applyEraTutorial(world: World): void {
 async function startGame(map: GameMap, objectiveCount = 1, setup: GameSetup = DEFAULT_SETUP) {
   const mount = document.getElementById("app")!;
   const world = new World(map, objectiveCount, setup);
+  sound.era = world.era; // picks the ambient bed (no aircraft in the Civil War)
   applyEraTutorial(world);
   updateVisibility(world, VIS_INTERVAL);
   const renderer = new Renderer();

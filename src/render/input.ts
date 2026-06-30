@@ -25,7 +25,7 @@ export class Input {
     private readonly world: World,
     private readonly onSelectionChange: () => void,
     private readonly onOrder: (x: number, y: number) => void,
-    private readonly onBoxSelect: (sx0: number, sy0: number, sx1: number, sy1: number) => void,
+    private readonly onBoxSelect: (sx0: number, sy0: number, sx1: number, sy1: number, additive: boolean) => void,
     private readonly side: Faction = "us",
   ) {
     const canvas = renderer.app.canvas;
@@ -118,10 +118,11 @@ export class Input {
     this.lbDown = false;
 
     if (this.lbBoxActive) {
-      // Finish the drag-box: let main.ts resolve which teams fall inside.
+      // Finish the drag-box: let main.ts resolve which teams fall inside. Shift adds
+      // them to the current group instead of replacing it.
       this.renderer.clearSelectionBox();
       this.lbBoxActive = false;
-      this.onBoxSelect(this.lbSX0, this.lbSY0, sx, sy);
+      this.onBoxSelect(this.lbSX0, this.lbSY0, sx, sy, e.shiftKey);
       return;
     }
 
@@ -137,8 +138,17 @@ export class Input {
     }
     const teamId = this.world.pickTeamAt(x, y, 1.2, this.side);
     if (teamId != null) {
-      this.world.selectedTeamId = teamId;
-      this.world.selectedTeamIds = new Set([teamId]);
+      // Shift-click toggles a squad in/out of the current group (build a group by
+      // clicking each one); a plain click selects just that squad.
+      if (e.shiftKey && this.world.selectedVehicleId == null) {
+        const sel = this.world.selectedTeamIds;
+        if (sel.has(teamId)) sel.delete(teamId);
+        else sel.add(teamId);
+        this.world.selectedTeamId = sel.size ? [...sel][sel.size - 1] : null;
+      } else {
+        this.world.selectedTeamId = teamId;
+        this.world.selectedTeamIds = new Set([teamId]);
+      }
       this.world.selectedVehicleId = null;
       this.onSelectionChange();
       return;

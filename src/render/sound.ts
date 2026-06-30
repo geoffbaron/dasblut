@@ -54,6 +54,11 @@ const GRENADE = "EXPLReal-grenade_explosion-Elevenlabs.mp3";
 const MORTAR_FIRE = "WEAPSiege-mortar_firing_sound,-Elevenlabs.mp3";
 const GASP = "GOREMisc-Soldier_dying_gasp,_-Elevenlabs.mp3";
 const BAZOOKA_BLAST = "EXPLReal-bazooka_blast-Elevenlabs.mp3";
+// American Civil War — generated on ElevenLabs (period black-powder arms + sabre).
+const ACW_MUSKET = "acw_musket.mp3";
+const ACW_CARBINE = "acw_carbine.mp3";
+const ACW_CANNON = "acw_cannon.mp3";
+const ACW_SABRE = "acw_sabre.mp3";
 const SWITCH = "UIMvmt-puzzle_UI_tab_switch-Elevenlabs.mp3"; // UI select/order click
 // German death-screams — used when an Axis soldier is killed.
 const SCREAMS = [
@@ -101,11 +106,11 @@ const SFX_DEFS: Record<SfxId, { files: string[]; vol: number }> = {
   tank_engine:    { files: TANK_DRIVE,  vol: 0.45 }, // looped while a tank drives
   ambient:        { files: AMBIENT,     vol: 0.3 },  // low distant battlefield bed
   mortar:         { files: [MORTAR_FIRE], vol: 0.9 }, // tube thump when a mortar fires
-  // American Civil War — reuse the closest WW2 samples; melee falls back to synth.
-  riflemusket:    { files: [RIFLE],     vol: 0.9 }, // single black-powder report
-  carbine:        { files: [RIFLE],     vol: 0.75 },
-  cannon:         { files: [TANK_BOOM], vol: 1.0 }, // field-gun discharge
-  melee:          { files: [],          vol: 0.6 }, // synth clash (sabre/bayonet)
+  // American Civil War — period samples generated on ElevenLabs.
+  riflemusket:    { files: [ACW_MUSKET],  vol: 0.9 }, // single black-powder report
+  carbine:        { files: [ACW_CARBINE], vol: 0.8 },
+  cannon:         { files: [ACW_CANNON],  vol: 1.0 }, // field-gun discharge
+  melee:          { files: [ACW_SABRE],   vol: 0.7 }, // sabre/bayonet clash
 };
 
 // Maximum audible sounds per frame to avoid an audio avalanche during heavy combat.

@@ -1,6 +1,6 @@
 import { addSuppression, killSoldier, woundSoldier } from "./casualty.ts";
 import { damageBuildings } from "./buildingDamage.ts";
-import { AMBUSH_ACC_MULT, AREA_FIRE_RADIUS, MG_ARC, MG_SETUP_TIME, MG_TRAVERSE, SMOKE_INITIAL } from "./constants.ts";
+import { AMBUSH_ACC_MULT, AREA_FIRE_RADIUS, CANNON_SETUP_TIME, MG_ARC, MG_SETUP_TIME, MG_TRAVERSE, SMOKE_INITIAL } from "./constants.ts";
 import { hasLOS } from "./los.ts";
 import { isHardSurface, TERRAIN } from "./terrain.ts";
 import { knockOut, resolveArmorHit } from "./vehicleCombat.ts";
@@ -25,13 +25,15 @@ export function resolveFire(world: World, dt: number): void {
     s.firedTimer = Math.max(0, s.firedTimer - dt);
     s.ambushTimer = Math.max(0, s.ambushTimer - dt);
     s.grenadeCD = Math.max(0, s.grenadeCD - dt);
-    // A machine gun has to be set up on its bipod before it can fire, and it loses that
-    // setup the instant it picks up to move (see mgGate). Track how long it's been
-    // deployed-and-still; relocating resets the clock.
-    if (s.weapon === "lmg") {
+    // A machine gun (on its bipod) and a field gun (unlimbered and laid) both have to be
+    // set up before they can fire, and both lose that setup the instant the crew picks them
+    // up to move — so neither can fire on the march. Track deployed-and-still time; any
+    // movement (an individual path OR drifting with the marching formation) resets it.
+    if (s.weapon === "lmg" || s.weapon === "cannon") {
       const movedSq = (s.x - s.px) ** 2 + (s.y - s.py) ** 2;
+      const cap = (s.weapon === "cannon" ? CANNON_SETUP_TIME : MG_SETUP_TIME) + 1;
       if (s.path != null || movedSq > 1e-4) s.setupTime = 0;
-      else s.setupTime = Math.min(MG_SETUP_TIME + 1, s.setupTime + dt);
+      else s.setupTime = Math.min(cap, s.setupTime + dt);
     }
     if (s.status !== "active") continue;
     if (s.state === "panicked" || s.state === "routing" || s.stance === "sneak") continue;
@@ -49,6 +51,8 @@ export function resolveFire(world: World, dt: number): void {
     // (bombardment) or, failing that, an acquired enemy. Long range with a shell that
     // bursts in the ranks; close in it switches to canister (handled in cannonShot).
     if (w.artillery) {
+      // Can't fire while limbered/on the move, or before the crew has re-laid the gun.
+      if (s.setupTime < CANNON_SETUP_TIME) continue;
       let ax = 0, ay = 0, ok = false;
       if (s.fireCell && hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), s.fireCell.cx, s.fireCell.cy, world.smokeGrid)) {
         ax = s.fireCell.cx + 0.5; ay = s.fireCell.cy + 0.5; ok = true;

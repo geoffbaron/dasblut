@@ -53,6 +53,9 @@ export const AREA_FIRE_RADIUS = 1.8; // cells; suppression splash of area (suppr
 export const MG_SETUP_TIME = 2.5;   // seconds stationary before an MG can open fire
 export const MG_ARC = 0.9;          // radians either side of facing the gun can fire within (~50°)
 export const MG_TRAVERSE = 1.2;     // radians/sec the gun can swing to re-lay onto a new target
+// A field gun must be unlimbered and laid before it can fire, and it can't fire on the move —
+// it loses that setup the instant the crew picks it up to relocate.
+export const CANNON_SETUP_TIME = 3.5; // seconds stationary before a cannon can open fire
 
 // --- Generated battlefield size (Phase 5) ---
 export const BATTLEFIELD_W_M = 380;

@@ -31,6 +31,10 @@ export class Renderer {
   private roofLayer = new Container();
   private smokeScreen = new Graphics();
   private fx = new Graphics();
+  // Animated water: fixed glint points on water cells whose brightness pulses over time,
+  // so rivers and ponds shimmer instead of sitting flat.
+  private waterFx = new Graphics();
+  private glints: { x: number; y: number; phase: number; speed: number; r: number }[] = [];
   // Screen-space drag-select box drawn on top of everything, outside the camera.
   private selBox = new Graphics();
   private camX = 0;
@@ -68,7 +72,7 @@ export class Renderer {
     });
     mount.appendChild(this.app.canvas);
 
-    const painted = paintBattlefield(world.grid, world.features);
+    const painted = paintBattlefield(world.grid, world.features, world.era);
     const bg = new Sprite(Texture.from(painted.canvas));
     bg.scale.set(painted.scale);
 
@@ -90,7 +94,23 @@ export class Renderer {
     // damage, and the order overlay (waypoints, objectives, fire lines) sit ABOVE the
     // roofs so fog still hides un-scouted buildings and your planned routes stay visible
     // where they cross rooftops.
-    this.camera.addChild(bg, this.floorLayer, this.vehicleLayer, this.shadowLayer, this.bodyLayer, this.roofLayer, this.damageLayer, this.shroud, this.overlay, this.smokeScreen, this.fx);
+    this.camera.addChild(bg, this.waterFx, this.floorLayer, this.vehicleLayer, this.shadowLayer, this.bodyLayer, this.roofLayer, this.damageLayer, this.shroud, this.overlay, this.smokeScreen, this.fx);
+
+    // Seed the water glints: a sparkle point on roughly half the water cells, each with
+    // its own phase/speed so the shimmer never looks synchronized. Capped for huge maps.
+    const g = world.grid;
+    for (let cy = 0; cy < g.height && this.glints.length < 1200; cy++) {
+      for (let cx = 0; cx < g.width; cx++) {
+        if (g.get(cx, cy) !== Terrain.Water || Math.random() > 0.55) continue;
+        this.glints.push({
+          x: (cx + 0.15 + Math.random() * 0.7) * CELL_SIZE,
+          y: (cy + 0.15 + Math.random() * 0.7) * CELL_SIZE,
+          phase: Math.random() * Math.PI * 2,
+          speed: 0.8 + Math.random() * 1.4,
+          r: 0.7 + Math.random() * 1.1,
+        });
+      }
+    }
     // selBox lives outside the camera so it stays in screen space.
     this.app.stage.addChild(this.camera, this.selBox);
 
@@ -176,16 +196,19 @@ export class Renderer {
 
   // Create a soldier's sprites if they don't exist yet. Built lazily so client views,
   // which receive units via network snapshots after init, get sprites on demand too.
+  // UNIT_SCALE: sprite canvases are supersampled 3×; the extra 1.3 draws every man ~30%
+  // larger than his old footprint so units read at a glance, AoE-style.
+  private static readonly UNIT_SCALE = 1.3 / 3;
   private ensureSoldierSprite(world: World, s: { id: number; teamId: number; faction: string; weapon: string }) {
     let sp = this.sprites.get(s.id);
     if (sp) return sp;
     const color = world.team(s.teamId)?.color ?? (s.faction === "us" ? 0x4f7fd1 : 0xc4514a);
     const shadow = new Sprite(this.shadowTex);
     shadow.anchor.set(0.5);
-    shadow.scale.set(1 / 3);
+    shadow.scale.set(Renderer.UNIT_SCALE);
     const body = new Sprite(this.bodyTexture(color, s.weapon));
     body.anchor.set(0.5);
-    body.scale.set(1 / 3);
+    body.scale.set(Renderer.UNIT_SCALE);
     this.shadowLayer.addChild(shadow);
     this.bodyLayer.addChild(body);
     sp = { shadow, body, alive: true };
@@ -345,6 +368,20 @@ export class Renderer {
     this.drawBuildings(world);
     this.drawSmoke(world);
     this.drawEffects(world);
+    this.drawWaterShimmer();
+  }
+
+  // Pulse each water glint on its own clock — purely cosmetic, so wall-clock time is fine.
+  private drawWaterShimmer(): void {
+    if (this.glints.length === 0) return;
+    const g = this.waterFx;
+    g.clear();
+    const t = performance.now() / 1000;
+    for (const p of this.glints) {
+      const a = (Math.sin(t * p.speed + p.phase) + 1) / 2; // 0..1 pulse
+      if (a < 0.35) continue; // spend draw time only on the bright part of the cycle
+      g.circle(p.x, p.y, p.r).fill({ color: 0xdcf0f8, alpha: (a - 0.35) * 0.55 });
+    }
   }
 
   // Persistent mortar-smoke screen, drawn from the smoke density grid each frame so it

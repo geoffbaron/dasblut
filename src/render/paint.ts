@@ -2,6 +2,7 @@ import { CELL_SIZE } from "../game/constants.ts";
 import { Building, HedgeSeg, MapFeatures, Pt } from "../game/gamemap.ts";
 import { Grid } from "../game/grid.ts";
 import { Terrain } from "../game/terrain.ts";
+import type { Era } from "../game/world.ts";
 import { fbm, mulberry32, valueNoise } from "./noise.ts";
 
 // Paints the entire battlefield to an offscreen canvas, imitating Close Combat's
@@ -59,7 +60,7 @@ export interface BuildingArt {
   cells: number[];
 }
 
-export function paintBattlefield(grid: Grid, features: MapFeatures): PaintedMap {
+export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "ww2"): PaintedMap {
   const mapW = grid.width * CELL_SIZE;
   const mapH = grid.height * CELL_SIZE;
   const seed = 1337;
@@ -141,7 +142,7 @@ export function paintBattlefield(grid: Grid, features: MapFeatures): PaintedMap 
   // Global grade: soft vignette.
   drawVignette(ctx, mapW, mapH);
 
-  const buildings = features.buildings.map((b) => paintBuilding(grid, b));
+  const buildings = features.buildings.map((b) => paintBuilding(grid, b, era));
 
   return { canvas, scale: 1 / SS, buildings };
 }
@@ -623,16 +624,26 @@ const ROOF_PALETTES = [
   ["#a89a84", "#80735f"], // weathered slate (lighter, uncommon)
 ];
 
-function pickRoofPalette(rng: () => number, burned: boolean): string[] {
+// Medieval villages are thatched: golden straw fresh off the rick, weathered grey-brown
+// straw, and the odd mossy roof — with wooden shingles as the rare upgrade.
+const THATCH_PALETTES = [
+  ["#c9a95e", "#97793a"], // fresh straw
+  ["#b3924e", "#82662e"], // weathered straw
+  ["#a39d5f", "#75713a"], // mossy thatch
+  ["#8a6f4a", "#63492c"], // wooden shingle (uncommon)
+];
+
+function pickRoofPalette(rng: () => number, burned: boolean, era: Era): string[] {
   if (burned) return ["#3a3026", "#2a221c"]; // warm dark char, not pure black
-  return rng() < 0.8 ? ROOF_PALETTES[Math.floor(rng() * 3)] : ROOF_PALETTES[3];
+  const pals = era === "medieval" ? THATCH_PALETTES : ROOF_PALETTES;
+  return rng() < 0.8 ? pals[Math.floor(rng() * 3)] : pals[3];
 }
 
 // --- per-building floor + roof tiles, masked to the exact footprint cells ---
 
 // Build both tiles for one building from its cell mask, so floor and roof line up
 // cell-for-cell and nothing pokes out from under the roof.
-function paintBuilding(grid: Grid, b: Building): BuildingArt {
+function paintBuilding(grid: Grid, b: Building, era: Era): BuildingArt {
   const W = grid.width;
   let minCx = Infinity, maxCx = -Infinity, minCy = Infinity, maxCy = -Infinity;
   for (const idx of b.cells) {
@@ -642,7 +653,7 @@ function paintBuilding(grid: Grid, b: Building): BuildingArt {
   }
   const seed = ((minCx * 92837) ^ (minCy * 689287)) >>> 0;
   const floor = paintFloorTile(grid, b, minCx, minCy, maxCx, maxCy);
-  const roof = paintRoofTile(b, minCx, minCy, maxCx, maxCy, mulberry32(seed));
+  const roof = paintRoofTile(b, minCx, minCy, maxCx, maxCy, mulberry32(seed), era);
   return { floor, roof, cells: b.cells };
 }
 
@@ -711,7 +722,7 @@ function drawWindowPane(ctx: CanvasRenderingContext2D, cx: number, cy: number): 
   ctx.stroke();
 }
 
-function paintRoofTile(b: Building, minCx: number, minCy: number, maxCx: number, maxCy: number, rng: () => number): Tile {
+function paintRoofTile(b: Building, minCx: number, minCy: number, maxCx: number, maxCy: number, rng: () => number, era: Era): Tile {
   const SS = 2;
   const M = CELL_SIZE; // margin for eave / chimney overhang
   const x0 = minCx * CELL_SIZE - M, y0 = minCy * CELL_SIZE - M;
@@ -726,8 +737,8 @@ function paintRoofTile(b: Building, minCx: number, minCy: number, maxCx: number,
   const isRect = b.cells.length === area; // a solid rectangle fills its whole bbox
   // Only small houses burn out, and rarely — a town shouldn't be a field of char.
   const burned = rng() < 0.1 && b.cells.length < 40;
-  if (isRect) drawPitchedRoof(ctx, minCx, minCy, maxCx + 1, maxCy + 1, rng, burned);
-  else drawFlatRoof(ctx, b, rng, burned);
+  if (isRect) drawPitchedRoof(ctx, minCx, minCy, maxCx + 1, maxCy + 1, rng, burned, era);
+  else drawFlatRoof(ctx, b, rng, burned, era);
   return { canvas, x: x0, y: y0, scale: 1 / SS };
 }
 
@@ -825,7 +836,7 @@ function shadowRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numb
 // polygon (not the per-cell mask) so the roof edge reads clean instead of stair-stepped.
 // The floor plan below is a separate sprite that only shows once the roof has faded, so
 // the slight poly/cell mismatch at the rim is never visible.
-function drawFlatRoof(ctx: CanvasRenderingContext2D, b: Building, rng: () => number, burned: boolean): void {
+function drawFlatRoof(ctx: CanvasRenderingContext2D, b: Building, rng: () => number, burned: boolean, era: Era): void {
   const pts = b.poly.map((p) => [p.x * CELL_SIZE, p.y * CELL_SIZE] as [number, number]);
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const [x, y] of pts) {
@@ -837,7 +848,7 @@ function drawFlatRoof(ctx: CanvasRenderingContext2D, b: Building, rng: () => num
   mask.moveTo(pts[0][0], pts[0][1]);
   for (let i = 1; i < pts.length; i++) mask.lineTo(pts[i][0], pts[i][1]);
   mask.closePath();
-  const pal = pickRoofPalette(rng, burned);
+  const pal = pickRoofPalette(rng, burned, era);
 
   ctx.save();
   ctx.clip(mask);
@@ -920,20 +931,23 @@ function drawPitchedRoof(
   gy1: number,
   rng: () => number,
   burned = false,
+  era: Era = "ww2",
 ): void {
   const x = gx0 * CELL_SIZE;
   const y = gy0 * CELL_SIZE;
   const w = (gx1 - gx0) * CELL_SIZE;
   const h = (gy1 - gy0) * CELL_SIZE;
+  const thatch = era === "medieval" && !burned;
 
-  // 2. Wall block (eaves) — a slightly larger pale plaster base the roof sits on, so a
-  // whitewashed wall peeks out under the eave. A burned-out shell shows soot instead.
-  ctx.fillStyle = burned ? "#3a3026" : "#a89a80";
+  // 2. Wall block (eaves) — a slightly larger base the roof sits on: pale plaster for
+  // later eras, wattle-and-daub cream with a timber hint for a medieval cottage. A
+  // burned-out shell shows soot instead.
+  ctx.fillStyle = burned ? "#3a3026" : era === "medieval" ? "#b5a184" : "#a89a80";
   ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
 
   // 3. Pitched roof: ridge along the longer axis, two shaded faces. Charred timber tones
   // for a gutted house.
-  const pal = pickRoofPalette(rng, burned);
+  const pal = pickRoofPalette(rng, burned, era);
   const inset = 1.5;
   const rx = x + inset;
   const ry = y + inset;
@@ -957,8 +971,9 @@ function drawPitchedRoof(
       [rx + rw, ry + rh],
       [rx, ry + rh],
     ]);
-    roofLines(ctx, rx, ry, rw, rh, true);
-    if (!burned) ridge(ctx, rx, midY, rx + rw, midY);
+    if (thatch) thatchTexture(ctx, rx, ry, rw, rh, true, rng);
+    else roofLines(ctx, rx, ry, rw, rh, true);
+    if (!burned) ridge(ctx, rx, midY, rx + rw, midY, thatch);
   } else {
     // Vertical ridge.
     const midX = rx + rw / 2;
@@ -976,8 +991,9 @@ function drawPitchedRoof(
       [rx + rw, ry + rh],
       [midX, ry + rh],
     ]);
-    roofLines(ctx, rx, ry, rw, rh, false);
-    if (!burned) ridge(ctx, midX, ry, midX, ry + rh);
+    if (thatch) thatchTexture(ctx, rx, ry, rw, rh, false, rng);
+    else roofLines(ctx, rx, ry, rw, rh, false);
+    if (!burned) ridge(ctx, midX, ry, midX, ry + rh, thatch);
   }
 
   // 3b. Gutted roof: punch collapse holes through to a dark interior, plus soot.
@@ -1031,13 +1047,52 @@ function roofLines(
   }
 }
 
-function ridge(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number, y1: number): void {
-  ctx.strokeStyle = "rgba(255,240,220,0.35)";
-  ctx.lineWidth = 1.4;
+function ridge(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number, y1: number, timber = false): void {
+  // Tile roofs catch the sun along the ridge; a thatched roof is capped with a dark
+  // timber ridge pole instead.
+  ctx.strokeStyle = timber ? "rgba(74,56,30,0.75)" : "rgba(255,240,220,0.35)";
+  ctx.lineWidth = timber ? 1.7 : 1.4;
   ctx.beginPath();
   ctx.moveTo(x0, y0);
   ctx.lineTo(x1, y1);
   ctx.stroke();
+}
+
+// Thatch: combed straw strands running down each slope (away from the ridge), plus a
+// scatter of loose-straw flecks, so a medieval roof reads as woven straw rather than
+// tile courses.
+function thatchTexture(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  horizRidge: boolean,
+  rng: () => number,
+): void {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  // Strands: short strokes perpendicular to the ridge, jittered so they look combed.
+  const n = Math.max(10, Math.round((w * h) / 26));
+  for (let i = 0; i < n; i++) {
+    const sx = x + rng() * w, sy = y + rng() * h;
+    const len = 2.5 + rng() * 3;
+    const jitter = (rng() - 0.5) * 1.2;
+    ctx.strokeStyle = `hsla(${40 + rng() * 12},${30 + rng() * 20}%,${28 + rng() * 26}%,${0.2 + rng() * 0.2})`;
+    ctx.lineWidth = 0.5 + rng() * 0.5;
+    ctx.beginPath();
+    if (horizRidge) { ctx.moveTo(sx, sy); ctx.lineTo(sx + jitter, sy + len); }
+    else { ctx.moveTo(sx, sy); ctx.lineTo(sx + len, sy + jitter); }
+    ctx.stroke();
+  }
+  // Loose straw flecks catching the light.
+  for (let i = 0; i < n / 6; i++) {
+    ctx.fillStyle = `hsla(45,55%,${58 + rng() * 14}%,${0.25 + rng() * 0.2})`;
+    ctx.fillRect(x + rng() * w, y + rng() * h, 1 + rng(), 0.8);
+  }
+  ctx.restore();
 }
 
 function drawVignette(ctx: CanvasRenderingContext2D, w: number, h: number): void {

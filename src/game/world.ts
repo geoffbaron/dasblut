@@ -260,7 +260,7 @@ function medievalOrbat(list: SquadSpawn[]): SquadSpawn[] {
   const ord = ["1st", "2nd", "3rd", "4th", "5th", "6th"];
   return list.map((s, i) => {
     const knights = i === 2; // the middle body rides
-    const archers = i === 1 || i === 4;
+    const archers = i === 4; // a single company of archers; the rest are men-at-arms
     const kind: SquadKind = knights ? "cavalry" : archers ? "archers" : "infantry";
     const name = knights ? "Knights" : archers ? `${ord[i] ?? i + 1} Archers` : `${ord[i] ?? i + 1} Men-at-Arms`;
     return { name, cx: s.cx, cy: s.cy, count: knights ? 10 : archers ? 14 : 18, kind };

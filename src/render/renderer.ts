@@ -665,22 +665,10 @@ export class Renderer {
         g.moveTo(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE).lineTo(e.x1 * CELL_SIZE, e.y1 * CELL_SIZE);
         g.stroke({ width: 1.1, color: 0xfff0cf, alpha: a });
       } else if (e.kind === "arrow") {
-        // A real arrow in flight: a short dark shaft that travels from the archer to its mark
-        // over the effect's life, with a small V head. Not a streak or tracer.
-        const ARROW_TTL = 0.28;
-        const t = Math.max(0, Math.min(1, 1 - e.ttl / ARROW_TTL));
-        const ang = Math.atan2(e.y1 - e.y0, e.x1 - e.x0);
-        const dx = Math.cos(ang), dy = Math.sin(ang);
-        const px = (e.x0 + (e.x1 - e.x0) * t) * CELL_SIZE;
-        const py = (e.y0 + (e.y1 - e.y0) * t) * CELL_SIZE;
-        const half = 5; // px — the shaft is short
-        const hx = px + dx * half, hy = py + dy * half; // arrowhead (leading) end
-        g.moveTo(px - dx * half, py - dy * half).lineTo(hx, hy);
-        g.stroke({ width: 1.3, color: 0x2e2415, alpha: 0.95 });
-        const px2 = Math.cos(ang + Math.PI / 2), py2 = Math.sin(ang + Math.PI / 2);
-        g.moveTo(hx, hy).lineTo(hx - dx * 3 + px2 * 2, hy - dy * 3 + py2 * 2)
-         .moveTo(hx, hy).lineTo(hx - dx * 3 - px2 * 2, hy - dy * 3 - py2 * 2)
-         .stroke({ width: 1.1, color: 0x1a1109, alpha: 0.95 });
+        // An arrow's flight, drawn as a thin dark line from the archer to its mark.
+        const a = Math.max(0, e.ttl / 0.28);
+        g.moveTo(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE).lineTo(e.x1 * CELL_SIZE, e.y1 * CELL_SIZE);
+        g.stroke({ width: 0.9, color: 0x2e2415, alpha: a * 0.9 });
       } else if (e.kind === "flash") {
         g.circle(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE, 3).fill({ color: 0xffe06a, alpha: 0.9 });
       } else if (e.kind === "hit") {

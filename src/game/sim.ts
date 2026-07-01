@@ -218,7 +218,7 @@ function teamCenters(world: World): Map<number, Pt2> {
 function cohesionFactor(s: Soldier, center: Pt2 | undefined): number {
   if (!center || !s.path) return 1;
   if (s.stance === "defend" || s.stance === "ambush") return 1; // held posture: don't shuffle
-  if (s.weapon === "cannon") return 1; // the gun plods at its own slow pace, never hurried by the crew
+  if (s.weapon === "cannon" || s.weapon === "catapult") return 1; // the engine plods at its own pace
   const toCx = center.x - s.x;
   const toCy = center.y - s.y;
   const d = Math.hypot(toCx, toCy);
@@ -268,10 +268,17 @@ function regroupStragglers(world: World, centers: Map<number, Pt2>): void {
 // field gun is manhandled slowly. Civil War foot soldiers hold a measured pace and only
 // really move out at the double when ordered to charge.
 function weaponMoveFactor(s: Soldier): number {
-  return s.weapon === "carbine" ? 1.7
-    : s.weapon === "cannon" ? 0.4
-    : s.weapon === "riflemusket" ? (s.stance === "charge" ? 1.15 : 0.55)
-    : 1;
+  switch (s.weapon) {
+    case "carbine": return 1.7;                                        // cavalry
+    case "lance":   return s.stance === "charge" ? 1.9 : 1.5;          // knights: fast, thunderous charge
+    case "cannon":  return 0.4;                                        // field gun: manhandled slow
+    case "catapult": return 0.35;                                      // siege engine: ponderous
+    case "riflemusket": return s.stance === "charge" ? 1.15 : 0.55;   // ACW line: measured, or at the double
+    case "sword":
+    case "spear":   return s.stance === "charge" ? 1.35 : 0.9;         // foot: advance, or charge home
+    case "bow":     return 0.85;                                        // archers move up at a walk
+    default: return 1;
+  }
 }
 
 // Walk a marching squad's guide-point forward this step at the pace of its slowest man, so
@@ -326,11 +333,12 @@ const SPRINT_MELEE_RANGE = 6; // cells; an enemy this close is rushed with cold 
 const MELEE_STOP = 0.8; // cells; how close the rusher pulls up (inside melee reach)
 
 // If an enemy is within sprinting distance and in view, return the nearest one to charge.
-// Only assault troops rush — crew-served weapons (MG, mortar, gun) and hidden men hold.
+// Only assault troops rush — crew-served engines (MG, mortar, gun, catapult), stand-off
+// shooters (archers) and hidden men hold rather than throw themselves onto cold steel.
 function meleeRush(world: World, s: Soldier): Soldier | null {
   if (s.stance === "sneak" || s.stance === "ambush") return null;
   const w = s.weapon;
-  if (w === "lmg" || w === "mortar" || w === "cannon" || w === "bazooka" || w === "panzerfaust") return null;
+  if (w === "lmg" || w === "mortar" || w === "cannon" || w === "bazooka" || w === "panzerfaust" || w === "catapult" || w === "bow") return null;
   let best: Soldier | null = null;
   let bestD = SPRINT_MELEE_RANGE * SPRINT_MELEE_RANGE;
   for (const e of world.soldiers) {
@@ -352,13 +360,14 @@ function rushToward(world: World, s: Soldier, e: Soldier): void {
   s.facing = Math.atan2(dy, dx);
   const cx = Math.floor(s.x), cy = Math.floor(s.y);
   const cost = world.grid.inBounds(cx, cy) ? TERRAIN[world.grid.get(cx, cy)].moveCost : 1;
-  const rushMul = s.weapon === "carbine" ? 3.0 : 2.0; // a cavalry gallop vs an infantry run
+  const mounted = s.weapon === "carbine" || s.weapon === "lance";
+  const rushMul = mounted ? 3.0 : 2.0; // a cavalry/knight gallop vs an infantry run
   const sprint = (BASE_MOVE_SPEED / (isFinite(cost) ? cost : 1)) * rushMul * s.gait * SIM_DT;
   const move = Math.min(sprint, Math.max(0, dist - MELEE_STOP));
   if (move > 0) moveOnto(world, s, dx / dist, dy / dist, move);
   // Cavalry charging home: throw out pounding hooves now and then (the SoundManager
   // throttles and distance-culls, so this can't avalanche during a big charge).
-  if (s.weapon === "carbine" && move > 0 && Math.random() < 0.03) sound.play("horse", s.x, s.y);
+  if (mounted && move > 0 && Math.random() < 0.03) sound.play("horse", s.x, s.y);
 }
 
 // Advance a soldier by `d` cells along the unit vector (ux,uy) but only into passable

@@ -33,7 +33,12 @@ export type SfxId =
   | "carbine"
   | "cannon"
   | "melee"
-  | "horse";
+  | "horse"
+  | "bow"
+  | "catapult"
+  | "boulder"
+  | "warhorn"
+  | "med_ambient";
 
 // Maps each game event to one or more real audio files in public/sfx/ (filenames are
 // the exact drop-in names, including extension — they're URL-encoded at load time so
@@ -75,6 +80,14 @@ const ACW_SHELL = "acw_shell.mp3"; // shell burst — thrown into the generic ex
 // Cavalry horses — galloping hooves as they charge home, plus a whinny for the ambient bed.
 const HORSE_GALLOP = "horse_gallop.mp3";
 const HORSE_WHINNY = "horse_whinny.mp3";
+// Medieval — generated on ElevenLabs. Archers loose a hail of arrows; a catapult creaks and
+// releases; the stone comes down with a bone-breaking crash; a horn calls across the field.
+const MED_ARROW = "med_arrow.mp3";
+const MED_ARROW_VOLLEY = "med_arrow_volley.mp3";
+const MED_CATAPULT = "med_catapult.mp3";
+const MED_BOULDER = "med_boulder.mp3";
+const MED_WARHORN = "med_warhorn.mp3";
+const MED_AMBIENT = "med_ambient.mp3";
 const SWITCH = "UIMvmt-puzzle_UI_tab_switch-Elevenlabs.mp3"; // UI select/order click
 // Generic, non-verbal death cries, played when any soldier is killed. (The old German
 // voice screams were removed — they were jarring and wrong for the Civil War.) Several
@@ -123,8 +136,14 @@ const SFX_DEFS: Record<SfxId, { files: string[]; vol: number }> = {
   riflemusket:    { files: [ACW_MUSKET, ACW_MUSKET2],   vol: 0.9 }, // single black-powder report
   carbine:        { files: [ACW_CARBINE, ACW_CARBINE2], vol: 0.8 },
   cannon:         { files: [ACW_CANNON, ACW_CANNON2],   vol: 1.0 }, // field-gun discharge
-  melee:          { files: [ACW_SABRE, ACW_SABRE2, ACW_MELEE_BAYONET1, ACW_MELEE_BAYONET2, ACW_MELEE_SABRE2, ACW_MELEE_STRUGGLE], vol: 0.7 }, // sabre/bayonet clash
-  horse:          { files: [HORSE_GALLOP, HORSE_WHINNY], vol: 0.6 }, // cavalry hooves & whinny
+  melee:          { files: [ACW_SABRE, ACW_SABRE2, ACW_MELEE_BAYONET1, ACW_MELEE_BAYONET2, ACW_MELEE_SABRE2, ACW_MELEE_STRUGGLE], vol: 0.7 }, // sabre/bayonet/sword clash
+  horse:          { files: [HORSE_GALLOP, HORSE_WHINNY], vol: 0.6 }, // cavalry & knight hooves
+  // Medieval — samples generated on ElevenLabs.
+  bow:            { files: [MED_ARROW, MED_ARROW_VOLLEY], vol: 0.7 }, // an arrow / hail of arrows loosed
+  catapult:       { files: [MED_CATAPULT], vol: 0.95 }, // the throwing arm's release
+  boulder:        { files: [MED_BOULDER],  vol: 1.0 },  // the stone crashing down
+  warhorn:        { files: [MED_WARHORN],  vol: 0.5 },  // distant horn call in the ambient bed
+  med_ambient:    { files: [MED_AMBIENT],  vol: 0.3 },  // faint clash of a battle beyond sight
 };
 
 // Maximum audible sounds per frame to avoid an audio avalanche during heavy combat.
@@ -150,9 +169,10 @@ export class SoundManager {
   private engines = new Map<number, { howl: Howl; sid: number }>();
   // Seconds until the next random distant-ambience cue.
   private ambientTimer = 6;
-  // The era picks the ambient bed: WW2 = planes & far-off small arms; the Civil War =
-  // faint distant musketry and gunnery (no aircraft). Set from main.ts when a battle starts.
-  era: "ww2" | "acw" = "ww2";
+  // The era picks the ambient bed: WW2 = planes & far-off small arms; the Civil War = faint
+  // musketry and gunnery; the medieval field = a distant din of steel, horns and hooves. Set
+  // from main.ts when a battle starts.
+  era: "ww2" | "acw" | "medieval" = "ww2";
 
   constructor() {
     Howler.volume(this.masterVol);
@@ -256,6 +276,18 @@ export class SoundManager {
       if (!howl) return;
       const sid = howl.play();
       howl.volume(id === "horse" ? 0.2 : 0.16, sid); // distant
+      howl.stereo((Math.random() * 2 - 1) * 0.75, sid);
+      return;
+    }
+    // Medieval: a far-off din of a battle beyond sight — mostly the clash of a distant
+    // engagement, with a horn call, a hail of arrows or hooves drifting across now and then.
+    if (this.era === "medieval") {
+      const r = Math.random();
+      const id: SfxId = r < 0.5 ? "med_ambient" : r < 0.68 ? "melee" : r < 0.82 ? "warhorn" : r < 0.92 ? "bow" : "horse";
+      const howl = this.pickHowl(id);
+      if (!howl) return;
+      const sid = howl.play();
+      howl.volume(id === "med_ambient" ? 0.24 : id === "warhorn" ? 0.22 : 0.16, sid); // distant
       howl.stereo((Math.random() * 2 - 1) * 0.75, sid);
       return;
     }

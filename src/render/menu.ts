@@ -20,7 +20,8 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
   // The mode dropdown encodes both who the human plays and each side's role.
   const setup = (): GameSetup => {
     const mode = (document.getElementById("gameMode") as HTMLSelectElement)?.value || "axis-attacks";
-    const era = ((document.getElementById("era") as HTMLSelectElement)?.value === "acw" ? "acw" : "ww2") as GameSetup["era"];
+    const eraVal = (document.getElementById("era") as HTMLSelectElement)?.value;
+    const era = (eraVal === "acw" || eraVal === "medieval" ? eraVal : "ww2") as GameSetup["era"];
     const usTanks = tanks("usTanks"), axisTanks = tanks("axisTanks");
     switch (mode) {
       case "us-attacks":   return { era, player: "us",   usRole: "attack", axisRole: "defend", usTanks, axisTanks };
@@ -33,10 +34,11 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
   // Relabel the mode/support dropdowns to match the chosen era (Union/Confederate &
   // guns in the Civil War, US/Axis & tanks in WW2). Option values are unchanged.
   const relabel = () => {
-    const acw = (document.getElementById("era") as HTMLSelectElement)?.value === "acw";
-    const blue = acw ? "Union" : "US";
-    const red = acw ? "Confederate" : "Axis";
-    const unit = (n: number) => (acw ? `${n} gun${n > 1 ? "s" : ""}` : `${n} tank${n > 1 ? "s" : ""}`);
+    const era = (document.getElementById("era") as HTMLSelectElement)?.value;
+    const blue = era === "medieval" ? "Aldmere" : era === "acw" ? "Union" : "US";
+    const red = era === "medieval" ? "Corvath" : era === "acw" ? "Confederate" : "Axis";
+    const noun = era === "medieval" ? "siege engine" : era === "acw" ? "gun" : "tank";
+    const unit = (n: number) => `${n} ${noun}${n > 1 ? "s" : ""}`;
     const opt = (sel: string, vals: Record<string, string>) => {
       const el = document.getElementById(sel) as HTMLSelectElement | null;
       if (el) for (const o of Array.from(el.options)) if (vals[o.value]) o.textContent = vals[o.value];

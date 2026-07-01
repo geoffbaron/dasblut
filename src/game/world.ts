@@ -14,7 +14,7 @@ export type MoraleState = "steady" | "shaken" | "pinned" | "panicked" | "routing
 export type Stance = "move" | "fast" | "sneak" | "defend" | "ambush" | "charge";
 
 // The setting a battle is fought in. Each era swaps the whole armoury and unit roster.
-export type Era = "ww2" | "acw";
+export type Era = "ww2" | "acw" | "medieval";
 
 // A deliberately small, ECS-flavored world: flat arrays of entities with plain
 // component data. Enough structure to grow into a real ECS later, no ceremony now.
@@ -174,7 +174,8 @@ const FORMATION_SPACING = 0.42;
 // its piece. Offsets are returned in cells for ACW (used directly) and in blob units for
 // WW2 (scaled by FORMATION_SPACING at spawn).
 function formationSlot(era: Era, kind: SquadKind, i: number, count: number): { ox: number; oy: number } {
-  if (era !== "acw") return FORMATION[i % FORMATION.length];
+  if (era === "ww2") return FORMATION[i % FORMATION.length]; // WW2: loose blob
+  // ACW and medieval both fall in as ordered lines around a crew-served engine.
   if (kind === "artillery") {
     const crew = [{ ox: 0, oy: 0 }, { ox: -0.9, oy: 0.7 }, { ox: 0.9, oy: 0.7 }, { ox: -0.9, oy: -0.7 }, { ox: 0.9, oy: -0.7 }];
     return crew[i % crew.length];
@@ -183,7 +184,7 @@ function formationSlot(era: Era, kind: SquadKind, i: number, count: number): { o
   const perRank = Math.ceil(count / ranks);
   const col = i % perRank;
   const rank = Math.floor(i / perRank);
-  const spacing = kind === "cavalry" ? 1.1 : 0.8; // horsemen need more elbow room
+  const spacing = kind === "cavalry" ? 1.1 : 0.8; // horsemen (and knights) need more elbow room
   return { ox: (col - (perRank - 1) / 2) * spacing, oy: rank * 0.9 };
 }
 
@@ -192,10 +193,12 @@ function formationSlot(era: Era, kind: SquadKind, i: number, count: number): { o
 // mortar team meaningfully different from a rifle squad.
 export type SquadKind =
   | "rifle" | "mg" | "at" | "mortar" // WW2
-  | "infantry" | "cavalry" | "artillery"; // ACW
+  | "infantry" | "cavalry" | "artillery" // ACW (also medieval foot/horse/siege)
+  | "archers"; // medieval
 
 function squadLoadout(kind: SquadKind, count: number, faction: Faction, era: Era): WeaponId[] {
   if (era === "acw") return acwLoadout(kind, count);
+  if (era === "medieval") return medievalLoadout(kind, count);
   const at: WeaponId = faction === "us" ? "bazooka" : "panzerfaust";
   const tail: WeaponId[] =
     kind === "mg" ? ["lmg", "lmg", "rifle"]
@@ -220,6 +223,21 @@ function acwLoadout(kind: SquadKind, count: number): WeaponId[] {
   return Array.from({ length: count }, () => "riflemusket" as WeaponId); // line infantry
 }
 
+// Medieval loadouts. Men-at-arms are a shieldwall of swords stiffened with spearmen;
+// archers are massed longbows; knights ride with the lance; a siege crew serves a single
+// catapult (swords for self-defence) — kill the crew and the engine is silenced.
+function medievalLoadout(kind: SquadKind, count: number): WeaponId[] {
+  if (kind === "cavalry") return Array.from({ length: count }, () => "lance" as WeaponId);
+  if (kind === "archers") return Array.from({ length: count }, () => "bow" as WeaponId);
+  if (kind === "artillery") {
+    const out: WeaponId[] = ["sword"]; // the master gunner
+    for (let i = 1; i < count; i++) out.push(i === 1 ? "catapult" : "sword"); // one engine + crew
+    return out;
+  }
+  // Men-at-arms: mostly swords, roughly every third man a spearman to anchor the line.
+  return Array.from({ length: count }, (_, i) => (i % 3 === 1 ? "spear" : "sword") as WeaponId);
+}
+
 // Remap a WW2 spawn list to a Civil War order of battle, keeping the deployment
 // positions: large rifle-musket platoons with one mounted cavalry troop among them.
 // (Artillery is added separately from the support-unit selector.)
@@ -233,6 +251,19 @@ function acwOrbat(list: SquadSpawn[]): SquadSpawn[] {
       count: cav ? 10 : 18,
       kind: cav ? "cavalry" : "infantry",
     };
+  });
+}
+
+// Remap a WW2 spawn list to a medieval host: large bodies of men-at-arms, a company of
+// archers, and one mounted knightly conroi. (Siege engines come from the support selector.)
+function medievalOrbat(list: SquadSpawn[]): SquadSpawn[] {
+  const ord = ["1st", "2nd", "3rd", "4th", "5th", "6th"];
+  return list.map((s, i) => {
+    const knights = i === 2; // the middle body rides
+    const archers = i === 1 || i === 4;
+    const kind: SquadKind = knights ? "cavalry" : archers ? "archers" : "infantry";
+    const name = knights ? "Knights" : archers ? `${ord[i] ?? i + 1} Archers` : `${ord[i] ?? i + 1} Men-at-Arms`;
+    return { name, cx: s.cx, cy: s.cy, count: knights ? 10 : archers ? 14 : 18, kind };
   });
 }
 
@@ -256,21 +287,22 @@ export const DEFAULT_SETUP: GameSetup = {
 // The two sides' display names and colours, per era. Internally the factions stay
 // "us"/"axis"; only their presentation changes.
 export function factionName(era: Era, f: Faction): string {
+  if (era === "medieval") return f === "us" ? "Aldmere" : "Corvath";
   if (era === "acw") return f === "us" ? "Union" : "Confederate";
   return f === "us" ? "US" : "Wehrmacht";
 }
 export function factionColor(era: Era, f: Faction): number {
-  if (f === "us") return era === "acw" ? 0x3f6fc4 : 0x4f7fd1; // Union / US blue
-  return era === "acw" ? 0x8d8f99 : 0xc4514a; // Confederate grey / German red
+  if (f === "us") return era === "medieval" ? 0x3f68c8 : era === "acw" ? 0x3f6fc4 : 0x4f7fd1; // Aldmere / Union / US blue
+  return era === "medieval" ? 0xb03636 : era === "acw" ? 0x8d8f99 : 0xc4514a; // Corvath crimson / Confederate grey / German red
 }
 
 function other(f: Faction): Faction { return f === "us" ? "axis" : "us"; }
 
-// Cavalry (carbine) and field guns (cannon) are too big for a building interior; everyone
-// else uses normal infantry passability. Shared by every pathing call so these units route
-// around houses rather than through them.
+// Mounted troops (carbine cavalry, lance-armed knights) and crew-served engines (field
+// gun, catapult) are too big for a building interior; everyone else uses normal infantry
+// passability. Shared by every pathing call so these units route around houses.
 export function unitPassable(grid: Grid, weapon: WeaponId): (cx: number, cy: number) => boolean {
-  if (weapon === "carbine" || weapon === "cannon")
+  if (weapon === "carbine" || weapon === "cannon" || weapon === "lance" || weapon === "catapult")
     return (cx, cy) => grid.passable(cx, cy) && !isBuildingInterior(grid.get(cx, cy));
   return (cx, cy) => grid.passable(cx, cy);
 }
@@ -388,12 +420,13 @@ export class World {
     // same pool (no attacker edge) so a stand-up fight is decided by ground, nerve and the
     // bayonet — not a built-in advantage.
     const trainOf = (f: Faction) => {
-      const base = this.era === "acw" ? 0.6 : this.roleOf(f) === "attack" ? 0.64 : 0.56;
+      const base = this.era !== "ww2" ? 0.6 : this.roleOf(f) === "attack" ? 0.64 : 0.56;
       return Math.max(0.3, Math.min(0.9, base + (Math.random() - 0.5) * 0.5));
     };
-    // The maps carry a WW2 order of battle; in the Civil War we reuse the same deployment
-    // positions but field period units — big rifle-musket platoons with a cavalry troop.
-    const orbat = (list: SquadSpawn[]) => (this.era === "ww2" ? list : acwOrbat(list));
+    // The maps carry a WW2 order of battle; other eras reuse the same deployment positions
+    // but field period units — ACW rifle-musket platoons, or a medieval host of men-at-arms.
+    const orbat = (list: SquadSpawn[]) =>
+      this.era === "ww2" ? list : this.era === "medieval" ? medievalOrbat(list) : acwOrbat(list);
     for (const s of orbat(map.spawns.us)) this.spawnSquad(s, this.southFaction, colorOf(this.southFaction), trainOf(this.southFaction));
     for (const s of orbat(map.spawns.axis)) this.spawnSquad(s, northFaction, colorOf(northFaction), trainOf(northFaction));
 
@@ -454,11 +487,12 @@ export class World {
     const baseY = m && isFinite(rearY)
       ? Math.max(0, Math.min(this.grid.height - 1, Math.round(rearY + homeDir * 2)))
       : cy;
-    const pass = unitPassable(this.grid, "cannon"); // never plant a gun inside a building
+    const pass = unitPassable(this.grid, "cannon"); // never plant an engine inside a building
+    const label = this.era === "medieval" ? "Catapult" : "Battery";
     for (let i = 0; i < n; i++) {
       const off = i === 0 ? 0 : (i % 2 === 1 ? 1 : -1) * Math.ceil(i / 2) * 4;
       const cell = this.nearestPassable(baseX + off, baseY, { cx: baseX, cy: baseY }, pass);
-      const spawn: SquadSpawn = { name: n > 1 ? `Battery ${i + 1}` : "Battery", cx: cell.cx, cy: cell.cy, count: 5, kind: "artillery" };
+      const spawn: SquadSpawn = { name: n > 1 ? `${label} ${i + 1}` : label, cx: cell.cx, cy: cell.cy, count: 5, kind: "artillery" };
       this.spawnSquad(spawn, faction, factionColor(this.era, faction), training);
     }
   }
@@ -548,11 +582,11 @@ export class World {
     this.teams.push(team);
     const loadout = squadLoadout(kind, count, faction, this.era);
     for (let i = 0; i < count; i++) {
-      // Civil War units fall in as a formed line (offsets already in cells); WW2 squads
-      // use the loose-blob template scaled tight. The same per-man offset (ox,oy) drives
-      // both this spawn and every later move/regroup, so a line re-forms when it advances.
+      // Civil War and medieval units fall in as a formed line (offsets already in cells);
+      // WW2 squads use the loose-blob template scaled tight. The same per-man offset (ox,oy)
+      // drives both this spawn and every later move/regroup, so a line re-forms as it advances.
       const f = formationSlot(this.era, kind, i, count);
-      const spawnScale = this.era === "acw" ? 1 : FORMATION_SPACING;
+      const spawnScale = this.era === "ww2" ? FORMATION_SPACING : 1;
       const sx = spawn.cx + f.ox * spawnScale + 0.5;
       const sy = spawn.cy + f.oy * spawnScale + 0.5;
       const isLeader = i === 0;

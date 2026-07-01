@@ -29,14 +29,17 @@ export function resolveFire(world: World, dt: number): void {
     // set up before they can fire, and both lose that setup the instant the crew picks them
     // up to move — so neither can fire on the march. Track deployed-and-still time; any
     // movement (an individual path OR drifting with the marching formation) resets it.
-    if (s.weapon === "lmg" || s.weapon === "cannon") {
+    if (s.weapon === "lmg" || s.weapon === "cannon" || s.weapon === "catapult") {
       const movedSq = (s.x - s.px) ** 2 + (s.y - s.py) ** 2;
-      const cap = (s.weapon === "cannon" ? CANNON_SETUP_TIME : MG_SETUP_TIME) + 1;
+      const cap = (s.weapon === "lmg" ? MG_SETUP_TIME : CANNON_SETUP_TIME) + 1;
       if (s.path != null || movedSq > 1e-4) s.setupTime = 0;
       else s.setupTime = Math.min(cap, s.setupTime + dt);
     }
     if (s.status !== "active") continue;
     if (s.state === "panicked" || s.state === "routing" || s.stance === "sneak") continue;
+
+    // Melee arms never shoot — they close and settle it hand-to-hand (updateMelee).
+    if (WEAPONS[s.weapon].meleeOnly) continue;
 
     // Grenades: close-in, used to flush an enemy out of hard cover (a building,
     // hedgerow, rubble) where rifle fire just can't reach him.
@@ -223,8 +226,10 @@ function mgGate(s: Soldier, aimX: number, aimY: number, dt: number): boolean {
 // since a firing line is otherwise just anonymous puffs of smoke.
 function emitShot(world: World, s: Soldier, tx: number, ty: number): void {
   const w = WEAPONS[s.weapon];
-  if (s.weapon === "riflemusket" || s.weapon === "carbine") {
-    world.effects.push({ kind: "shotline", x0: s.x, y0: s.y, x1: tx, y1: ty, ttl: 0.12 });
+  // Black-powder muskets/carbines mark each shot with a pale muzzle streak; an arrow shows
+  // as a slightly longer-lived shaft in flight. Neither leaves a modern glowing tracer.
+  if (s.weapon === "riflemusket" || s.weapon === "carbine" || s.weapon === "bow") {
+    world.effects.push({ kind: "shotline", x0: s.x, y0: s.y, x1: tx, y1: ty, ttl: s.weapon === "bow" ? 0.22 : 0.12 });
     return;
   }
   if (Math.random() < w.tracerRate) {
@@ -285,22 +290,22 @@ function mortarShot(world: World, s: Soldier): void {
   }
 }
 
-// The crew still standing at a field gun — its teammates who aren't the piece itself.
+// The crew still standing at a crew-served engine — its teammates who aren't the piece itself.
 function gunCrew(world: World, gun: Soldier): number {
   let n = 0;
   for (const o of world.soldiers) {
-    if (o.teamId === gun.teamId && o.status === "active" && o.weapon !== "cannon") n++;
+    if (o.teamId === gun.teamId && o.status === "active" && !WEAPONS[o.weapon].crewServed) n++;
   }
   return n;
 }
 
-// Silence and abandon any field gun whose crew has been wiped out. Called each step after
-// casualties resolve: with no hands left to work it, the piece is spiked and left wrecked.
+// Silence and abandon any crew-served engine (field gun, catapult) whose crew has been wiped
+// out. Called each step after casualties resolve: with no hands to work it, it's left wrecked.
 export function updateGunCrews(world: World): void {
   for (const s of world.soldiers) {
-    if (s.status !== "active" || s.weapon !== "cannon") continue;
+    if (s.status !== "active" || !WEAPONS[s.weapon].crewServed) continue;
     if (gunCrew(world, s) > 0) continue;
-    s.status = "dead"; // the gun is out of action — treated as a wreck on the field
+    s.status = "dead"; // the engine is out of action — treated as a wreck on the field
     s.targetId = null;
     s.fireCell = null;
     s.path = null;
@@ -309,13 +314,44 @@ export function updateGunCrews(world: World): void {
   }
 }
 
-// A field-gun discharge. Beyond canister range it lobs a shell that bursts at the aimpoint;
-// inside canister range it switches to grapeshot — the giant-shotgun round. Only the enemies
-// of the firing side are caught: gunners fire over their own ranks.
+// A crew-served engine's discharge. A catapult hurls a boulder; a field gun beyond canister
+// range lobs a shell that bursts in the ranks, and inside canister range switches to
+// grapeshot. Only the enemies of the firing side are caught: crews fire over their own ranks.
 function cannonShot(world: World, s: Soldier, tx: number, ty: number, dist: number): void {
   const w = WEAPONS[s.weapon];
-  if (dist <= (w.canisterCells ?? 0)) canisterBlast(world, s, tx, ty);
+  if (s.weapon === "catapult") catapultBoulder(world, s, tx, ty);
+  else if (dist <= (w.canisterCells ?? 0)) canisterBlast(world, s, tx, ty);
   else shellBurst(world, s, tx, ty);
+}
+
+// A catapult stone: hurled in a high arc, it comes down and smashes — pulping anyone in the
+// fall and cracking any wall it strikes. No fire or shrapnel, just a bone-breaking impact and
+// a gout of dust. Blunt but brutal inside its footprint.
+function catapultBoulder(world: World, s: Soldier, tx: number, ty: number): void {
+  const w = WEAPONS[s.weapon];
+  sound.play("catapult", s.x, s.y); // the arm's release
+  world.effects.push({ kind: "lob", x0: s.x, y0: s.y, x1: tx, y1: ty, ttl: 0.85, maxTtl: 0.85 }); // stone arcs over
+  // Impact: a heavy crash, a plume of dust and a scatter of thrown earth — no flame.
+  sound.play("boulder", tx, ty, true);
+  world.effects.push({ kind: "hit", x0: tx, y0: ty, x1: tx, y1: ty, ttl: 0.45 });
+  for (let i = 0; i < 3; i++) {
+    const a = Math.random() * Math.PI * 2, r = 1 + Math.random() * 1.6;
+    world.effects.push({ kind: "smoke", x0: tx + Math.cos(a) * r * 0.5, y0: ty + Math.sin(a) * r * 0.5, x1: 0, y1: 0, ttl: 1.4, maxTtl: 1.6 });
+    world.effects.push({ kind: "spark", x0: tx, y0: ty, x1: tx + Math.cos(a) * (r + 1.5), y1: ty + Math.sin(a) * (r + 1.5), ttl: 0.22 });
+  }
+  const radius = w.blastCells ?? 3;
+  damageBuildings(world, Math.floor(tx), Math.floor(ty), radius, 1.6); // a stone stoves in a wall
+  for (const e of world.soldiers) {
+    if (e.faction === s.faction || e.status !== "active") continue;
+    const d = Math.hypot(e.x - tx, e.y - ty);
+    if (d > radius) continue;
+    const falloff = 1 - d / radius;
+    addSuppression(e, w.suppression * falloff);
+    if (Math.random() < w.lethality * falloff * 0.75) { // crushing: mostly kills, cover barely helps
+      if (Math.random() < 0.7) killSoldier(world, e);
+      else woundSoldier(world, e);
+    }
+  }
 }
 
 // Shell/solid shot: a single projectile streaks downrange and bursts in the ranks — a

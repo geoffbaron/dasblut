@@ -4,7 +4,8 @@
 
 export type WeaponId =
   | "rifle" | "smg" | "lmg" | "bazooka" | "panzerfaust" | "mortar" // WW2
-  | "riflemusket" | "carbine" | "cannon"; // American Civil War
+  | "riflemusket" | "carbine" | "cannon" // American Civil War
+  | "sword" | "spear" | "bow" | "lance" | "catapult"; // Medieval
 
 export interface Weapon {
   id: WeaponId;
@@ -33,6 +34,11 @@ export interface Weapon {
   artillery?: boolean;
   /** Range at/under which a cannon fires canister instead of shell. */
   canisterCells?: number;
+  /** Pure melee arm (sword/spear/lance): never shoots — it closes and clashes hand-to-hand. */
+  meleeOnly?: boolean;
+  /** Crew-served engine (field gun, catapult): needs its crew to work it, and is destroyed
+   *  when the whole crew is down. */
+  crewServed?: boolean;
 }
 
 export const WEAPONS: Record<WeaponId, Weapon> = {
@@ -61,7 +67,22 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
   // Field gun (12-pdr Napoleon): direct line-of-sight artillery, slow to serve (~1 aimed
   // round / 16s). At range it throws a shell that bursts in the enemy ranks; inside canister
   // range the muzzle vomits a giant shotgun blast that scythes down massed infantry.
-  cannon:      { id: "cannon",      name: "Field Gun",   rangeCells: 58, rof: 0.0625, accuracy: 0.6, suppression: 0.45, lethality: 0.7, ammo: 60, tracerRate: 0, artillery: true, blastCells: 3, canisterCells: 24 },
+  cannon:      { id: "cannon",      name: "Field Gun",   rangeCells: 58, rof: 0.0625, accuracy: 0.6, suppression: 0.45, lethality: 0.7, ammo: 60, tracerRate: 0, artillery: true, crewServed: true, blastCells: 3, canisterCells: 24 },
+
+  // --- Medieval ---
+  // Melee arms carry no fire stats worth aiming — they close and settle it with cold steel,
+  // resolved by the melee system. Sword men-at-arms take and hold ground; spearmen anchor
+  // the line and bite back at horse; knights ride the lance home in a shattering charge.
+  sword:       { id: "sword",       name: "Man-at-Arms", rangeCells: 1.5, rof: 0, accuracy: 0, suppression: 0, lethality: 0, ammo: 999, tracerRate: 0, meleeOnly: true },
+  spear:       { id: "spear",       name: "Spearman",    rangeCells: 1.5, rof: 0, accuracy: 0, suppression: 0, lethality: 0, ammo: 999, tracerRate: 0, meleeOnly: true },
+  lance:       { id: "lance",       name: "Knight",      rangeCells: 1.5, rof: 0, accuracy: 0, suppression: 0, lethality: 0, ammo: 999, tracerRate: 0, meleeOnly: true },
+  // Longbow: a wall of arrows loosed at range. Slower and less lethal per shaft than a
+  // bullet, but it fills the air — a company's volleys break up an advance and thin a charge.
+  bow:         { id: "bow",         name: "Archer",      rangeCells: 26, rof: 0.5, accuracy: 0.3, suppression: 0.05, lethality: 0.5, ammo: 40, tracerRate: 0 },
+  // Catapult: a crew-served engine that hurls a boulder in a high arc — smashes walls and
+  // crushes anyone in the fall. Ponderous to re-cock, a handful of stones, and dead without
+  // its crew. Modeled as direct-fire artillery (no canister).
+  catapult:    { id: "catapult",    name: "Catapult",    rangeCells: 56, rof: 0.045, accuracy: 0.5, suppression: 0.4, lethality: 0.7, ammo: 24, tracerRate: 0, artillery: true, crewServed: true, blastCells: 3 },
 };
 
 export function isAntiTank(id: WeaponId): boolean {

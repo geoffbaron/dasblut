@@ -5,7 +5,7 @@ import { factionColor, MoraleState, World } from "../game/world.ts";
 import { Terrain, TERRAIN } from "../game/terrain.ts";
 import { WEAPONS } from "../game/weapons.ts";
 import { BuildingArt, paintBattlefield } from "./paint.ts";
-import { makeCannonBody, makeCasualtyCanvas, makeCavalryBody, makeSoldierArt } from "./soldierArt.ts";
+import { makeCannonBody, makeCasualtyCanvas, makeCatapultBody, makeCavalryBody, makeSoldierArt } from "./soldierArt.ts";
 import { makeVehicleArt, VehicleArt } from "./vehicleArt.ts";
 import { sound } from "./sound.ts";
 
@@ -193,10 +193,14 @@ export class Renderer {
     return sp;
   }
 
-  // The kind of sprite a weapon implies: a cannon draws a field gun, a carbine a mounted
-  // trooper, everything else a man on foot.
-  private artKind(weapon: string): "cannon" | "cavalry" | "soldier" {
-    return weapon === "cannon" ? "cannon" : weapon === "carbine" ? "cavalry" : "soldier";
+  // The kind of sprite a weapon implies: a cannon draws a field gun, a catapult a siege
+  // engine, a mounted trooper (carbine cavalry / lance knight) a horseman, everything else
+  // a man on foot.
+  private artKind(weapon: string): "cannon" | "catapult" | "cavalry" | "soldier" {
+    if (weapon === "cannon") return "cannon";
+    if (weapon === "catapult") return "catapult";
+    if (weapon === "carbine" || weapon === "lance") return "cavalry";
+    return "soldier";
   }
 
   private bodyTexture(color: number, weapon: string): Texture {
@@ -204,7 +208,10 @@ export class Renderer {
     const key = `${kind}:${color}`;
     let tex = this.bodyTexByColor.get(key);
     if (!tex) {
-      const art = kind === "cannon" ? makeCannonBody(color) : kind === "cavalry" ? makeCavalryBody(color) : makeSoldierArt(color).body;
+      const art = kind === "cannon" ? makeCannonBody(color)
+        : kind === "catapult" ? makeCatapultBody(color)
+        : kind === "cavalry" ? makeCavalryBody(color)
+        : makeSoldierArt(color).body;
       tex = Texture.from(art);
       this.bodyTexByColor.set(key, tex);
     }
@@ -620,7 +627,7 @@ export class Renderer {
         // Status changed → swap texture. A knocked-out field gun keeps its own silhouette,
         // just dimmed — it reads as a wrecked, abandoned piece, not a fallen man.
         const col = world.team(s.teamId)?.color ?? (s.faction === "us" ? 0x4f7fd1 : 0xc4514a);
-        const isGun = s.weapon === "cannon";
+        const isGun = s.weapon === "cannon" || s.weapon === "catapult";
         sp.body.texture = down && !isGun ? this.casualtyTex : this.bodyTexture(col, s.weapon);
         sp.body.alpha = down ? (isGun ? 0.4 : s.status === "dead" ? 0.85 : 0.95) : 1;
         sp.alive = !down;

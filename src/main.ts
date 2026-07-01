@@ -275,11 +275,11 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
     const hasMortar = world.selectedVehicleId == null && [...world.selectedTeamIds].some((id) => world.team(id)?.kind === "mortar");
     const primaryTeam = world.selectedTeamId != null ? world.team(world.selectedTeamId) : null;
     const mortarFiring = hasMortar && primaryTeam?.kind === "mortar" && world.teamIsFiring(world.selectedTeamId!);
-    // In the Civil War any foot or horse unit can be sent in with the bayonet/sabre;
-    // in WW2 only cavalry exist as chargers (none on the WW2 roster, so it stays hidden).
+    // In the Civil War and the medieval age any foot or horse unit can be sent in with cold
+    // steel; in WW2 only cavalry charge (none on the WW2 roster, so the button stays hidden).
     const canCharge = world.selectedVehicleId == null && [...world.selectedTeamIds].some((id) => {
       const k = world.team(id)?.kind;
-      return k === "cavalry" || (world.era === "acw" && k === "infantry");
+      return k === "cavalry" || (world.era !== "ww2" && k === "infantry");
     });
     for (const b of orderBtns) {
       const order = b.dataset.order!;
@@ -390,7 +390,10 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
   for (const b of orderBtns) b.addEventListener("click", () => pickOrder(b.dataset.order!));
 
   // --- roster ---
-  const KIND_LABEL: Record<string, string> = { rifle: "RIFLE", mg: "MG", at: "AT", mortar: "MORTAR", infantry: "INFANTRY", cavalry: "CAVALRY", artillery: "ARTILLERY" };
+  const KIND_LABEL: Record<string, string> = { rifle: "RIFLE", mg: "MG", at: "AT", mortar: "MORTAR", infantry: "INFANTRY", cavalry: "CAVALRY", artillery: "ARTILLERY", archers: "ARCHERS" };
+  // Medieval units read with period names rather than the generic branch labels.
+  const MED_KIND_LABEL: Record<string, string> = { infantry: "MEN-AT-ARMS", cavalry: "KNIGHTS", artillery: "CATAPULT", archers: "ARCHERS" };
+  const kindLabel = (kind: string): string => (world.era === "medieval" && MED_KIND_LABEL[kind]) || KIND_LABEL[kind] || kind.toUpperCase();
   interface RosterCard { el: HTMLDivElement; count: HTMLSpanElement; moraleFill: HTMLDivElement; ammoFill: HTMLDivElement; strFill: HTMLDivElement; }
   const rosterCards = new Map<number, RosterCard>();
   const vehicleCards = new Map<number, RosterCard>();
@@ -408,7 +411,7 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
       const el = document.createElement("div");
       el.className = "rcard";
       el.innerHTML =
-        `<div class="rhead"><span class="rname">${team.name}</span><span class="rbadge ${team.kind}">${KIND_LABEL[team.kind]}</span><span class="rcount"></span></div>` +
+        `<div class="rhead"><span class="rname">${team.name}</span><span class="rbadge ${team.kind}">${kindLabel(team.kind)}</span><span class="rcount"></span></div>` +
         `<div class="rbars"><div class="rbar"><span class="rlabel">S</span><div class="rtrack"><div class="rfill" data-k="str"></div></div></div>` +
         `<div class="rbar"><span class="rlabel">M</span><div class="rtrack"><div class="rfill" data-k="mor"></div></div></div>` +
         `<div class="rbar"><span class="rlabel">A</span><div class="rtrack"><div class="rfill" data-k="ammo"></div></div></div></div>`;
@@ -603,13 +606,24 @@ function teamCenter(world: World, teamId: number): { x: number; y: number } | nu
 // Rewrite the help/tutorial card to match the era, so opening Help mid-battle reflects
 // whether you're fighting WW2 or the Civil War (units, mission flavour, the charge order).
 function applyEraTutorial(world: World): void {
-  const acw = world.era === "acw";
+  const era = world.era;
   const set = (id: string, html: string) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
-  set("tutSub", acw ? "Close-Combat-style US Civil War tactics. Here's how to play." : "Close-Combat-style WW2 tactics. Here's how to play.");
-  set("tutMission", acw
+  const sub = era === "medieval" ? "Close-Combat-style medieval battles. Here's how to play."
+    : era === "acw" ? "Close-Combat-style US Civil War tactics. Here's how to play."
+    : "Close-Combat-style WW2 tactics. Here's how to play.";
+  set("tutSub", sub);
+  const mission = era === "medieval"
+    ? "Take the crossroads <b>objective</b> and hold it for <b>60 seconds</b> before the clock runs out. Aldmere (blue) and Corvath (crimson) contest the ground."
+    : era === "acw"
     ? "Take the crossroads <b>objective</b> and hold it for <b>60 seconds</b> before the clock runs out. Union (blue) and Confederate (grey) fight for the ground."
-    : "Take the crossroads <b>objective</b> and hold it for <b>60 seconds</b> before the clock runs out. US (blue) and the Germans (red) fight for the ground.");
-  set("tutUnits", acw
+    : "Take the crossroads <b>objective</b> and hold it for <b>60 seconds</b> before the clock runs out. US (blue) and the Germans (red) fight for the ground.";
+  set("tutMission", mission);
+  const units = era === "medieval"
+    ? "<li><b>MEN-AT-ARMS</b> — a shieldwall of swords and spears; they advance and settle it hand-to-hand.</li>"
+      + "<li><b>ARCHERS</b> — massed longbows; loose volleys to break up an advance from range.</li>"
+      + "<li><b>KNIGHTS</b> — heavy horse with the lance; <b>charge</b> to ride down shaken men.</li>"
+      + "<li><b>CATAPULT</b> — a crew-served engine; hurls boulders that smash walls and ranks. Kill the crew to wreck it.</li>"
+    : era === "acw"
     ? "<li><b>INFANTRY</b> — big rifle-musket platoons; deadly volleys, but a slow muzzle-loading reload.</li>"
       + "<li><b>CAVALRY</b> — mounted carbines; fast skirmishers that can <b>charge</b> and ride down shaken men.</li>"
       + "<li><b>ARTILLERY</b> — a field-gun battery; shells at range, <b>canister</b> up close. Kill the crew to silence it.</li>"
@@ -617,9 +631,10 @@ function applyEraTutorial(world: World): void {
       + "<li><b>MG</b> — light machine gun; superb at <b>suppressing</b> the enemy so others can move.</li>"
       + "<li><b>AT</b> — bazooka team; kills tanks — aim for the <b>flank or rear</b>.</li>"
       + "<li><b>MORTAR</b> — one tube, slow to reload; lobs HE or <b>smoke</b> over walls. You must call the shot.</li>"
-      + "<li><b>TANK</b> — your Sherman; click to direct its fire.</li>");
+      + "<li><b>TANK</b> — your Sherman; click to direct its fire.</li>";
+  set("tutUnits", units);
   const chargeRow = document.getElementById("tutChargeRow");
-  if (chargeRow) chargeRow.style.display = acw ? "" : "none";
+  if (chargeRow) chargeRow.style.display = era !== "ww2" ? "" : "none";
 }
 
 async function startGame(map: GameMap, objectiveCount = 1, setup: GameSetup = DEFAULT_SETUP) {

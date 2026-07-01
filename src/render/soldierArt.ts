@@ -114,6 +114,64 @@ export function makeCannonBody(teamColor: number): HTMLCanvasElement {
   return c;
 }
 
+// A catapult: a timber base frame with a stout throwing arm swung forward (east), a stone
+// loaded in the sling at its head, and a team-color band on the rear beam. Reads clearly
+// apart from the sleeker field gun.
+export function makeCatapultBody(teamColor: number): HTMLCanvasElement {
+  const { c, ctx } = newCanvas();
+  const hex = `#${teamColor.toString(16).padStart(6, "0")}`;
+
+  // Timber base frame — two side beams running along the facing, with cross braces.
+  ctx.strokeStyle = "#4a3a22";
+  ctx.lineWidth = 1.8;
+  ctx.lineCap = "round";
+  for (const oy of [-3, 3]) {
+    ctx.beginPath();
+    ctx.moveTo(-7, oy);
+    ctx.lineTo(6, oy);
+    ctx.stroke();
+  }
+  ctx.lineWidth = 1.2;
+  for (const ox of [-6, 0, 5]) {
+    ctx.beginPath();
+    ctx.moveTo(ox, -3.2);
+    ctx.lineTo(ox, 3.2);
+    ctx.stroke();
+  }
+
+  // The throwing arm — a stout beam pivoting mid-frame, thrown forward, bucket at its head.
+  const arm = ctx.createLinearGradient(-6, 0, 8, 0);
+  arm.addColorStop(0, "#6b5228");
+  arm.addColorStop(1, "#8a6a34");
+  ctx.strokeStyle = arm;
+  ctx.lineWidth = 2.6;
+  ctx.beginPath();
+  ctx.moveTo(-4, 0);
+  ctx.lineTo(8, -0.5);
+  ctx.stroke();
+  ctx.fillStyle = "#3a2c18"; // sling cup
+  ctx.beginPath();
+  ctx.arc(8.2, -0.5, 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#7d7b74"; // the stone
+  ctx.beginPath();
+  ctx.arc(8.2, -0.5, 1.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#3a2c18"; // pivot post
+  ctx.beginPath();
+  ctx.arc(-4, 0, 1.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Team-color band on the rear beam.
+  ctx.strokeStyle = hex;
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.moveTo(-7, 0);
+  ctx.lineTo(-4.8, 0);
+  ctx.stroke();
+  return c;
+}
+
 // A fallen man — slumped, no raised weapon, drawn dark. Shared across factions.
 export function makeCasualtyCanvas(): HTMLCanvasElement {
   const { c, ctx } = newCanvas();

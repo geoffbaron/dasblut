@@ -78,7 +78,7 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
   lance:       { id: "lance",       name: "Knight",      rangeCells: 1.5, rof: 0, accuracy: 0, suppression: 0, lethality: 0, ammo: 999, tracerRate: 0, meleeOnly: true },
   // Longbow: a wall of arrows loosed at range. Slower and less lethal per shaft than a
   // bullet, but it fills the air — a company's volleys break up an advance and thin a charge.
-  bow:         { id: "bow",         name: "Archer",      rangeCells: 26, rof: 0.5, accuracy: 0.3, suppression: 0.05, lethality: 0.5, ammo: 40, tracerRate: 0 },
+  bow:         { id: "bow",         name: "Archer",      rangeCells: 26, rof: 0.5, accuracy: 0.17, suppression: 0.05, lethality: 0.38, ammo: 40, tracerRate: 0 },
   // Catapult: a crew-served engine that hurls a boulder in a high arc — smashes walls and
   // crushes anyone in the fall. Ponderous to re-cock, a handful of stones, and dead without
   // its crew. Modeled as direct-fire artillery (no canister).

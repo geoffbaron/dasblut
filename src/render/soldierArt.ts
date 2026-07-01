@@ -11,10 +11,13 @@ export interface SoldierArt {
   shadow: HTMLCanvasElement;
 }
 
-export function makeSoldierArt(teamColor: number): SoldierArt {
+// What a foot soldier carries, drawn top-down: a firearm, a short sword, a spear, or a bow.
+export type Hold = "rifle" | "sword" | "spear" | "bow";
+
+export function makeSoldierArt(teamColor: number, hold: Hold = "rifle"): SoldierArt {
   return {
     size: LS,
-    body: drawBody(teamColor),
+    body: drawBody(teamColor, hold),
     shadow: drawShadow(),
   };
 }
@@ -209,18 +212,37 @@ function drawShadow(): HTMLCanvasElement {
   return c;
 }
 
-function drawBody(teamColor: number): HTMLCanvasElement {
+function drawBody(teamColor: number, hold: Hold): HTMLCanvasElement {
   const { c, ctx } = newCanvas();
   const hex = `#${teamColor.toString(16).padStart(6, "0")}`;
 
-  // Rifle held forward (east), slightly to one side.
-  ctx.strokeStyle = "#1c1d16";
-  ctx.lineWidth = 1.5;
+  // The held weapon, drawn first so the torso sits over the grip. Pointing east (+x).
   ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(-2, 2);
-  ctx.lineTo(9.5, 1.2);
-  ctx.stroke();
+  if (hold === "sword") {
+    // A short sword — a stubby steel blade with a dark crossguard. No firearm.
+    ctx.strokeStyle = "#c9ccd2"; ctx.lineWidth = 1.7;
+    ctx.beginPath(); ctx.moveTo(3, 1.4); ctx.lineTo(8, 0.7); ctx.stroke();
+    ctx.strokeStyle = "#2c2114"; ctx.lineWidth = 1.2; // crossguard
+    ctx.beginPath(); ctx.moveTo(3, -0.1); ctx.lineTo(3, 2.6); ctx.stroke();
+  } else if (hold === "spear") {
+    // A long spear — a wooden shaft with a steel point at the tip.
+    ctx.strokeStyle = "#5a4326"; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(-2, 2); ctx.lineTo(10.5, 0.5); ctx.stroke();
+    ctx.strokeStyle = "#c9ccd2"; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(9.2, 0.65); ctx.lineTo(11.5, 0.35); ctx.stroke();
+  } else if (hold === "bow") {
+    // A bow held out front — limbs bowing forward, the string, and a nocked shaft.
+    ctx.strokeStyle = "#6b4f2a"; ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.arc(2, 0, 5, -1.0, 1.0); ctx.stroke();
+    ctx.strokeStyle = "#d8d2c0"; ctx.lineWidth = 0.7; // string
+    ctx.beginPath(); ctx.moveTo(4.7, -4.2); ctx.lineTo(4.7, 4.2); ctx.stroke();
+    ctx.strokeStyle = "#2e2415"; ctx.lineWidth = 1.0; // nocked arrow
+    ctx.beginPath(); ctx.moveTo(3.5, 0); ctx.lineTo(9, 0); ctx.stroke();
+  } else {
+    // Rifle held forward (east), slightly to one side.
+    ctx.strokeStyle = "#1c1d16"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(-2, 2); ctx.lineTo(9.5, 1.2); ctx.stroke();
+  }
 
   // Torso / shoulders — olive drab uniform, oval across the facing axis.
   const torso = ctx.createLinearGradient(0, -6, 0, 6);

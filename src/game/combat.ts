@@ -226,10 +226,14 @@ function mgGate(s: Soldier, aimX: number, aimY: number, dt: number): boolean {
 // since a firing line is otherwise just anonymous puffs of smoke.
 function emitShot(world: World, s: Soldier, tx: number, ty: number): void {
   const w = WEAPONS[s.weapon];
-  // Black-powder muskets/carbines mark each shot with a pale muzzle streak; an arrow shows
-  // as a slightly longer-lived shaft in flight. Neither leaves a modern glowing tracer.
-  if (s.weapon === "riflemusket" || s.weapon === "carbine" || s.weapon === "bow") {
-    world.effects.push({ kind: "shotline", x0: s.x, y0: s.y, x1: tx, y1: ty, ttl: s.weapon === "bow" ? 0.22 : 0.12 });
+  // An arrow is drawn as an actual shaft flying to its mark — not a tracer or muzzle streak.
+  if (s.weapon === "bow") {
+    world.effects.push({ kind: "arrow", x0: s.x, y0: s.y, x1: tx, y1: ty, ttl: 0.28 });
+    return;
+  }
+  // Black-powder muskets/carbines mark each shot with a pale muzzle streak (no glowing tracer).
+  if (s.weapon === "riflemusket" || s.weapon === "carbine") {
+    world.effects.push({ kind: "shotline", x0: s.x, y0: s.y, x1: tx, y1: ty, ttl: 0.12 });
     return;
   }
   if (Math.random() < w.tracerRate) {
@@ -707,9 +711,10 @@ function fireShot(world: World, s: Soldier, target: Soldier, dist: number): void
   const cover = cell ? cell.cover : 0;
   const conceal = cell ? cell.concealment : 0;
 
-  // Muzzle flash + a tracer or black-powder shot streak so the firing line is legible.
+  // Muzzle flash (firearms only — a bow has no muzzle) plus a tracer, powder streak or
+  // arrow so the shot is legible.
   sound.play(s.weapon as SfxId, s.x, s.y);
-  world.effects.push({ kind: "flash", x0: s.x, y0: s.y, x1: s.x, y1: s.y, ttl: 0.07 });
+  if (s.weapon !== "bow") world.effects.push({ kind: "flash", x0: s.x, y0: s.y, x1: s.x, y1: s.y, ttl: 0.07 });
   emitShot(world, s, target.x, target.y);
   // Black-powder arms belch a thick cloud of white smoke with every shot — a firing line
   // quickly fogs itself in. Pushed slightly toward the target (out of the muzzle).

@@ -1,7 +1,7 @@
 import { GameMap, MapFeatures, SquadSpawn } from "./gamemap.ts";
 import { Grid } from "./grid.ts";
 import { Cell, findPath, smoothPath } from "./pathfinding.ts";
-import { isBuildingInterior, vehicleCost, vehiclePassable } from "./terrain.ts";
+import { isBuildingInterior, Terrain, TERRAIN, vehicleCost, vehiclePassable } from "./terrain.ts";
 import { VehicleClass, VEHICLES } from "./vehicleDefs.ts";
 import { WeaponId, WEAPONS } from "./weapons.ts";
 
@@ -686,6 +686,13 @@ export class World {
       s.fireSmoke = false;
     }
 
+    // WW2 doesn't march in formation: a squad moves as a loose gaggle and each man makes
+    // for the best bit of cover near where he's sent, Close-Combat style.
+    if (this.era === "ww2") {
+      team.march = null;
+      return this.orderLooseMove(men, target);
+    }
+
     // The squad's centre and the direction to the objective.
     let cx = 0, cy = 0;
     for (const s of men) { cx += s.x; cy += s.y; }
@@ -744,6 +751,59 @@ export class World {
     const guide = smoothPath(this.grid, raw, { passable: guidePass });
     team.march = { guide, idx: 1, x: cx, y: cy, hx, hy };
     return true;
+  }
+
+  // WW2-style loose move: send each man off on his own path to a distinct patch of cover
+  // near the destination — a hedge, a wall, woods, rubble, or just inside a house — so the
+  // squad travels as a scattered gaggle and goes to ground on arrival instead of standing
+  // in a neat block in the open. Falls back to spread-out open cells when cover is scarce.
+  private orderLooseMove(men: Soldier[], target: Cell): boolean {
+    const R = 5; // how far around the destination to look for cover
+    // Score every reachable cell in the neighbourhood by how good a fighting position it is.
+    const cands: { cx: number; cy: number; score: number }[] = [];
+    for (let dy = -R; dy <= R; dy++) {
+      for (let dx = -R; dx <= R; dx++) {
+        const gcx = target.cx + dx, gcy = target.cy + dy;
+        if (!this.grid.inBounds(gcx, gcy) || !this.grid.passable(gcx, gcy)) continue;
+        const d = Math.hypot(dx, dy);
+        if (d > R) continue;
+        const t = this.grid.get(gcx, gcy) as Terrain;
+        const def = TERRAIN[t];
+        // Cover + concealment make a good spot; a house interior is best; closer to the
+        // aimpoint is preferred, with a little noise so identical cells don't tie forever.
+        const score = def.cover * 2 + def.concealment + (isBuildingInterior(t) ? 1.4 : 0)
+          - d * 0.14 + Math.random() * 0.25;
+        cands.push({ cx: gcx, cy: gcy, score });
+      }
+    }
+    cands.sort((a, b) => b.score - a.score);
+
+    // Assign the closest men to the best spots first (so a nearby man grabs nearby cover),
+    // one man per cell, spilling into the next-best positions as they fill up.
+    const order = [...men].sort((a, b) =>
+      ((a.x - target.cx) ** 2 + (a.y - target.cy) ** 2) - ((b.x - target.cx) ** 2 + (b.y - target.cy) ** 2));
+    const used = new Set<number>();
+    let anyPathed = false;
+    for (const s of order) {
+      const pass = unitPassable(this.grid, s.weapon);
+      let goal: Cell | null = null;
+      for (const c of cands) {
+        const key = c.cy * this.grid.width + c.cx;
+        if (used.has(key)) continue;
+        if (!pass(c.cx, c.cy)) continue; // e.g. a vehicle-crew weapon that can't enter a house
+        used.add(key);
+        goal = { cx: c.cx, cy: c.cy };
+        break;
+      }
+      if (!goal) goal = this.nearestPassable(target.cx, target.cy, target, pass);
+      const start: Cell = { cx: Math.floor(s.x), cy: Math.floor(s.y) };
+      const raw = findPath(this.grid, start, goal, { passable: pass });
+      s.ox = 0; s.oy = 0; // no formation slot — each man just holds his cover
+      if (raw && raw.length > 1) { s.path = smoothPath(this.grid, raw, { passable: pass }); s.pathIndex = 1; anyPathed = true; }
+      else if (raw && raw.length === 1 && start.cx === goal.cx && start.cy === goal.cy) { s.path = null; anyPathed = true; }
+      else s.path = null;
+    }
+    return anyPathed;
   }
 
   /** Hold position in a Defend or Ambush posture, facing the nearest known threat. */

@@ -635,21 +635,41 @@ export class World {
   orderMove(teamId: number, target: Cell, stance: Stance = "move"): boolean {
     const team = this.team(teamId);
     if (!team) return false;
+    const men = team.soldierIds.map((id) => this.soldier(id)!).filter((s) => s && s.status === "active");
+    if (men.length === 0) return true;
+
+    // For anything beyond a short shuffle, march in COLUMN of route: a narrow file a few
+    // men abreast, aligned to the direction of march (not the wide battle line). Each man's
+    // slot is his place in the column, rotated onto the march heading and stored in ox/oy
+    // so the rest of the movement/regroup code lays them out the same way.
+    let cx = 0, cy = 0;
+    for (const s of men) { cx += s.x; cy += s.y; }
+    cx /= men.length; cy /= men.length;
+    let hx = target.cx + 0.5 - cx, hy = target.cy + 0.5 - cy;
+    const hlen = Math.hypot(hx, hy);
+    const asColumn = hlen > 3.5;
+    if (asColumn) { hx /= hlen; hy /= hlen; }
+    const FILES = 3, FILE_SPACING = 0.9, RANK_SPACING = 0.95;
+    const perpx = -hy, perpy = hx;
+
     let anyPathed = false;
-    let anyActive = false;
-    for (const id of team.soldierIds) {
-      const s = this.soldier(id)!;
-      if (s.status !== "active") continue;
-      anyActive = true;
+    men.forEach((s, j) => {
       s.fleeGoal = null;
       s.stance = stance;
       s.manualTargetId = null;
       s.manualVehId = null;
       s.fireCell = null;
       s.fireSmoke = false;
-      // Round the per-man formation offset to a whole cell — ox/oy can be fractional
-      // (Civil War line spacing), and grid lookups need integer coordinates. Cavalry and
-      // guns path with building-blocking passability so they route around houses.
+      if (asColumn) {
+        const file = j % FILES;
+        const rank = Math.floor(j / FILES);
+        const across = (file - (FILES - 1) / 2) * FILE_SPACING;
+        const depth = -rank * RANK_SPACING; // trail behind the head of the column
+        s.ox = depth * hx + across * perpx;
+        s.oy = depth * hy + across * perpy;
+      }
+      // Round the per-man offset to a whole cell for the grid lookup. Cavalry and guns
+      // path with building-blocking passability so they route around houses.
       const pass = unitPassable(this.grid, s.weapon);
       const goal = this.nearestPassable(Math.round(target.cx + s.ox), Math.round(target.cy + s.oy), target, pass);
       const start: Cell = { cx: Math.floor(s.x), cy: Math.floor(s.y) };
@@ -665,8 +685,8 @@ export class World {
       } else {
         s.path = null;
       }
-    }
-    return anyPathed || !anyActive;
+    });
+    return anyPathed;
   }
 
   /** Hold position in a Defend or Ambush posture, facing the nearest known threat. */

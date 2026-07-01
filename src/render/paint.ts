@@ -37,6 +37,11 @@ const GROUND: Partial<Record<Terrain, [RGB, RGB]>> = {
   [Terrain.Hedge]: [rgb(0x679440), rgb(0x4f7a2e)],
 };
 
+// Large-scale meadow tones the grass drifts toward (see the per-pixel pass): sun-dried
+// yellow-green swathes and deep lush pockets, so open country reads painterly zoomed out.
+const MEADOW_WARM = rgb(0x8cab4c);
+const MEADOW_DEEP = rgb(0x41682c);
+
 export interface PaintedMap {
   canvas: HTMLCanvasElement;
   scale: number; // multiply canvas px by this to get logical (CSS) px
@@ -89,17 +94,24 @@ export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "
       if (cy < 0) cy = 0;
       else if (cy >= grid.height) cy = grid.height - 1;
 
-      const pair = GROUND[grid.get(cx, cy)] ?? GROUND[Terrain.Grass]!;
+      const terrain = grid.get(cx, cy);
+      const pair = GROUND[terrain] ?? GROUND[Terrain.Grass]!;
       // Two scales of noise: fine mottle + broad patches.
       const fine = valueNoise(px * 0.18, py * 0.18, seed + 7);
       const broad = fbm(px * 0.012, py * 0.012, seed + 23, 2);
       const t = fine * 0.45 + broad * 0.55;
-      let shade = 0.92 + t * 0.28; // brightness multiplier — kept high so the field reads sunlit
-      // A whisper of broad-noise variation → soft meadow patches, not muddy AO puddles.
-      shade *= 0.97 + broad * 0.06;
+      let shade = 0.88 + t * 0.34; // bright but with real contrast, so the ground has grain
+      shade *= 0.96 + broad * 0.08;
 
       const i = (py * mapW + px) * 4;
-      const c = mix(pair[0], pair[1], t);
+      let c = mix(pair[0], pair[1], t);
+      // Grass gets very-large-scale meadow patches — swathes drift toward sunlit
+      // yellow-green or deep lush green, so open country reads painterly from any
+      // zoom instead of one flat green carpet.
+      if (terrain === Terrain.Grass || terrain === Terrain.Woods || terrain === Terrain.Wall || terrain === Terrain.Hedge) {
+        const m = fbm(px * 0.006, py * 0.006, seed + 77, 2);
+        c = mix(c, m > 0.5 ? MEADOW_WARM : MEADOW_DEEP, Math.min(0.55, Math.abs(m - 0.5) * 1.6));
+      }
       data[i] = clamp8(c.r * shade);
       data[i + 1] = clamp8(c.g * shade);
       data[i + 2] = clamp8(c.b * shade);
@@ -621,7 +633,9 @@ const ROOF_PALETTES = [
   ["#d4784a", "#a35331"], // terracotta tile
   ["#c98f56", "#996636"], // clay / tan
   ["#c26843", "#92492c"], // brick red
-  ["#a89a84", "#80735f"], // weathered slate (lighter, uncommon)
+  ["#a89a84", "#80735f"], // weathered slate
+  ["#8f939c", "#686c75"], // blue-grey slate
+  ["#b8a26e", "#8c7846"], // sun-bleached tan
 ];
 
 // Medieval villages are thatched: golden straw fresh off the rick, weathered grey-brown
@@ -635,8 +649,10 @@ const THATCH_PALETTES = [
 
 function pickRoofPalette(rng: () => number, burned: boolean, era: Era): string[] {
   if (burned) return ["#3a3026", "#2a221c"]; // warm dark char, not pure black
-  const pals = era === "medieval" ? THATCH_PALETTES : ROOF_PALETTES;
-  return rng() < 0.8 ? pals[Math.floor(rng() * 3)] : pals[3];
+  if (era === "medieval") return rng() < 0.8 ? THATCH_PALETTES[Math.floor(rng() * 3)] : THATCH_PALETTES[3];
+  // Mostly warm terracotta/clay/brick, with slate and bleached-tan outliers so a town
+  // block shows real variety instead of one repeated orange.
+  return rng() < 0.7 ? ROOF_PALETTES[Math.floor(rng() * 3)] : ROOF_PALETTES[3 + Math.floor(rng() * 3)];
 }
 
 // --- per-building floor + roof tiles, masked to the exact footprint cells ---
@@ -852,31 +868,35 @@ function drawFlatRoof(ctx: CanvasRenderingContext2D, b: Building, rng: () => num
 
   ctx.save();
   ctx.clip(mask);
-  // Base: light on the sun (top-left) side, falling to shade bottom-right.
-  const grad = ctx.createLinearGradient(bb.x0, bb.y0, bb.x1, bb.y1);
-  grad.addColorStop(0, lightenHex(pal[0], 18));
-  grad.addColorStop(0.55, pal[0]);
-  grad.addColorStop(1, pal[1]);
-  ctx.fillStyle = grad;
-  ctx.fillRect(bb.x0, bb.y0, bb.x1 - bb.x0, bb.y1 - bb.y0);
-  // Tile courses across the longer axis.
+  // Two hard-lit slopes split along the long axis — a sunlit face and a shaded face —
+  // so even a sprawling OSM footprint reads as a 3D roof, not a flat painted slab.
   const horiz = bb.x1 - bb.x0 >= bb.y1 - bb.y0;
-  ctx.strokeStyle = "rgba(0,0,0,0.13)";
-  ctx.lineWidth = 0.6;
-  if (horiz) for (let ly = bb.y0 + 3; ly < bb.y1; ly += 3.5) line(ctx, bb.x0, ly, bb.x1, ly);
-  else for (let lx = bb.x0 + 3; lx < bb.x1; lx += 3.5) line(ctx, lx, bb.y0, lx, bb.y1);
-  // Ridge highlight down the spine.
-  ctx.strokeStyle = "rgba(255,238,214,0.3)";
-  ctx.lineWidth = 1.3;
-  if (horiz) line(ctx, bb.x0, (bb.y0 + bb.y1) / 2, bb.x1, (bb.y0 + bb.y1) / 2);
-  else line(ctx, (bb.x0 + bb.x1) / 2, bb.y0, (bb.x0 + bb.x1) / 2, bb.y1);
+  const midY = (bb.y0 + bb.y1) / 2, midX = (bb.x0 + bb.x1) / 2;
+  ctx.fillStyle = lightenHex(pal[0], 14); // sun-facing slope
+  if (horiz) ctx.fillRect(bb.x0, bb.y0, bb.x1 - bb.x0, midY - bb.y0);
+  else ctx.fillRect(bb.x0, bb.y0, midX - bb.x0, bb.y1 - bb.y0);
+  ctx.fillStyle = pal[1]; // shaded slope
+  if (horiz) ctx.fillRect(bb.x0, midY, bb.x1 - bb.x0, bb.y1 - midY);
+  else ctx.fillRect(midX, bb.y0, bb.x1 - midX, bb.y1 - bb.y0);
+  if (era === "medieval" && !burned) {
+    thatchTexture(ctx, bb.x0, bb.y0, bb.x1 - bb.x0, bb.y1 - bb.y0, horiz, rng);
+  } else {
+    // Tile courses across the longer axis, strong enough to survive 1× supersampling.
+    ctx.strokeStyle = "rgba(0,0,0,0.2)";
+    ctx.lineWidth = 0.7;
+    if (horiz) for (let ly = bb.y0 + 3; ly < bb.y1; ly += 3.5) line(ctx, bb.x0, ly, bb.x1, ly);
+    else for (let lx = bb.x0 + 3; lx < bb.x1; lx += 3.5) line(ctx, lx, bb.y0, lx, bb.y1);
+  }
+  // Ridge down the spine: sunlit tile cap, or a dark timber pole on thatch.
+  if (horiz) ridge(ctx, bb.x0, midY, bb.x1, midY, era === "medieval" && !burned);
+  else ridge(ctx, midX, bb.y0, midX, bb.y1, era === "medieval" && !burned);
   if (burned) burnDamage(ctx, bb, rng);
   ctx.restore();
   // Eave: trace just the building's outer polygon (not the per-cell mask, which would
   // draw a grid) so adjacent buildings read as separate blocks.
   if (b.poly.length >= 2) {
-    ctx.strokeStyle = "rgba(0,0,0,0.38)";
-    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = "rgba(0,0,0,0.45)";
+    ctx.lineWidth = 1.6;
     ctx.beginPath();
     ctx.moveTo(b.poly[0].x * CELL_SIZE, b.poly[0].y * CELL_SIZE);
     for (let i = 1; i < b.poly.length; i++) ctx.lineTo(b.poly[i].x * CELL_SIZE, b.poly[i].y * CELL_SIZE);

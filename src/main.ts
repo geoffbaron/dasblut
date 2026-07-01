@@ -684,7 +684,7 @@ async function startGame(map: GameMap, objectiveCount = 1, setup: GameSetup = DE
     obs.observe(tut, { attributes: true, attributeFilter: ["style"] });
   }
 
-  document.title = `DasBlut — ${world.mapName}`;
+  document.title = `Any War — ${world.mapName}`;
 }
 
 // Host-side: apply an order relayed from the German commander to an Axis unit.
@@ -737,5 +737,5 @@ async function startClientView(setup: Setup) {
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
-  document.title = `DasBlut — ${world.mapName}`;
+  document.title = `Any War — ${world.mapName}`;
 }

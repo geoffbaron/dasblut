@@ -1,4 +1,4 @@
-// DasBlut multiplayer + static server.
+// Any War multiplayer + static server.
 //
 // Serves the built client from dist/ and runs a tiny authoritative-host relay over
 // WebSockets. The first connected client becomes the HOST (runs the simulation and
@@ -23,7 +23,7 @@ app.use(express.static(DIST));
 // SPA fallback: any non-asset route serves index.html.
 app.get("*", (_req, res) => res.sendFile(path.join(DIST, "index.html")));
 
-const server = app.listen(PORT, () => console.log(`DasBlut server on :${PORT}`));
+const server = app.listen(PORT, () => console.log(`Any War server on :${PORT}`));
 
 const wss = new WebSocketServer({ server, path: "/ws" });
 

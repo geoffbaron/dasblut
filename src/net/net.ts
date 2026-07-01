@@ -1,4 +1,4 @@
-// Thin WebSocket client for DasBlut multiplayer. Connects to the same-origin /ws
+// Thin WebSocket client for Any War multiplayer. Connects to the same-origin /ws
 // endpoint exposed by server/index.js. If the connection fails (e.g. the plain Vite
 // dev server, or no network), it simply never reports a role and the game runs as
 // offline single-player — multiplayer is purely additive.

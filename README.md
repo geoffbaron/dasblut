@@ -1,6 +1,6 @@
-# DasBlut
+# Any War
 
-Browser-based **Close Combat**-style WW2 small-unit tactics, with the goal of turning
+*Any war, anywhere.* Browser-based **Close Combat**-style small-unit tactics (WW2 and the US Civil War), with the goal of turning
 **any real-world location** into a playable, cover-rich battlefield. See [PLAN.md](PLAN.md)
 for the full design and phasing.
 

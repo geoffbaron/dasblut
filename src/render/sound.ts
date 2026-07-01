@@ -1,4 +1,4 @@
-// Spatial audio for DasBlut. Wraps Howler.js with camera-relative positioning
+// Spatial audio for Any War. Wraps Howler.js with camera-relative positioning
 // so gunfire sounds louder and more directional the closer it is to screen center.
 // Falls back to synthesized Web Audio tones if .ogg files aren't present yet —
 // drop real files into public/sfx/ to replace them.

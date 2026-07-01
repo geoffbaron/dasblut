@@ -38,7 +38,10 @@ export type SfxId =
   | "catapult"
   | "boulder"
   | "warhorn"
-  | "med_ambient";
+  | "med_ambient"
+  | "melee_med"
+  | "warcry"
+  | "arrow_hit";
 
 // Maps each game event to one or more real audio files in public/sfx/ (filenames are
 // the exact drop-in names, including extension — they're URL-encoded at load time so
@@ -88,6 +91,13 @@ const MED_CATAPULT = "med_catapult.mp3";
 const MED_BOULDER = "med_boulder.mp3";
 const MED_WARHORN = "med_warhorn.mp3";
 const MED_AMBIENT = "med_ambient.mp3";
+// Medieval close-combat set: period sword-on-shield / on-armour clashes and an armoured
+// grapple for the melee pool, a mass battle-cry for charges, and an arrow-impact thud.
+const MED_SWORD_SHIELD = "med_sword_shield.mp3";
+const MED_SWORD_ARMOR = "med_sword_armor.mp3";
+const MED_MELEE_STRUGGLE = "med_melee_struggle.mp3";
+const MED_WARCRY = "med_warcry.mp3";
+const MED_ARROW_HIT = "med_arrow_hit.mp3";
 const SWITCH = "UIMvmt-puzzle_UI_tab_switch-Elevenlabs.mp3"; // UI select/order click
 // Generic, non-verbal death cries, played when any soldier is killed. (The old German
 // voice screams were removed — they were jarring and wrong for the Civil War.) Several
@@ -144,6 +154,9 @@ const SFX_DEFS: Record<SfxId, { files: string[]; vol: number }> = {
   boulder:        { files: [MED_BOULDER],  vol: 1.0 },  // the stone crashing down
   warhorn:        { files: [MED_WARHORN],  vol: 0.5 },  // distant horn call in the ambient bed
   med_ambient:    { files: [MED_AMBIENT],  vol: 0.3 },  // faint clash of a battle beyond sight
+  melee_med:      { files: [MED_SWORD_SHIELD, MED_SWORD_ARMOR, MED_MELEE_STRUGGLE], vol: 0.7 }, // sword on shield/armour
+  warcry:         { files: [MED_WARCRY],   vol: 0.6 },  // a mass roar as men charge home
+  arrow_hit:      { files: [MED_ARROW_HIT], vol: 0.55 }, // shafts thudding into shields/flesh
 };
 
 // Maximum audible sounds per frame to avoid an audio avalanche during heavy combat.
@@ -283,11 +296,11 @@ export class SoundManager {
     // engagement, with a horn call, a hail of arrows or hooves drifting across now and then.
     if (this.era === "medieval") {
       const r = Math.random();
-      const id: SfxId = r < 0.5 ? "med_ambient" : r < 0.68 ? "melee" : r < 0.82 ? "warhorn" : r < 0.92 ? "bow" : "horse";
+      const id: SfxId = r < 0.44 ? "med_ambient" : r < 0.6 ? "melee_med" : r < 0.74 ? "warhorn" : r < 0.85 ? "warcry" : r < 0.94 ? "bow" : "horse";
       const howl = this.pickHowl(id);
       if (!howl) return;
       const sid = howl.play();
-      howl.volume(id === "med_ambient" ? 0.24 : id === "warhorn" ? 0.22 : 0.16, sid); // distant
+      howl.volume(id === "med_ambient" ? 0.24 : id === "warhorn" || id === "warcry" ? 0.22 : 0.16, sid); // distant
       howl.stereo((Math.random() * 2 - 1) * 0.75, sid);
       return;
     }

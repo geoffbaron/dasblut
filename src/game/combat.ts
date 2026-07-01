@@ -587,7 +587,7 @@ function meleeStrike(world: World, s: Soldier, foe: Soldier): void {
   const cover = fc ? fc.cover : 0;
 
   // Clash feedback: the ring of steel, a struck marker, a spark between the two men, dust.
-  sound.play("melee", s.x, s.y);
+  sound.play(world.era === "medieval" ? "melee_med" : "melee", s.x, s.y);
   const mx = (s.x + foe.x) / 2, my = (s.y + foe.y) / 2;
   world.effects.push({ kind: "hit", x0: foe.x, y0: foe.y, x1: foe.x, y1: foe.y, ttl: 0.2 });
   world.effects.push({ kind: "spark", x0: mx, y0: my, x1: mx + (Math.random() - 0.5) * 1.5, y1: my + (Math.random() - 0.5) * 1.5, ttl: 0.16 });
@@ -735,6 +735,7 @@ function fireShot(world: World, s: Soldier, target: Soldier, dist: number): void
   splashSuppression(world, target, w.suppression * 0.4);
 
   if (Math.random() < p) {
+    if (s.weapon === "bow") sound.play("arrow_hit", target.x, target.y); // the shaft finds its mark
     const lethal = w.lethality * (1 - cover * 0.5);
     const r = Math.random();
     if (r < lethal * 0.5) killSoldier(world, target);

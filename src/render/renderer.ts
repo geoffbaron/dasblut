@@ -636,8 +636,19 @@ export class Renderer {
     // Tracers, muzzle flashes, hit puffs, AP rounds, sparks, fire, smoke.
     for (const e of world.effects) {
       if (e.kind === "tracer") {
+        // A glowing round in flight: a hot core over a softer outer streak so it reads at
+        // a glance and lingers a beat, making a stream of fire easy to follow to its source.
+        const a = Math.min(1, e.ttl / 0.08);
         g.moveTo(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE).lineTo(e.x1 * CELL_SIZE, e.y1 * CELL_SIZE);
-        g.stroke({ width: 1.4, color: 0xffe9a0, alpha: Math.min(1, e.ttl / 0.06) * 0.9 });
+        g.stroke({ width: 3.0, color: 0xffbe3a, alpha: a * 0.4 });
+        g.moveTo(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE).lineTo(e.x1 * CELL_SIZE, e.y1 * CELL_SIZE);
+        g.stroke({ width: 1.5, color: 0xfff2b0, alpha: a * 0.95 });
+      } else if (e.kind === "shotline") {
+        // Black-powder discharge — no tracer glow, just a quick pale flash-lit streak from
+        // muzzle to aimpoint so a firing musket line is still readable through its own smoke.
+        const a = Math.max(0, e.ttl / 0.12) * 0.55;
+        g.moveTo(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE).lineTo(e.x1 * CELL_SIZE, e.y1 * CELL_SIZE);
+        g.stroke({ width: 1.1, color: 0xfff0cf, alpha: a });
       } else if (e.kind === "flash") {
         g.circle(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE, 3).fill({ color: 0xffe06a, alpha: 0.9 });
       } else if (e.kind === "hit") {

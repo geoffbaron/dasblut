@@ -214,6 +214,23 @@ function mgGate(s: Soldier, aimX: number, aimY: number, dt: number): boolean {
   return s.setupTime >= MG_SETUP_TIME;
 }
 
+// Draw the path of a shot so the player can read, at a glance, who is firing at what.
+// Modern arms leave a glowing tracer on a fraction of rounds (and the round can spit off
+// a ricochet where it lands); black-powder muskets and carbines have no tracer at all, so
+// their discharge is marked with a brief pale muzzle-flash streak instead — on every shot,
+// since a firing line is otherwise just anonymous puffs of smoke.
+function emitShot(world: World, s: Soldier, tx: number, ty: number): void {
+  const w = WEAPONS[s.weapon];
+  if (s.weapon === "riflemusket" || s.weapon === "carbine") {
+    world.effects.push({ kind: "shotline", x0: s.x, y0: s.y, x1: tx, y1: ty, ttl: 0.12 });
+    return;
+  }
+  if (Math.random() < w.tracerRate) {
+    world.effects.push({ kind: "tracer", x0: s.x, y0: s.y, x1: tx, y1: ty, ttl: 0.16 });
+    spawnRicochet(world, tx, ty);
+  }
+}
+
 // Suppressing fire onto a point: tracers in, suppression splashed over any enemy
 // near the aimpoint. Rattles defenders out of a window or treeline without needing
 // to see them clearly.
@@ -224,10 +241,7 @@ function areaShot(world: World, s: Soldier): void {
   const ty = cell.cy + 0.5 + (Math.random() - 0.5);
   sound.play(s.weapon as SfxId, s.x, s.y);
   world.effects.push({ kind: "flash", x0: s.x, y0: s.y, x1: s.x, y1: s.y, ttl: 0.07 });
-  if (Math.random() < w.tracerRate) {
-    world.effects.push({ kind: "tracer", x0: s.x, y0: s.y, x1: tx, y1: ty, ttl: 0.06 });
-    spawnRicochet(world, tx, ty);
-  }
+  emitShot(world, s, tx, ty);
 
   for (const e of world.soldiers) {
     if (e.faction === s.faction || e.status !== "active") continue;
@@ -581,13 +595,10 @@ function fireShot(world: World, s: Soldier, target: Soldier, dist: number): void
   const cover = cell ? cell.cover : 0;
   const conceal = cell ? cell.concealment : 0;
 
-  // Muzzle flash + occasional tracer.
+  // Muzzle flash + a tracer or black-powder shot streak so the firing line is legible.
   sound.play(s.weapon as SfxId, s.x, s.y);
   world.effects.push({ kind: "flash", x0: s.x, y0: s.y, x1: s.x, y1: s.y, ttl: 0.07 });
-  if (Math.random() < w.tracerRate) {
-    world.effects.push({ kind: "tracer", x0: s.x, y0: s.y, x1: target.x, y1: target.y, ttl: 0.06 });
-    spawnRicochet(world, target.x, target.y);
-  }
+  emitShot(world, s, target.x, target.y);
   // Black-powder arms belch a thick cloud of white smoke with every shot — a firing line
   // quickly fogs itself in. Pushed slightly toward the target (out of the muzzle).
   if (s.weapon === "riflemusket" || s.weapon === "carbine") {

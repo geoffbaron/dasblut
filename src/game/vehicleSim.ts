@@ -158,8 +158,8 @@ function fireHEAtPoint(world: World, v: Vehicle, tx: number, ty: number, def: (t
 
 function mgShot(world: World, v: Vehicle, target: Soldier, def: (typeof VEHICLES)[keyof typeof VEHICLES], d: number): void {
   sound.play("tank_mg", v.x, v.y);
-  if (Math.random() < 0.3) {
-    world.effects.push({ kind: "tracer", x0: v.x, y0: v.y, x1: target.x, y1: target.y, ttl: 0.06 });
+  if (Math.random() < 0.55) {
+    world.effects.push({ kind: "tracer", x0: v.x, y0: v.y, x1: target.x, y1: target.y, ttl: 0.16 });
     spawnRicochet(world, target.x, target.y);
   }
   world.effects.push({ kind: "flash", x0: v.x, y0: v.y, x1: v.x, y1: v.y, ttl: 0.05 });

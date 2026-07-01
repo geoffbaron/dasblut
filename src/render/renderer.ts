@@ -211,12 +211,14 @@ export class Renderer {
   private bodyTexture(color: number, weapon: string): Texture {
     const kind = this.artKind(weapon);
     const hold = this.holdOf(weapon);
-    const key = `${kind}:${hold}:${color}`;
+    // Keyed by the actual weapon so variants of one kind (knight vs carbine trooper)
+    // get their own texture.
+    const key = `${kind}:${weapon}:${color}`;
     let tex = this.bodyTexByColor.get(key);
     if (!tex) {
       const art = kind === "cannon" ? makeCannonBody(color)
         : kind === "catapult" ? makeCatapultBody(color)
-        : kind === "cavalry" ? makeCavalryBody(color)
+        : kind === "cavalry" ? makeCavalryBody(color, weapon === "lance")
         : makeSoldierArt(color, hold).body;
       tex = Texture.from(art);
       this.bodyTexByColor.set(key, tex);
@@ -440,7 +442,7 @@ export class Renderer {
     for (let i = 0; i < n; i++) {
       const o = i * 4;
       if (world.visGrid[i] === 0) {
-        d[o] = 10; d[o + 1] = 10; d[o + 2] = 16; d[o + 3] = 130; // 0x0a0a10 @ ~0.5
+        d[o] = 10; d[o + 1] = 10; d[o + 2] = 16; d[o + 3] = 105; // 0x0a0a10 @ ~0.41 — fog, not night
       } else {
         d[o + 3] = 0; // seen — fully clear
       }

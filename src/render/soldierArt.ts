@@ -22,36 +22,77 @@ export function makeSoldierArt(teamColor: number, hold: Hold = "rifle"): Soldier
   };
 }
 
-// A mounted trooper: a horse drawn along the facing axis with a rider and a team-color
-// saddle blanket. Bigger than a man on foot. (No drawn weapon — top-down it just read
-// as a stray lance/sword sticking out.)
-export function makeCavalryBody(teamColor: number): HTMLCanvasElement {
+// A mounted man: a horse drawn along the facing axis with a rider and a team-color
+// saddle blanket. A carbine trooper rides light; a knight adds a bright steel helm,
+// a shield at his side, and a couched lance with a team pennant.
+export function makeCavalryBody(teamColor: number, knight = false): HTMLCanvasElement {
   const { c, ctx } = newCanvas();
   const hex = `#${teamColor.toString(16).padStart(6, "0")}`;
 
-  // Horse body — a long oval along the facing (east), brown.
+  // The couched lance goes on first so the horse and rider overlap its grip.
+  if (knight) {
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#7a5c34"; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(-4, 2.6); ctx.lineTo(10.6, 1.4); ctx.stroke();
+    ctx.strokeStyle = "#dfe3e8"; ctx.lineWidth = 1.4; // steel tip
+    ctx.beginPath(); ctx.moveTo(9.6, 1.5); ctx.lineTo(11.4, 1.35); ctx.stroke();
+    ctx.fillStyle = hex; // pennant fluttering just behind the tip
+    ctx.beginPath();
+    ctx.moveTo(8.2, 1.5); ctx.lineTo(6.2, 0.1); ctx.lineTo(6.2, 1.7); ctx.closePath();
+    ctx.fill();
+  }
+
+  // Horse body — a long chestnut oval along the facing (east), lit from above.
   const hide = ctx.createLinearGradient(0, -4, 0, 4);
-  hide.addColorStop(0, "#5b4630");
-  hide.addColorStop(1, "#3d2e1d");
+  hide.addColorStop(0, "#7d5c3a");
+  hide.addColorStop(1, "#4e3820");
   ctx.fillStyle = hide;
   ctx.beginPath();
   ctx.ellipse(-0.5, 1.2, 8.5, 3.6, 0, 0, Math.PI * 2);
   ctx.fill();
-  // Head and neck forward.
-  ctx.fillStyle = "#43331f";
+  ctx.strokeStyle = "rgba(12,10,6,0.6)"; // outline for read against any ground
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+  // Tail streaming behind.
+  ctx.strokeStyle = "#3a2a16"; ctx.lineWidth = 1.6; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(-8.6, 1.4); ctx.lineTo(-10.6, 2.2); ctx.stroke();
+  // Head and neck forward, with a pale blaze down the nose.
+  ctx.fillStyle = "#5e4526";
   ctx.beginPath();
-  ctx.ellipse(8.5, -0.5, 2.6, 1.8, -0.4, 0, Math.PI * 2);
+  ctx.ellipse(8.3, -0.5, 2.7, 1.8, -0.4, 0, Math.PI * 2);
   ctx.fill();
+  ctx.strokeStyle = "rgba(240,235,220,0.75)"; ctx.lineWidth = 0.7;
+  ctx.beginPath(); ctx.moveTo(7.6, -0.9); ctx.lineTo(9.6, -0.4); ctx.stroke();
+  // Mane along the neck.
+  ctx.strokeStyle = "#33240f"; ctx.lineWidth = 1.1;
+  ctx.beginPath(); ctx.moveTo(4.5, -1.8); ctx.quadraticCurveTo(6.5, -2.3, 8.2, -1.7); ctx.stroke();
 
-  // Rider torso with team-color blanket, sat over the withers.
+  // Saddle blanket in the team color, then the rider over the withers.
   ctx.fillStyle = hex;
   ctx.beginPath();
-  ctx.ellipse(-1, 0, 3, 3.4, 0, 0, Math.PI * 2);
+  ctx.ellipse(-1, 0.4, 3.6, 3.0, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = "#2f3420";
+  ctx.fillStyle = knight ? "#8a8f98" : "#4a4f30"; // mail vs field tunic
   ctx.beginPath();
-  ctx.arc(0.4, -0.3, 2, 0, Math.PI * 2); // head/kepi
+  ctx.ellipse(-0.8, 0, 2.6, 2.8, 0, 0, Math.PI * 2);
   ctx.fill();
+  if (knight) {
+    // Shield at his side and a bright steel great-helm.
+    ctx.fillStyle = "#6b4c2a";
+    ctx.beginPath(); ctx.ellipse(-1.4, -3.4, 2.2, 1.6, 0.2, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = hex; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.ellipse(-1.4, -3.4, 2.2, 1.6, 0.2, 0, Math.PI * 2); ctx.stroke();
+    const helm = ctx.createRadialGradient(0, -0.8, 0.3, 0.4, -0.3, 2.2);
+    helm.addColorStop(0, "#d9dde2");
+    helm.addColorStop(1, "#767d87");
+    ctx.fillStyle = helm;
+    ctx.beginPath(); ctx.arc(0.4, -0.3, 2, 0, Math.PI * 2); ctx.fill();
+  } else {
+    ctx.fillStyle = "#2f3420"; // kepi
+    ctx.beginPath(); ctx.arc(0.4, -0.3, 2, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.strokeStyle = "rgba(0,0,0,0.4)"; ctx.lineWidth = 0.6;
+  ctx.beginPath(); ctx.arc(0.4, -0.3, 2, 0, Math.PI * 2); ctx.stroke();
   return c;
 }
 
@@ -215,60 +256,106 @@ function drawShadow(): HTMLCanvasElement {
 function drawBody(teamColor: number, hold: Hold): HTMLCanvasElement {
   const { c, ctx } = newCanvas();
   const hex = `#${teamColor.toString(16).padStart(6, "0")}`;
+  const medieval = hold === "sword" || hold === "spear" || hold === "bow";
 
   // The held weapon, drawn first so the torso sits over the grip. Pointing east (+x).
   ctx.lineCap = "round";
   if (hold === "sword") {
-    // A short sword — a stubby steel blade with a dark crossguard. No firearm.
-    ctx.strokeStyle = "#c9ccd2"; ctx.lineWidth = 1.7;
-    ctx.beginPath(); ctx.moveTo(3, 1.4); ctx.lineTo(8, 0.7); ctx.stroke();
-    ctx.strokeStyle = "#2c2114"; ctx.lineWidth = 1.2; // crossguard
-    ctx.beginPath(); ctx.moveTo(3, -0.1); ctx.lineTo(3, 2.6); ctx.stroke();
+    // A short arming sword — bright steel blade with a dark crossguard.
+    ctx.strokeStyle = "#dfe3e8"; ctx.lineWidth = 1.7;
+    ctx.beginPath(); ctx.moveTo(3, 1.6); ctx.lineTo(8.5, 0.8); ctx.stroke();
+    ctx.strokeStyle = "#3a2c18"; ctx.lineWidth = 1.2; // crossguard
+    ctx.beginPath(); ctx.moveTo(3.1, 0); ctx.lineTo(2.9, 3.1); ctx.stroke();
   } else if (hold === "spear") {
-    // A long spear — a wooden shaft with a steel point at the tip.
-    ctx.strokeStyle = "#5a4326"; ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.moveTo(-2, 2); ctx.lineTo(10.5, 0.5); ctx.stroke();
-    ctx.strokeStyle = "#c9ccd2"; ctx.lineWidth = 1.6;
-    ctx.beginPath(); ctx.moveTo(9.2, 0.65); ctx.lineTo(11.5, 0.35); ctx.stroke();
+    // A long spear — an ash shaft with a bright steel head.
+    ctx.strokeStyle = "#7a5c34"; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(-3, 2.2); ctx.lineTo(10.5, 0.6); ctx.stroke();
+    ctx.strokeStyle = "#dfe3e8"; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(9.2, 0.75); ctx.lineTo(11.5, 0.45); ctx.stroke();
   } else if (hold === "bow") {
-    // A bow held out front — limbs bowing forward, the string, and a nocked shaft.
-    ctx.strokeStyle = "#6b4f2a"; ctx.lineWidth = 1.3;
-    ctx.beginPath(); ctx.arc(2, 0, 5, -1.0, 1.0); ctx.stroke();
-    ctx.strokeStyle = "#d8d2c0"; ctx.lineWidth = 0.7; // string
-    ctx.beginPath(); ctx.moveTo(4.7, -4.2); ctx.lineTo(4.7, 4.2); ctx.stroke();
-    ctx.strokeStyle = "#2e2415"; ctx.lineWidth = 1.0; // nocked arrow
-    ctx.beginPath(); ctx.moveTo(3.5, 0); ctx.lineTo(9, 0); ctx.stroke();
+    // A longbow held out front — limbs bowing forward, string, and a nocked shaft.
+    ctx.strokeStyle = "#8a6534"; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(2, 0, 5.2, -1.05, 1.05); ctx.stroke();
+    ctx.strokeStyle = "#e8e2d0"; ctx.lineWidth = 0.7; // string
+    ctx.beginPath(); ctx.moveTo(4.8, -4.4); ctx.lineTo(4.8, 4.4); ctx.stroke();
+    ctx.strokeStyle = "#3a2c18"; ctx.lineWidth = 1.0; // nocked arrow
+    ctx.beginPath(); ctx.moveTo(3.2, 0); ctx.lineTo(9.2, 0); ctx.stroke();
   } else {
-    // Rifle held forward (east), slightly to one side.
-    ctx.strokeStyle = "#1c1d16"; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(-2, 2); ctx.lineTo(9.5, 1.2); ctx.stroke();
+    // Rifle held forward — a wooden stock with a darker steel barrel toward the muzzle.
+    ctx.strokeStyle = "#5e4526"; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(-2, 2); ctx.lineTo(4.5, 1.55); ctx.stroke();
+    ctx.strokeStyle = "#23241d"; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(4.5, 1.55); ctx.lineTo(9.8, 1.2); ctx.stroke();
   }
 
-  // Torso / shoulders — olive drab uniform, oval across the facing axis.
+  // Torso / shoulders — an oval across the facing axis, in the era's dress: olive drab
+  // for firearm troops, a leather jerkin for medieval foot, a drab tunic for archers.
+  // A crisp dark outline keeps every man readable against any ground (the AoE trick).
+  const torsoCols: [string, string] =
+    hold === "bow" ? ["#7d7742", "#565232"]
+    : medieval ? ["#8a6a42", "#5e4628"]
+    : ["#5b6038", "#3f4427"];
   const torso = ctx.createLinearGradient(0, -6, 0, 6);
-  torso.addColorStop(0, "#5b6038");
-  torso.addColorStop(1, "#3f4427");
+  torso.addColorStop(0, torsoCols[0]);
+  torso.addColorStop(1, torsoCols[1]);
   ctx.fillStyle = torso;
   ctx.beginPath();
   ctx.ellipse(0, 0, 5, 6.2, 0, 0, Math.PI * 2);
   ctx.fill();
+  ctx.strokeStyle = "rgba(12,10,6,0.65)"; // outline
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
 
   // Team-color identifier band around the shoulders.
   ctx.strokeStyle = hex;
   ctx.lineWidth = 1.6;
   ctx.beginPath();
-  ctx.ellipse(0, 0, 5, 6.2, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, 4.4, 5.6, 0, 0, Math.PI * 2);
   ctx.stroke();
 
-  // Helmet — sits slightly forward, rounded, with a top-left highlight.
-  const helm = ctx.createRadialGradient(-1.2, -1.2, 0.5, 0.8, 0, 4.2);
-  helm.addColorStop(0, "#5a6038");
-  helm.addColorStop(1, "#2f3420");
+  // Melee foot carry a round shield on the off (left/north) arm: a wooden face ringed
+  // in the team color with a bright steel boss — the classic top-down man-at-arms read.
+  if (hold === "sword" || hold === "spear") {
+    ctx.fillStyle = "rgba(12,10,6,0.3)";
+    ctx.beginPath(); ctx.arc(0.6, -4.4, 3.4, 0, Math.PI * 2); ctx.fill(); // drop shadow
+    const face = ctx.createRadialGradient(-0.4, -5.4, 0.6, 0.2, -4.8, 3.4);
+    face.addColorStop(0, "#a37a48");
+    face.addColorStop(1, "#6b4c2a");
+    ctx.fillStyle = face;
+    ctx.beginPath(); ctx.arc(0.2, -4.8, 3.2, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = hex; ctx.lineWidth = 1.1; // team-color rim
+    ctx.beginPath(); ctx.arc(0.2, -4.8, 3.2, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = "#d9dde2"; // steel boss
+    ctx.beginPath(); ctx.arc(0.2, -4.8, 1.0, 0, Math.PI * 2); ctx.fill();
+  }
+  // Archers wear a quiver slung across the back — a small tube with shaft tips.
+  if (hold === "bow") {
+    ctx.save();
+    ctx.translate(-3.4, -3.2);
+    ctx.rotate(-0.7);
+    ctx.fillStyle = "#6b4c2a";
+    ctx.fillRect(-1.1, -3, 2.2, 5.6);
+    ctx.strokeStyle = "#e0d8b8"; ctx.lineWidth = 0.6;
+    for (const off of [-0.6, 0.2, 0.9]) {
+      ctx.beginPath(); ctx.moveTo(off, -3); ctx.lineTo(off - 0.3, -4.6); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Headgear — a steel kettle-helm with a bright crown for medieval men, an olive
+  // helmet for firearm troops, a leather cap for archers.
+  const helmCols: [string, string] =
+    hold === "bow" ? ["#8a6a42", "#4e3a20"]
+    : medieval ? ["#c9ced6", "#6d747e"]
+    : ["#5a6038", "#2f3420"];
+  const helm = ctx.createRadialGradient(-0.2, -1.2, 0.5, 0.8, 0, 4.2);
+  helm.addColorStop(0, helmCols[0]);
+  helm.addColorStop(1, helmCols[1]);
   ctx.fillStyle = helm;
   ctx.beginPath();
-  ctx.arc(1, 0, 3.8, 0, Math.PI * 2);
+  ctx.arc(1, 0, 3.6, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = "rgba(0,0,0,0.4)";
+  ctx.strokeStyle = "rgba(0,0,0,0.45)";
   ctx.lineWidth = 0.7;
   ctx.stroke();
 

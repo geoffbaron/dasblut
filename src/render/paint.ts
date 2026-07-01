@@ -21,18 +21,19 @@ interface RGB {
   b: number;
 }
 
-// Naturalistic, muted palette. Each entry is a base color plus a second color the
-// per-pixel noise blends toward, giving mottled, painterly ground.
+// Bright, sunlit palette in the spirit of Age of Empires' hand-painted maps: lush
+// saturated grass, warm sandy earth, vivid water. Each entry is a base color plus a
+// second color the per-pixel noise blends toward, giving mottled, painterly ground.
 const GROUND: Partial<Record<Terrain, [RGB, RGB]>> = {
-  [Terrain.Open]: [rgb(0x8d8159), rgb(0x756b48)],
-  [Terrain.Grass]: [rgb(0x6f763e), rgb(0x59602f)],
-  [Terrain.Woods]: [rgb(0x46512c), rgb(0x36421f)],
-  [Terrain.Water]: [rgb(0x3a5a72), rgb(0x2c4a60)],
-  [Terrain.Road]: [rgb(0x9a8a68), rgb(0x7e6f4f)],
-  [Terrain.Rubble]: [rgb(0x796f60), rgb(0x615847)],
+  [Terrain.Open]: [rgb(0xb59d68), rgb(0x96814e)],
+  [Terrain.Grass]: [rgb(0x679440), rgb(0x4f7a2e)],
+  [Terrain.Woods]: [rgb(0x477232), rgb(0x365e24)],
+  [Terrain.Water]: [rgb(0x3f7fa8), rgb(0x2c6089)],
+  [Terrain.Road]: [rgb(0xc4aa79), rgb(0xa38a58)],
+  [Terrain.Rubble]: [rgb(0x8f8474), rgb(0x746a57)],
   // Walls & hedges sit on a grassy/dirt base; structures are drawn on top.
-  [Terrain.Wall]: [rgb(0x6f763e), rgb(0x59602f)],
-  [Terrain.Hedge]: [rgb(0x6f763e), rgb(0x59602f)],
+  [Terrain.Wall]: [rgb(0x679440), rgb(0x4f7a2e)],
+  [Terrain.Hedge]: [rgb(0x679440), rgb(0x4f7a2e)],
 };
 
 export interface PaintedMap {
@@ -92,9 +93,9 @@ export function paintBattlefield(grid: Grid, features: MapFeatures): PaintedMap 
       const fine = valueNoise(px * 0.18, py * 0.18, seed + 7);
       const broad = fbm(px * 0.012, py * 0.012, seed + 23, 2);
       const t = fine * 0.45 + broad * 0.55;
-      let shade = 0.82 + t * 0.36; // brightness multiplier
-      // A touch of extra darkening in low broad-noise areas → soft "AO" puddles.
-      shade *= 0.94 + broad * 0.12;
+      let shade = 0.92 + t * 0.28; // brightness multiplier — kept high so the field reads sunlit
+      // A whisper of broad-noise variation → soft meadow patches, not muddy AO puddles.
+      shade *= 0.97 + broad * 0.06;
 
       const i = (py * mapW + px) * 4;
       const c = mix(pair[0], pair[1], t);
@@ -159,9 +160,9 @@ function scatterGroundDetail(ctx: CanvasRenderingContext2D, grid: Grid, rng: () 
         const n = 4 + Math.floor(rng() * 3);
         for (let k = 0; k < n; k++) {
           const x = bx + rng() * CELL_SIZE, y = by + rng() * CELL_SIZE;
-          const hue = 82 + Math.floor(rng() * 28);
-          const light = 30 + Math.floor(rng() * 16);
-          ctx.strokeStyle = `hsla(${hue},42%,${light}%,0.45)`;
+          const hue = 84 + Math.floor(rng() * 30);
+          const light = 38 + Math.floor(rng() * 18);
+          ctx.strokeStyle = `hsla(${hue},52%,${light}%,0.5)`;
           ctx.lineWidth = 0.7 + rng() * 0.4;
           ctx.beginPath();
           for (let b = 0; b < 3; b++) {
@@ -265,44 +266,58 @@ function drawWater(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number)
     for (let cx = 0; cx < grid.width; cx++) {
       if (grid.get(cx, cy) !== Terrain.Water) continue;
       const bx = cx * CELL_SIZE, by = cy * CELL_SIZE;
-      // Ripple highlights — more, varied curvature.
+      // Sparkling ripple highlights — brighter, sunnier water.
       for (let k = 0; k < 5; k++) {
         const x = bx + rng() * CELL_SIZE, y = by + rng() * CELL_SIZE;
-        ctx.strokeStyle = `rgba(150,185,205,${0.14 + rng() * 0.14})`;
+        ctx.strokeStyle = `rgba(180,215,235,${0.18 + rng() * 0.16})`;
         ctx.lineWidth = 0.6 + rng() * 0.6;
         ctx.beginPath();
         ctx.arc(x, y, 1.2 + rng() * 2.5, rng() * Math.PI, rng() * Math.PI + 1.5 + rng());
         ctx.stroke();
       }
-      // Deep-water darken (center of large water bodies).
+      // Deep-water saturate (center of large water bodies) — richer blue, not murk.
       const edges = [!isWater(grid, cx - 1, cy), !isWater(grid, cx + 1, cy), !isWater(grid, cx, cy - 1), !isWater(grid, cx, cy + 1)];
       const shore = edges.some(Boolean);
       if (!shore) {
-        ctx.fillStyle = "rgba(20,35,50,0.12)";
+        ctx.fillStyle = "rgba(18,55,95,0.16)";
         ctx.fillRect(bx, by, CELL_SIZE, CELL_SIZE);
       }
-      // Lighter shoreline where water meets land.
+      // Shoreline: a sandy shallow tint plus a broken white foam line hugging the land
+      // edge — the classic bright coast read.
       if (shore) {
-        ctx.fillStyle = "rgba(120,155,155,0.22)";
+        ctx.fillStyle = "rgba(190,205,175,0.3)";
         ctx.fillRect(bx, by, CELL_SIZE, CELL_SIZE);
-        // Cattails / reeds at shoreline.
-        if (rng() < 0.45) {
+        const foam = (x0: number, y0: number, x1: number, y1: number) => {
+          ctx.strokeStyle = `rgba(235,245,245,${0.4 + rng() * 0.25})`;
+          ctx.lineWidth = 1.1 + rng() * 0.7;
+          ctx.beginPath();
+          const midx = (x0 + x1) / 2 + (rng() - 0.5) * 3, midy = (y0 + y1) / 2 + (rng() - 0.5) * 3;
+          ctx.moveTo(x0, y0);
+          ctx.quadraticCurveTo(midx, midy, x1, y1);
+          ctx.stroke();
+          // a couple of foam flecks just off the line
+          for (let f = 0; f < 2; f++) {
+            ctx.fillStyle = `rgba(240,248,248,${0.3 + rng() * 0.25})`;
+            ctx.beginPath();
+            ctx.arc(midx + (rng() - 0.5) * 5, midy + (rng() - 0.5) * 5, 0.5 + rng() * 0.7, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        };
+        if (edges[0]) foam(bx + 1, by, bx + 1, by + CELL_SIZE); // land to the west
+        if (edges[1]) foam(bx + CELL_SIZE - 1, by, bx + CELL_SIZE - 1, by + CELL_SIZE);
+        if (edges[2]) foam(bx, by + 1, bx + CELL_SIZE, by + 1); // land to the north
+        if (edges[3]) foam(bx, by + CELL_SIZE - 1, bx + CELL_SIZE, by + CELL_SIZE - 1);
+        // Reeds at the waterline.
+        if (rng() < 0.35) {
           const n = 2 + Math.floor(rng() * 3);
           for (let k = 0; k < n; k++) {
             const rx = bx + rng() * CELL_SIZE, ry = by + rng() * CELL_SIZE;
-            ctx.strokeStyle = `rgba(75,88,42,${0.4 + rng() * 0.25})`;
+            ctx.strokeStyle = `rgba(88,110,48,${0.45 + rng() * 0.25})`;
             ctx.lineWidth = 0.7;
             ctx.beginPath();
             ctx.moveTo(rx, ry);
             ctx.lineTo(rx + (rng() - 0.5) * 2, ry - 3 - rng() * 3);
             ctx.stroke();
-            // Cattail head (small dark oval at top of some).
-            if (rng() < 0.4) {
-              ctx.fillStyle = "rgba(60,40,25,0.6)";
-              ctx.beginPath();
-              ctx.ellipse(rx + (rng() - 0.5), ry - 4.5 - rng() * 2, 0.6, 1.2, 0, 0, Math.PI * 2);
-              ctx.fill();
-            }
           }
         }
       }
@@ -360,10 +375,11 @@ function drawWoods(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number)
     ctx.ellipse(t.x - SUN.x * t.r * 0.7, t.y - SUN.y * t.r * 0.7, t.r * 0.95, t.r * 0.8, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  // Canopies — deciduous get a round blob, conifers a slightly pointed smaller shape.
+  // Canopies — bright, layered crowns with a strong sunlit side so each tree reads as
+  // its own rounded mass, the way AoE's forests do.
   for (const t of trees) {
     const r = t.conifer ? t.r * 0.7 : t.r;
-    const sat = t.conifer ? 48 : 38;
+    const sat = t.conifer ? 52 : 46;
     const g = ctx.createRadialGradient(
       t.x + SUN.x * r * 0.4,
       t.y + SUN.y * r * 0.4,
@@ -372,20 +388,28 @@ function drawWoods(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number)
       t.y,
       r,
     );
-    g.addColorStop(0, `hsl(${t.hue},${sat}%,42%)`);
-    g.addColorStop(0.7, `hsl(${t.hue},${sat + 4}%,28%)`);
-    g.addColorStop(1, `hsl(${t.hue},${sat + 7}%,18%)`);
+    g.addColorStop(0, `hsl(${t.hue},${sat}%,52%)`);
+    g.addColorStop(0.6, `hsl(${t.hue},${sat + 4}%,36%)`);
+    g.addColorStop(1, `hsl(${t.hue},${sat + 6}%,22%)`);
     ctx.fillStyle = g;
     ctx.beginPath();
     ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
     ctx.fill();
-    // Canopy edge texture: a few small bumps breaking the perfect circle.
-    for (let b = 0; b < 4; b++) {
+    // Canopy edge texture: bumps breaking the circle — lit on the sun side, dark below.
+    for (let b = 0; b < 5; b++) {
       const a = rng() * Math.PI * 2;
       const br = r * (0.2 + rng() * 0.25);
-      ctx.fillStyle = `hsl(${t.hue},${sat}%,${24 + rng() * 12}%)`;
+      const sunSide = Math.cos(a) * SUN.x + Math.sin(a) * SUN.y > 0;
+      ctx.fillStyle = `hsl(${t.hue},${sat}%,${sunSide ? 40 + rng() * 14 : 24 + rng() * 10}%)`;
       ctx.beginPath();
       ctx.arc(t.x + Math.cos(a) * r * 0.7, t.y + Math.sin(a) * r * 0.7, br, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // A few bright leaf-cluster dots on the crown for sparkle.
+    for (let b = 0; b < 3; b++) {
+      ctx.fillStyle = `hsla(${t.hue + 8},${sat + 10}%,${55 + rng() * 12}%,0.7)`;
+      ctx.beginPath();
+      ctx.arc(t.x + SUN.x * r * 0.35 + (rng() - 0.5) * r * 0.6, t.y + SUN.y * r * 0.35 + (rng() - 0.5) * r * 0.6, r * (0.08 + rng() * 0.1), 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -436,7 +460,7 @@ function drawRubble(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number
 
 // Soft burn scars on the turf — where fire or HE has scorched the ground black.
 function drawScorch(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number): void {
-  const count = Math.round(grid.width * grid.height * 0.012);
+  const count = Math.round(grid.width * grid.height * 0.003);
   let placed = 0, tries = 0;
   while (placed < count && tries < count * 14) {
     tries++;
@@ -461,7 +485,7 @@ function drawScorch(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number
 
 // Shell craters: a scorched halo, a sunlit raised lip, a dark bowl, and ejecta streaks.
 function drawCraters(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number): void {
-  const count = Math.round(grid.width * grid.height * 0.011);
+  const count = Math.round(grid.width * grid.height * 0.003);
   let placed = 0, tries = 0;
   while (placed < count && tries < count * 14) {
     tries++;
@@ -520,7 +544,7 @@ function crater(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, 
 
 // Scattered wreckage — splintered planks and broken brick flung across the ground.
 function drawDebris(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number): void {
-  const count = Math.round(grid.width * grid.height * 0.03);
+  const count = Math.round(grid.width * grid.height * 0.008);
   let placed = 0, tries = 0;
   while (placed < count && tries < count * 8) {
     tries++;
@@ -581,8 +605,8 @@ function drawHedge(ctx: CanvasRenderingContext2D, h: HedgeSeg, rng: () => number
   }
   for (const b of blobs) {
     const g = ctx.createRadialGradient(b.x - 2, b.y - 2, 1, b.x, b.y, b.r);
-    g.addColorStop(0, "hsl(95,35%,34%)");
-    g.addColorStop(1, "hsl(100,40%,18%)");
+    g.addColorStop(0, "hsl(95,48%,44%)");
+    g.addColorStop(1, "hsl(100,50%,24%)");
     ctx.fillStyle = g;
     ctx.beginPath();
     ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
@@ -590,13 +614,13 @@ function drawHedge(ctx: CanvasRenderingContext2D, h: HedgeSeg, rng: () => number
   }
 }
 
-// Warm Close-Combat palette: terracotta/clay/brick dominate; weathered slate is the
-// rare cool note. Picked with a warm bias so a town reads warm, not grey.
+// Warm, saturated village palette: bright terracotta and clay dominate, the way an
+// AoE town square reads. Weathered slate is the rare cool note.
 const ROOF_PALETTES = [
-  ["#bf6a3f", "#8f4a2a"], // terracotta tile
-  ["#b07d4c", "#85562f"], // clay / tan
-  ["#a85c3a", "#7e3f27"], // brick red
-  ["#9c8f7a", "#766b58"], // weathered slate (lighter, uncommon)
+  ["#d4784a", "#a35331"], // terracotta tile
+  ["#c98f56", "#996636"], // clay / tan
+  ["#c26843", "#92492c"], // brick red
+  ["#a89a84", "#80735f"], // weathered slate (lighter, uncommon)
 ];
 
 function pickRoofPalette(rng: () => number, burned: boolean): string[] {
@@ -902,9 +926,9 @@ function drawPitchedRoof(
   const w = (gx1 - gx0) * CELL_SIZE;
   const h = (gy1 - gy0) * CELL_SIZE;
 
-  // 2. Wall block (eaves) — a slightly larger dark base the roof sits on. A burned-out
-  // shell shows blackened, soot-stained walls instead.
-  ctx.fillStyle = burned ? "#3a3026" : "#5d5346";
+  // 2. Wall block (eaves) — a slightly larger pale plaster base the roof sits on, so a
+  // whitewashed wall peeks out under the eave. A burned-out shell shows soot instead.
+  ctx.fillStyle = burned ? "#3a3026" : "#a89a80";
   ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
 
   // 3. Pitched roof: ridge along the longer axis, two shaded faces. Charred timber tones
@@ -1017,9 +1041,10 @@ function ridge(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number
 }
 
 function drawVignette(ctx: CanvasRenderingContext2D, w: number, h: number): void {
-  const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.35, w / 2, h / 2, Math.max(w, h) * 0.65);
+  // Barely-there edge grade — the map should stay bright and sunlit to the corners.
+  const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.45, w / 2, h / 2, Math.max(w, h) * 0.72);
   g.addColorStop(0, "rgba(0,0,0,0)");
-  g.addColorStop(1, "rgba(20,18,12,0.4)");
+  g.addColorStop(1, "rgba(20,18,12,0.12)");
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, h);
 }

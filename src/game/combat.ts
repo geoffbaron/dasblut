@@ -419,7 +419,7 @@ export function updateGrenades(world: World, dt: number): void {
 }
 
 const MELEE_REACH = 1.3; // cells; how close two men must be to cross steel
-const MELEE_TEMPO = 0.5; // seconds between blows
+const MELEE_TEMPO = 0.85; // seconds between blows — a clash is a struggle, not an instant kill
 const SCRUM_RADIUS2 = 4; // cells² (~2 cells) over which local numbers are counted
 
 // Hand-to-hand. Unlike fire, melee is MUTUAL: every man in contact with an enemy — the
@@ -481,13 +481,13 @@ function meleeStrike(world: World, s: Soldier, foe: Soldier): void {
   // Cut him down. Charging impetus and the weight of numbers carry the scrum; a wavering
   // man is easy meat, a steady man behind a wall or hedge is hard to get at. Numbers tilt
   // the odds but don't make it a one-sided massacre — the loser still draws blood.
-  let kill = 0.14;
-  if (charging) kill += 0.18;
-  if (foeWavering) kill += 0.14;
+  let kill = 0.08;
+  if (charging) kill += 0.10;
+  if (foeWavering) kill += 0.09;
   kill *= 0.65 + 0.7 * odds;
   kill *= 1 - cover * 0.4;
   kill *= 0.7 + 0.3 * s.training;
-  kill = Math.max(0.02, Math.min(0.8, kill));
+  kill = Math.max(0.015, Math.min(0.45, kill));
   if (Math.random() < kill) {
     if (Math.random() < 0.6) killSoldier(world, foe, 1.4); // a man cut down in the melee shakes his fellows hard
     else woundSoldier(world, foe);

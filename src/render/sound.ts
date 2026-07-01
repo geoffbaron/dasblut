@@ -65,6 +65,12 @@ const ACW_CANNON = "acw_cannon.mp3";
 const ACW_CANNON2 = "acw_cannon2.mp3";
 const ACW_SABRE = "acw_sabre.mp3";
 const ACW_SABRE2 = "acw_sabre2.mp3";
+// Extra hand-to-hand takes — melee lasts several exchanges now, so a fat pool of
+// bayonet clashes, sabre strikes and grappling grunts keeps a long scrum from looping.
+const ACW_MELEE_BAYONET1 = "acw_melee_bayonet1.mp3";
+const ACW_MELEE_BAYONET2 = "acw_melee_bayonet2.mp3";
+const ACW_MELEE_SABRE2 = "acw_melee_sabre2.mp3";
+const ACW_MELEE_STRUGGLE = "acw_melee_struggle.mp3";
 const ACW_SHELL = "acw_shell.mp3"; // shell burst — thrown into the generic explosion pool
 // Cavalry horses — galloping hooves as they charge home, plus a whinny for the ambient bed.
 const HORSE_GALLOP = "horse_gallop.mp3";
@@ -117,7 +123,7 @@ const SFX_DEFS: Record<SfxId, { files: string[]; vol: number }> = {
   riflemusket:    { files: [ACW_MUSKET, ACW_MUSKET2],   vol: 0.9 }, // single black-powder report
   carbine:        { files: [ACW_CARBINE, ACW_CARBINE2], vol: 0.8 },
   cannon:         { files: [ACW_CANNON, ACW_CANNON2],   vol: 1.0 }, // field-gun discharge
-  melee:          { files: [ACW_SABRE, ACW_SABRE2],     vol: 0.7 }, // sabre/bayonet clash
+  melee:          { files: [ACW_SABRE, ACW_SABRE2, ACW_MELEE_BAYONET1, ACW_MELEE_BAYONET2, ACW_MELEE_SABRE2, ACW_MELEE_STRUGGLE], vol: 0.7 }, // sabre/bayonet clash
   horse:          { files: [HORSE_GALLOP, HORSE_WHINNY], vol: 0.6 }, // cavalry hooves & whinny
 };
 

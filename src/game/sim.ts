@@ -197,6 +197,59 @@ function moveSoldiers(world: World): void {
   }
 
   regroupStragglers(world, centers);
+  separateSoldiers(world);
+}
+
+// Keep men from standing on top of one another. After everyone has moved, gently push
+// apart any two who've come closer than a body's width — so a squad reads as individual
+// soldiers rather than a single blob, and a scrum spreads into a proper press. Cheap: men
+// only ever collide with neighbours in the same or an adjacent cell, so we bucket by cell
+// and check a 3×3 neighbourhood. Heavy engines (gun/catapult) shove men but never budge.
+const SEP = 0.62; // cells; min centre-to-centre gap — under a rank's shoulder spacing (0.9)
+function separateSoldiers(world: World): void {
+  const W = world.grid.width;
+  const buckets = new Map<number, Soldier[]>();
+  for (const s of world.soldiers) {
+    if (s.status !== "active") continue; // the fallen are stepped over, not jostled
+    const k = Math.floor(s.y) * W + Math.floor(s.x);
+    const b = buckets.get(k);
+    if (b) b.push(s); else buckets.set(k, [s]);
+  }
+  const SEP2 = SEP * SEP;
+  for (let pass = 0; pass < 2; pass++) {
+    for (const s of world.soldiers) {
+      if (s.status !== "active") continue;
+      const cx = Math.floor(s.x), cy = Math.floor(s.y);
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const near = buckets.get((cy + dy) * W + (cx + dx));
+          if (!near) continue;
+          for (const e of near) {
+            if (e.id <= s.id) continue; // resolve each pair once
+            let ox = e.x - s.x, oy = e.y - s.y;
+            let d2 = ox * ox + oy * oy;
+            if (d2 >= SEP2) continue;
+            let d = Math.sqrt(d2);
+            if (d < 1e-4) { // dead-on overlap: pick a stable direction so they don't jitter
+              const a = ((s.id * 2654435761) >>> 0) / 4294967296 * Math.PI * 2;
+              ox = Math.cos(a); oy = Math.sin(a); d = 1;
+            }
+            const ux = ox / d, uy = oy / d;
+            const overlap = SEP - d;
+            const sHeavy = isHeavyPiece(s.weapon), eHeavy = isHeavyPiece(e.weapon);
+            if (sHeavy && eHeavy) continue;        // two engines: leave be
+            else if (sHeavy) moveOnto(world, e, ux, uy, overlap);        // only the man gives way
+            else if (eHeavy) moveOnto(world, s, -ux, -uy, overlap);
+            else { moveOnto(world, s, -ux, -uy, overlap * 0.5); moveOnto(world, e, ux, uy, overlap * 0.5); }
+          }
+        }
+      }
+    }
+  }
+}
+
+function isHeavyPiece(w: string): boolean {
+  return w === "cannon" || w === "catapult";
 }
 
 interface Pt2 { x: number; y: number; }

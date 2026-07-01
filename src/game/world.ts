@@ -676,17 +676,19 @@ export class World {
     }
 
     // A real march: build ONE guide route the squad's centre follows, and give each man his
-    // slot in a COLUMN of route (a few files abreast, deep along the heading). The movement
-    // step walks the whole formation down the guide as one body (see moveSoldiers).
+    // slot in a broad LINE ABREAST, two ranks deep — men shoulder to shoulder across the
+    // front (horizontal for the usual north/south advance), a second rank close behind. The
+    // movement step walks the whole formation down the guide as one body (see moveSoldiers).
     hx /= hlen; hy /= hlen;
-    const FILES = men.some((s) => s.weapon === "carbine") ? 4 : 3;
+    const RANKS = 2;
+    const perRank = Math.ceil(men.length / RANKS); // men abreast in each rank
     const FILE_SPACING = 0.9, RANK_SPACING = 0.95;
     const perpx = -hy, perpy = hx;
     men.forEach((s, j) => {
-      const file = j % FILES;
-      const rank = Math.floor(j / FILES);
-      const across = (file - (FILES - 1) / 2) * FILE_SPACING;
-      const depth = -rank * RANK_SPACING; // trail behind the head of the column
+      const file = j % perRank;
+      const rank = Math.floor(j / perRank);
+      const across = (file - (perRank - 1) / 2) * FILE_SPACING; // wide, across the heading
+      const depth = -rank * RANK_SPACING; // rank 0 in front, rank 1 just behind
       s.ox = depth * hx + across * perpx;
       s.oy = depth * hy + across * perpy;
       s.path = null; // driven by the shared guide, not an individual path

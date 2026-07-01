@@ -479,7 +479,7 @@ export class Renderer {
     for (let i = 0; i < n; i++) {
       const o = i * 4;
       if (world.visGrid[i] === 0) {
-        d[o] = 10; d[o + 1] = 10; d[o + 2] = 16; d[o + 3] = 105; // 0x0a0a10 @ ~0.41 — fog, not night
+        d[o] = 10; d[o + 1] = 10; d[o + 2] = 16; d[o + 3] = 85; // 0x0a0a10 @ ~0.33 — a haze, not night
       } else {
         d[o + 3] = 0; // seen — fully clear
       }

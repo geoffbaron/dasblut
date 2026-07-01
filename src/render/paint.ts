@@ -105,10 +105,10 @@ export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "
       const t = fine * 0.45 + broad * 0.55;
       let shade = 0.88 + t * 0.34; // bright but with real contrast, so the ground has grain
       shade *= 0.96 + broad * 0.08;
-      // Mid-frequency clumps: gentle light/dark dapples a couple of cells wide, so the
-      // ground reads as soft relief (turf hummocks, worn dips) rather than flat static.
+      // Mid-frequency clumps: light/dark dapples a couple of cells wide, so the ground
+      // reads as real turf relief (hummocks, worn dips) — strong enough to see while playing.
       const clump = valueNoise(px * 0.06, py * 0.06, seed + 55);
-      shade *= 0.93 + clump * 0.14;
+      shade *= 0.89 + clump * 0.22;
 
       const i = (py * mapW + px) * 4;
       let c = mix(pair[0], pair[1], t);
@@ -117,7 +117,7 @@ export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "
       // zoom instead of one flat green carpet.
       if (terrain === Terrain.Grass || terrain === Terrain.Woods || terrain === Terrain.Wall || terrain === Terrain.Hedge) {
         const m = fbm(px * 0.006, py * 0.006, seed + 77, 2);
-        c = mix(c, m > 0.5 ? MEADOW_WARM : MEADOW_DEEP, Math.min(0.55, Math.abs(m - 0.5) * 1.6));
+        c = mix(c, m > 0.5 ? MEADOW_WARM : MEADOW_DEEP, Math.min(0.7, Math.abs(m - 0.5) * 2.2));
       }
       data[i] = clamp8(c.r * shade);
       data[i + 1] = clamp8(c.g * shade);
@@ -794,7 +794,7 @@ function drawBuildingShadow(ctx: CanvasRenderingContext2D, b: Building): void {
   const lift = 4.5 + b.levels * 3.5;
   ctx.save();
   ctx.filter = "blur(4px)";
-  ctx.fillStyle = "rgba(15,15,12,0.38)"; // strong but soft so dense blocks don't merge to mud
+  ctx.fillStyle = "rgba(15,15,12,0.45)"; // strong but soft so dense blocks don't merge to mud
   const rect = asAxisRect(b.poly);
   if (rect) {
     const x = rect.x0 * CELL_SIZE, y = rect.y0 * CELL_SIZE;
@@ -907,7 +907,7 @@ function drawFlatRoof(ctx: CanvasRenderingContext2D, b: Building, rng: () => num
   // so even a sprawling OSM footprint reads as a 3D roof, not a flat painted slab.
   const horiz = bb.x1 - bb.x0 >= bb.y1 - bb.y0;
   const midY = (bb.y0 + bb.y1) / 2, midX = (bb.x0 + bb.x1) / 2;
-  ctx.fillStyle = lightenHex(pal[0], 14); // sun-facing slope
+  ctx.fillStyle = lightenHex(pal[0], 26); // sun-facing slope — bright, so the pitch is unmistakable
   if (horiz) ctx.fillRect(bb.x0, bb.y0, bb.x1 - bb.x0, midY - bb.y0);
   else ctx.fillRect(bb.x0, bb.y0, midX - bb.x0, bb.y1 - bb.y0);
   ctx.fillStyle = pal[1]; // shaded slope
@@ -982,8 +982,8 @@ function line(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number,
 // faces away from the sun (south or east), draw a parallelogram wall face dropping
 // down-right; east faces catch grazing light, south faces sit in shade. A thin dark
 // ground-contact line anchors the base. Medieval walls get half-timber studs.
-const WALL_DX = 2.3; // how far the walls drop to the east…
-const WALL_DY = 3.1; // …and to the south (sun from the NW)
+const WALL_DX = 4.2; // how far the walls drop to the east…
+const WALL_DY = 5.4; // …and to the south (sun from the NW) — tall enough to read at any zoom
 function drawWallFaces(
   ctx: CanvasRenderingContext2D,
   pts: [number, number][],
@@ -1068,7 +1068,7 @@ function drawPitchedRoof(
   if (rw >= rh) {
     // Horizontal ridge.
     const midY = ry + rh / 2;
-    ctx.fillStyle = pal[0]; // sun-facing (upper) slope
+    ctx.fillStyle = lightenHex(pal[0], 18); // sun-facing (upper) slope
     poly(ctx, [
       [rx, ry],
       [rx + rw, ry],
@@ -1088,7 +1088,7 @@ function drawPitchedRoof(
   } else {
     // Vertical ridge.
     const midX = rx + rw / 2;
-    ctx.fillStyle = pal[0];
+    ctx.fillStyle = lightenHex(pal[0], 18);
     poly(ctx, [
       [rx, ry],
       [midX, ry],

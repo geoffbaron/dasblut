@@ -692,9 +692,14 @@ export class World {
     cx /= men.length; cy /= men.length;
     let hx = target.cx + 0.5 - cx, hy = target.cy + 0.5 - cy;
     const hlen = Math.hypot(hx, hy);
+    const targetIsBuildingInterior = this.grid.inBounds(target.cx, target.cy)
+      && isBuildingInterior(this.grid.get(target.cx, target.cy));
 
     // Short shuffle: just re-path each man to his standing formation slot (no column).
-    if (hlen <= 3.5) {
+    // Also force per-man pathing when the click is inside a building so infantry can
+    // route through doors/windows instead of taking the squad-wide "avoid buildings"
+    // march guide.
+    if (hlen <= 3.5 || targetIsBuildingInterior) {
       team.march = null;
       let anyPathed = false;
       for (const s of men) {

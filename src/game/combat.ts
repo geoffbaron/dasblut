@@ -1,6 +1,6 @@
 import { addSuppression, killSoldier, woundSoldier } from "./casualty.ts";
 import { damageBuildings } from "./buildingDamage.ts";
-import { AMBUSH_ACC_MULT, AREA_FIRE_RADIUS, CANNON_SETUP_TIME, MG_ARC, MG_SETUP_TIME, MG_TRAVERSE, SMOKE_INITIAL } from "./constants.ts";
+import { AMBUSH_ACC_MULT, AREA_FIRE_RADIUS, CANNON_SETUP_TIME, GUN_CREW_TO_SERVE, MG_ARC, MG_SETUP_TIME, MG_TRAVERSE, SMOKE_INITIAL } from "./constants.ts";
 import { hasLOS } from "./los.ts";
 import { isHardSurface, TERRAIN } from "./terrain.ts";
 import { knockOut, resolveArmorHit } from "./vehicleCombat.ts";
@@ -53,6 +53,8 @@ export function resolveFire(world: World, dt: number): void {
     if (w.artillery) {
       // Can't fire while limbered/on the move, or before the crew has re-laid the gun.
       if (s.setupTime < CANNON_SETUP_TIME) continue;
+      // A gun is nothing without hands to serve it — undermanned, it falls silent.
+      if (gunCrew(world, s) < GUN_CREW_TO_SERVE) continue;
       let ax = 0, ay = 0, ok = false;
       if (s.fireCell && hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), s.fireCell.cx, s.fireCell.cy, world.smokeGrid)) {
         ax = s.fireCell.cx + 0.5; ay = s.fireCell.cy + 0.5; ok = true;
@@ -283,45 +285,119 @@ function mortarShot(world: World, s: Soldier): void {
   }
 }
 
-// A field-gun discharge. Beyond canister range it lobs a shell that bursts at the
-// aimpoint; inside canister range the muzzle vomits a cone of balls that scythes a wide,
-// shallow swath of infantry. Black-powder muzzle smoke marks every shot. Only the
-// enemies of the firing side are caught — gunners fire over their own ranks.
+// The crew still standing at a field gun — its teammates who aren't the piece itself.
+function gunCrew(world: World, gun: Soldier): number {
+  let n = 0;
+  for (const o of world.soldiers) {
+    if (o.teamId === gun.teamId && o.status === "active" && o.weapon !== "cannon") n++;
+  }
+  return n;
+}
+
+// Silence and abandon any field gun whose crew has been wiped out. Called each step after
+// casualties resolve: with no hands left to work it, the piece is spiked and left wrecked.
+export function updateGunCrews(world: World): void {
+  for (const s of world.soldiers) {
+    if (s.status !== "active" || s.weapon !== "cannon") continue;
+    if (gunCrew(world, s) > 0) continue;
+    s.status = "dead"; // the gun is out of action — treated as a wreck on the field
+    s.targetId = null;
+    s.fireCell = null;
+    s.path = null;
+    for (let i = 0; i < 3; i++) world.effects.push({ kind: "smoke", x0: s.x + (Math.random() - 0.5), y0: s.y + (Math.random() - 0.5), x1: 0, y1: 0, ttl: 1.6, maxTtl: 1.6 });
+    world.effects.push({ kind: "hit", x0: s.x, y0: s.y, x1: s.x, y1: s.y, ttl: 0.4 });
+  }
+}
+
+// A field-gun discharge. Beyond canister range it lobs a shell that bursts at the aimpoint;
+// inside canister range it switches to grapeshot — the giant-shotgun round. Only the enemies
+// of the firing side are caught: gunners fire over their own ranks.
 function cannonShot(world: World, s: Soldier, tx: number, ty: number, dist: number): void {
   const w = WEAPONS[s.weapon];
-  const canister = dist <= (w.canisterCells ?? 0);
+  if (dist <= (w.canisterCells ?? 0)) canisterBlast(world, s, tx, ty);
+  else shellBurst(world, s, tx, ty);
+}
 
+// Shell/solid shot: a single projectile streaks downrange and bursts in the ranks — a
+// fierce multi-burst of flash, fireballs, thrown dirt, a shock ring and a gout of smoke.
+function shellBurst(world: World, s: Soldier, tx: number, ty: number): void {
+  const w = WEAPONS[s.weapon];
   sound.play("cannon", s.x, s.y);
   // Muzzle: hard flash, a big bank of black-powder smoke, and the round streaking out.
   world.effects.push({ kind: "flash", x0: s.x, y0: s.y, x1: s.x, y1: s.y, ttl: 0.2 });
   world.effects.push({ kind: "fire", x0: s.x, y0: s.y, x1: s.x, y1: s.y, ttl: 0.18 });
   for (let i = 0; i < 2; i++) world.effects.push({ kind: "smoke", x0: s.x + (Math.random() - 0.5), y0: s.y + (Math.random() - 0.5), x1: 0, y1: 0, ttl: 1.8, maxTtl: 1.8 });
   world.effects.push({ kind: "ap", x0: s.x, y0: s.y, x1: tx, y1: ty, ttl: 0.16 }); // round in flight
-  // Impact: a fierce multi-burst — flash, a couple of fireballs, dirt thrown up, a
-  // shock ring and a gout of smoke. Bigger and louder than a grenade.
   sound.play("explosion", tx, ty);
   sound.play("explosion", tx, ty, true);
   world.effects.push({ kind: "flash", x0: tx, y0: ty, x1: tx, y1: ty, ttl: 0.16 });
   world.effects.push({ kind: "fire", x0: tx, y0: ty, x1: tx, y1: ty, ttl: 0.5 });
   for (let i = 0; i < 3; i++) {
-    const a = Math.random() * Math.PI * 2, r = Math.random() * (canister ? 2.4 : 1.6);
+    const a = Math.random() * Math.PI * 2, r = Math.random() * 1.6;
     world.effects.push({ kind: "fire", x0: tx + Math.cos(a) * r, y0: ty + Math.sin(a) * r, x1: tx, y1: ty, ttl: 0.3 + Math.random() * 0.25 });
     world.effects.push({ kind: "spark", x0: tx, y0: ty, x1: tx + Math.cos(a) * (r + 2), y1: ty + Math.sin(a) * (r + 2), ttl: 0.2 });
   }
   world.effects.push({ kind: "hit", x0: tx, y0: ty, x1: tx, y1: ty, ttl: 0.36 });
   for (let i = 0; i < 2; i++) world.effects.push({ kind: "smoke", x0: tx + (Math.random() - 0.5) * 1.5, y0: ty + (Math.random() - 0.5) * 1.5, x1: 0, y1: 0, ttl: 1.8, maxTtl: 1.8 });
 
-  const radius = canister ? 4.5 : (w.blastCells ?? 3);
-  const kill = canister ? 0.6 : 0.5;
-  damageBuildings(world, Math.floor(tx), Math.floor(ty), w.blastCells ?? 3, 1.2);
+  const radius = w.blastCells ?? 3;
+  damageBuildings(world, Math.floor(tx), Math.floor(ty), radius, 1.2);
   for (const e of world.soldiers) {
     if (e.faction === s.faction || e.status !== "active") continue;
     const d = Math.hypot(e.x - tx, e.y - ty);
     if (d > radius) continue;
     const falloff = 1 - d / radius;
     addSuppression(e, w.suppression * falloff);
-    if (Math.random() < kill * falloff) {
+    if (Math.random() < 0.5 * falloff) {
       if (Math.random() < 0.6) killSoldier(world, e);
+      else woundSoldier(world, e);
+    }
+  }
+}
+
+// Canister (grapeshot): the round is a tin can packed with iron balls that ruptures at the
+// muzzle, turning the field gun into a giant shotgun. There is NO shell downrange — the gun
+// throws a cone of balls that scythes every man in a shallow arc out to short range, the
+// killing done all along the cone. Its unmistakable signature is a wide fan of ball-streaks
+// spraying from the muzzle and dirt kicked up across the swath. This is the round that made
+// guns murderous against a close assault.
+function canisterBlast(world: World, s: Soldier, tx: number, ty: number): void {
+  const w = WEAPONS[s.weapon];
+  const range = w.canisterCells ?? 20;
+  const ang0 = Math.atan2(ty - s.y, tx - s.x);
+  const SPREAD = 0.32; // radians half-angle of the cone (~18°)
+
+  sound.play("cannon", s.x, s.y);
+  // Muzzle: a hard double flash and a great bank of powder smoke — but no round arcs away.
+  world.effects.push({ kind: "flash", x0: s.x, y0: s.y, x1: s.x, y1: s.y, ttl: 0.22 });
+  world.effects.push({ kind: "flash", x0: s.x + Math.cos(ang0) * 0.8, y0: s.y + Math.sin(ang0) * 0.8, x1: s.x, y1: s.y, ttl: 0.16 });
+  world.effects.push({ kind: "fire", x0: s.x, y0: s.y, x1: s.x, y1: s.y, ttl: 0.18 });
+  for (let i = 0; i < 3; i++) world.effects.push({ kind: "smoke", x0: s.x + Math.cos(ang0) * 0.8 + (Math.random() - 0.5), y0: s.y + Math.sin(ang0) * 0.8 + (Math.random() - 0.5), x1: 0, y1: 0, ttl: 1.6, maxTtl: 1.6 });
+  // The swarm of balls: a fan of pale streaks across the cone, each kicking up a spark of
+  // dirt where it strikes. This spray IS the "shotgun" tell that reads instantly as grapeshot.
+  for (let i = 0; i < 20; i++) {
+    const a = ang0 + (Math.random() * 2 - 1) * SPREAD;
+    const r = range * (0.4 + Math.random() * 0.6);
+    const ex = s.x + Math.cos(a) * r, ey = s.y + Math.sin(a) * r;
+    world.effects.push({ kind: "shotline", x0: s.x + Math.cos(ang0) * 0.6, y0: s.y + Math.sin(ang0) * 0.6, x1: ex, y1: ey, ttl: 0.16 });
+    world.effects.push({ kind: "spark", x0: ex, y0: ey, x1: ex, y1: ey, ttl: 0.16 });
+  }
+
+  // Casualties: every enemy inside the cone and within range is raked, worst up close and
+  // dead on the axis. No friendly fire — the balls go out over the gun's own line.
+  for (const e of world.soldiers) {
+    if (e.faction === s.faction || e.status !== "active") continue;
+    const dx = e.x - s.x, dy = e.y - s.y;
+    const d = Math.hypot(dx, dy);
+    if (d > range || d < 0.4) continue;
+    const off = Math.abs(Math.atan2(Math.sin(Math.atan2(dy, dx) - ang0), Math.cos(Math.atan2(dy, dx) - ang0)));
+    if (off > SPREAD) continue;
+    const rangeFall = 1 - d / range;
+    const coneFall = 1 - off / SPREAD;
+    addSuppression(e, 0.55 * rangeFall);
+    const p = 0.9 * rangeFall * (0.5 + 0.5 * coneFall); // brutal near the muzzle, on-axis
+    if (Math.random() < p) {
+      if (Math.random() < 0.7) killSoldier(world, e);
       else woundSoldier(world, e);
     }
   }

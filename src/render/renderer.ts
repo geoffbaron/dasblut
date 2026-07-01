@@ -617,10 +617,12 @@ export class Renderer {
 
       const down = s.status === "dead" || s.status === "wounded" || s.status === "surrendered";
       if (down === sp.alive) {
-        // Status changed → swap texture.
+        // Status changed → swap texture. A knocked-out field gun keeps its own silhouette,
+        // just dimmed — it reads as a wrecked, abandoned piece, not a fallen man.
         const col = world.team(s.teamId)?.color ?? (s.faction === "us" ? 0x4f7fd1 : 0xc4514a);
-        sp.body.texture = down ? this.casualtyTex : this.bodyTexture(col, s.weapon);
-        sp.body.alpha = down ? (s.status === "dead" ? 0.85 : 0.95) : 1;
+        const isGun = s.weapon === "cannon";
+        sp.body.texture = down && !isGun ? this.casualtyTex : this.bodyTexture(col, s.weapon);
+        sp.body.alpha = down ? (isGun ? 0.4 : s.status === "dead" ? 0.85 : 0.95) : 1;
         sp.alive = !down;
       }
       sp.body.position.set(ix, iy);

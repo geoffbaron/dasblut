@@ -56,6 +56,10 @@ export const MG_TRAVERSE = 1.2;     // radians/sec the gun can swing to re-lay o
 // A field gun must be unlimbered and laid before it can fire, and it can't fire on the move —
 // it loses that setup the instant the crew picks it up to relocate.
 export const CANNON_SETUP_TIME = 3.5; // seconds stationary before a cannon can open fire
+// A gun is worked by its crew: they ram, sponge, run it up after recoil, and manhandle it
+// forward. It needs at least this many hands to serve it; lose the whole crew and the piece
+// is abandoned and spiked — destroyed.
+export const GUN_CREW_TO_SERVE = 2; // living cannoneers required to keep a field gun firing
 
 // --- Generated battlefield size (Phase 5) ---
 export const BATTLEFIELD_W_M = 380;

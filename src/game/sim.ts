@@ -1,6 +1,6 @@
 import { acquireTargets, ensureFleeGoal } from "./ai.ts";
 import { commandAI } from "./axisAI.ts";
-import { resolveFire, updateGrenades, updateMelee } from "./combat.ts";
+import { resolveFire, updateGrenades, updateGunCrews, updateMelee } from "./combat.ts";
 import {
   BASE_MOVE_SPEED,
   BATTLE_TIME_S,
@@ -62,6 +62,7 @@ export function step(world: World): void {
   updateGrenades(world, SIM_DT); // detonate grenades whose fuse has run out
   updateMelee(world, SIM_DT); // resolve hand-to-hand for everyone in contact
   updateVehicles(world);
+  updateGunCrews(world); // any field gun whose crew is dead is abandoned/destroyed
   updateMorale(world, SIM_DT);
   moveSoldiers(world);
   updateObjective(world, SIM_DT);

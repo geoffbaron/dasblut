@@ -84,9 +84,12 @@ export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "
 
   for (let py = 0; py < mapH; py++) {
     for (let px = 0; px < mapW; px++) {
-      // Warp the sampling point so cell boundaries become wavy, not gridded.
-      const wx = px + (valueNoise(px * 0.05, py * 0.05, seed) - 0.5) * 2 * warpAmp;
-      const wy = py + (valueNoise(px * 0.05, py * 0.05, seed + 99) - 0.5) * 2 * warpAmp;
+      // Warp the sampling point so cell boundaries become wavy, not gridded; the extra
+      // high-frequency jitter dithers each boundary into a speckled AoE-style blend band
+      // (pixels of each terrain scatter a few px into the neighbor) instead of a clean line.
+      const jit = (valueNoise(px * 0.6, py * 0.6, seed + 41) - 0.5) * 7;
+      const wx = px + (valueNoise(px * 0.05, py * 0.05, seed) - 0.5) * 2 * warpAmp + jit;
+      const wy = py + (valueNoise(px * 0.05, py * 0.05, seed + 99) - 0.5) * 2 * warpAmp - jit;
       let cx = Math.floor(wx / CELL_SIZE);
       let cy = Math.floor(wy / CELL_SIZE);
       if (cx < 0) cx = 0;
@@ -102,6 +105,10 @@ export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "
       const t = fine * 0.45 + broad * 0.55;
       let shade = 0.88 + t * 0.34; // bright but with real contrast, so the ground has grain
       shade *= 0.96 + broad * 0.08;
+      // Mid-frequency clumps: gentle light/dark dapples a couple of cells wide, so the
+      // ground reads as soft relief (turf hummocks, worn dips) rather than flat static.
+      const clump = valueNoise(px * 0.06, py * 0.06, seed + 55);
+      shade *= 0.93 + clump * 0.14;
 
       const i = (py * mapW + px) * 4;
       let c = mix(pair[0], pair[1], t);
@@ -279,8 +286,26 @@ function drawWater(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number)
     for (let cx = 0; cx < grid.width; cx++) {
       if (grid.get(cx, cy) !== Terrain.Water) continue;
       const bx = cx * CELL_SIZE, by = cy * CELL_SIZE;
+      // Woven wave bands: paired dark/light horizontal strokes give the surface the
+      // patterned, textile-like water texture AoE maps have.
+      for (let k = 0; k < 2; k++) {
+        const x = bx + rng() * CELL_SIZE, y = by + rng() * CELL_SIZE;
+        const len = 5 + rng() * 8;
+        ctx.strokeStyle = `rgba(20,50,85,${0.12 + rng() * 0.1})`;
+        ctx.lineWidth = 1.0 + rng() * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.quadraticCurveTo(x + len / 2, y + (rng() - 0.5) * 1.5, x + len, y);
+        ctx.stroke();
+        ctx.strokeStyle = `rgba(150,195,220,${0.1 + rng() * 0.08})`;
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.moveTo(x + 1, y + 1.2);
+        ctx.quadraticCurveTo(x + 1 + len / 2, y + 1.2 + (rng() - 0.5) * 1.5, x + 1 + len, y + 1.2);
+        ctx.stroke();
+      }
       // Sparkling ripple highlights — brighter, sunnier water.
-      for (let k = 0; k < 5; k++) {
+      for (let k = 0; k < 3; k++) {
         const x = bx + rng() * CELL_SIZE, y = by + rng() * CELL_SIZE;
         ctx.strokeStyle = `rgba(180,215,235,${0.18 + rng() * 0.16})`;
         ctx.lineWidth = 0.6 + rng() * 0.6;
@@ -408,6 +433,12 @@ function drawWoods(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number)
     ctx.beginPath();
     ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
     ctx.fill();
+    // Dark under-rim on the shade (SE) side — grounds the crown as a rounded mass.
+    ctx.strokeStyle = `hsla(${t.hue},${sat}%,14%,0.4)`;
+    ctx.lineWidth = r * 0.2;
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, r * 0.87, -0.3, 1.85);
+    ctx.stroke();
     // Canopy edge texture: bumps breaking the circle — lit on the sun side, dark below.
     for (let b = 0; b < 5; b++) {
       const a = rng() * Math.PI * 2;
@@ -759,10 +790,11 @@ function paintRoofTile(b: Building, minCx: number, minCy: number, maxCx: number,
 }
 
 function drawBuildingShadow(ctx: CanvasRenderingContext2D, b: Building): void {
-  const lift = 3 + b.levels * 2.5;
+  // Taller buildings throw longer shadows — the AoE2 depth cue that sells the town.
+  const lift = 4.5 + b.levels * 3.5;
   ctx.save();
   ctx.filter = "blur(4px)";
-  ctx.fillStyle = "rgba(15,15,12,0.32)"; // lighter so dense blocks don't merge to mud
+  ctx.fillStyle = "rgba(15,15,12,0.38)"; // strong but soft so dense blocks don't merge to mud
   const rect = asAxisRect(b.poly);
   if (rect) {
     const x = rect.x0 * CELL_SIZE, y = rect.y0 * CELL_SIZE;
@@ -866,6 +898,9 @@ function drawFlatRoof(ctx: CanvasRenderingContext2D, b: Building, rng: () => num
   mask.closePath();
   const pal = pickRoofPalette(rng, burned, era);
 
+  // Walls first: extruded faces on the away-from-sun edges give the block real volume.
+  if (pts.length >= 3) drawWallFaces(ctx, pts, burned, era, rng);
+
   ctx.save();
   ctx.clip(mask);
   // Two hard-lit slopes split along the long axis — a sunlit face and a shaded face —
@@ -943,6 +978,64 @@ function line(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number,
   ctx.stroke();
 }
 
+// The 2.5D wall extrusion that gives a building its volume. For each polygon edge that
+// faces away from the sun (south or east), draw a parallelogram wall face dropping
+// down-right; east faces catch grazing light, south faces sit in shade. A thin dark
+// ground-contact line anchors the base. Medieval walls get half-timber studs.
+const WALL_DX = 2.3; // how far the walls drop to the east…
+const WALL_DY = 3.1; // …and to the south (sun from the NW)
+function drawWallFaces(
+  ctx: CanvasRenderingContext2D,
+  pts: [number, number][],
+  burned: boolean,
+  era: Era,
+  rng: () => number,
+): void {
+  const litWall = burned ? "#463b2e" : era === "medieval" ? "#c9b48e" : "#c0b090";
+  const shadeWall = burned ? "#2e261e" : era === "medieval" ? "#94805c" : "#8d7f63";
+  // Centroid, to orient each edge's outward normal regardless of polygon winding.
+  let cx = 0, cy = 0;
+  for (const [px, py] of pts) { cx += px; cy += py; }
+  cx /= pts.length; cy /= pts.length;
+  for (let i = 0; i < pts.length; i++) {
+    const [x0, y0] = pts[i];
+    const [x1, y1] = pts[(i + 1) % pts.length];
+    const ex = x1 - x0, ey = y1 - y0;
+    let nx = -ey, ny = ex;
+    const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+    if ((mx - cx) * nx + (my - cy) * ny < 0) { nx = -nx; ny = -ny; } // point away from center
+    if (nx <= 0 && ny <= 0) continue; // north/west faces are hidden under the roof
+    const face: [number, number][] = [
+      [x0, y0], [x1, y1],
+      [x1 + WALL_DX, y1 + WALL_DY], [x0 + WALL_DX, y0 + WALL_DY],
+    ];
+    ctx.fillStyle = ny > Math.abs(nx) ? shadeWall : litWall; // south = shade, east = lit
+    poly(ctx, face);
+    // Ground-contact line along the face's foot.
+    ctx.strokeStyle = "rgba(12,10,6,0.5)";
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(x0 + WALL_DX, y0 + WALL_DY);
+    ctx.lineTo(x1 + WALL_DX, y1 + WALL_DY);
+    ctx.stroke();
+    // Half-timber studs on medieval walls — short dark verticals along the face.
+    if (era === "medieval" && !burned) {
+      const len = Math.hypot(ex, ey);
+      const n = Math.max(1, Math.floor(len / 9));
+      ctx.strokeStyle = "rgba(74,56,30,0.7)";
+      ctx.lineWidth = 0.9;
+      for (let k = 1; k <= n; k++) {
+        const f = (k - 0.3 + rng() * 0.5) / (n + 0.4);
+        const bx = x0 + ex * f, by = y0 + ey * f;
+        ctx.beginPath();
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx + WALL_DX, by + WALL_DY);
+        ctx.stroke();
+      }
+    }
+  }
+}
+
 function drawPitchedRoof(
   ctx: CanvasRenderingContext2D,
   gx0: number,
@@ -959,20 +1052,18 @@ function drawPitchedRoof(
   const h = (gy1 - gy0) * CELL_SIZE;
   const thatch = era === "medieval" && !burned;
 
-  // 2. Wall block (eaves) — a slightly larger base the roof sits on: pale plaster for
-  // later eras, wattle-and-daub cream with a timber hint for a medieval cottage. A
-  // burned-out shell shows soot instead.
-  ctx.fillStyle = burned ? "#3a3026" : era === "medieval" ? "#b5a184" : "#a89a80";
-  ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
+  // 2. Wall faces — the building is extruded like an AoE2 sprite: with the sun at the
+  // top-left, the south and east walls peek out from under the roofline, the east face
+  // catching more light than the south. Medieval walls are half-timbered wattle-and-daub.
+  drawWallFaces(ctx, [[x, y], [x + w, y], [x + w, y + h], [x, y + h]], burned, era, rng);
 
   // 3. Pitched roof: ridge along the longer axis, two shaded faces. Charred timber tones
-  // for a gutted house.
+  // for a gutted house. The roof covers the full footprint; walls show only to the SE.
   const pal = pickRoofPalette(rng, burned, era);
-  const inset = 1.5;
-  const rx = x + inset;
-  const ry = y + inset;
-  const rw = w - inset * 2;
-  const rh = h - inset * 2;
+  const rx = x;
+  const ry = y;
+  const rw = w;
+  const rh = h;
 
   if (rw >= rh) {
     // Horizontal ridge.

@@ -306,11 +306,13 @@ function drawBody(teamColor: number, hold: Hold): HTMLCanvasElement {
   ctx.lineWidth = 0.8;
   ctx.stroke();
 
-  // Team-color identifier band around the shoulders.
+  // Team color as a crescent across the back and shoulders (the west side of an
+  // east-facing man) — a bold identifier that never swallows the figure the way a
+  // full ring did; from the front he still reads as a soldier, not a colored donut.
   ctx.strokeStyle = hex;
-  ctx.lineWidth = 1.6;
+  ctx.lineWidth = 2.2;
   ctx.beginPath();
-  ctx.ellipse(0, 0, 4.4, 5.6, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, 4.1, 5.3, 0, Math.PI * 0.58, Math.PI * 1.42);
   ctx.stroke();
 
   // Melee foot carry a round shield on the off (left/north) arm: a wooden face ringed

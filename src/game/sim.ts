@@ -27,7 +27,7 @@ import { findPath, smoothPath } from "./pathfinding.ts";
 import { TERRAIN } from "./terrain.ts";
 import { updateVehicles } from "./vehicleSim.ts";
 import { updateVisibility } from "./visibility.ts";
-import { Soldier, unitPassable, World } from "./world.ts";
+import { Soldier, Team, unitPassable, World } from "./world.ts";
 
 // One fixed simulation step, in the order that makes the firefight read correctly:
 // see → acquire → fire → feel → act.
@@ -141,6 +141,9 @@ function moveSoldiers(world: World): void {
   // Where each squad's body of men currently is — the rally point for cohesion.
   const centers = teamCenters(world);
 
+  // Walk each marching formation's guide-point forward as one body, before the men move.
+  for (const team of world.teams) if (team.march) advanceMarch(world, team);
+
   for (const s of world.soldiers) {
     s.px = s.x;
     s.py = s.y;
@@ -168,10 +171,16 @@ function moveSoldiers(world: World): void {
         advance(world, s, 1.25 * s.gait);
         continue;
       default: {
-        // Pace set by the commanded stance and the man's own gait, slowed if shaken,
-        // then nudged by cohesion so the squad stays a single body on the move.
-        const mul = STANCE_SPEED[s.stance] * (s.state === "shaken" ? 0.7 : 1) * s.gait;
-        advance(world, s, mul * cohesionFactor(s, centers.get(s.teamId)));
+        const team = world.team(s.teamId);
+        if (team && team.march) {
+          // Marching in formation: hold your slot relative to the advancing guide-point.
+          steerToSlot(world, s, team);
+        } else {
+          // Pace set by the commanded stance and the man's own gait, slowed if shaken,
+          // then nudged by cohesion so the squad stays a single body on the move.
+          const mul = STANCE_SPEED[s.stance] * (s.state === "shaken" ? 0.7 : 1) * s.gait;
+          advance(world, s, mul * cohesionFactor(s, centers.get(s.teamId)));
+        }
       }
     }
   }
@@ -223,6 +232,7 @@ function cohesionFactor(s: Soldier, center: Pt2 | undefined): number {
 // where they are — this only gathers up the genuinely-left-behind.
 function regroupStragglers(world: World, centers: Map<number, Pt2>): void {
   for (const team of world.teams) {
+    if (team.march) continue; // a marching formation keeps its own shape
     const center = centers.get(team.id);
     if (!center) continue;
     for (const id of team.soldierIds) {
@@ -247,20 +257,75 @@ function regroupStragglers(world: World, centers: Map<number, Pt2>): void {
   }
 }
 
+// Per-man ground-speed multiplier. Cavalry cover ground faster than men on foot; a heavy
+// field gun is manhandled slowly. Civil War foot soldiers hold a measured pace and only
+// really move out at the double when ordered to charge.
+function weaponMoveFactor(s: Soldier): number {
+  return s.weapon === "carbine" ? 1.7
+    : s.weapon === "cannon" ? 0.4
+    : s.weapon === "riflemusket" ? (s.stance === "charge" ? 1.15 : 0.55)
+    : 1;
+}
+
+// Walk a marching squad's guide-point forward this step at the pace of its slowest man, so
+// the whole formation advances as one body. Clears the march once it reaches the objective,
+// or pauses it if the squad is mostly pinned/broken (no one left to follow).
+function advanceMarch(world: World, team: Team): void {
+  const m = team.march;
+  if (!m) return;
+  const men = team.soldierIds.map((id) => world.soldier(id)).filter((s): s is Soldier => !!s && s.status === "active");
+  const following = men.filter((s) => s.state === "steady" || s.state === "shaken");
+  if (men.length === 0) { team.march = null; return; }
+  if (following.length * 2 < men.length) return; // squad's not moving — hold the guide in place
+
+  let minFactor = Infinity;
+  for (const s of men) minFactor = Math.min(minFactor, weaponMoveFactor(s));
+  const cx = Math.floor(m.x), cy = Math.floor(m.y);
+  const cost = world.grid.inBounds(cx, cy) ? TERRAIN[world.grid.get(cx, cy)].moveCost : 1;
+  const stanceMul = STANCE_SPEED[following[0]?.stance ?? "move"] ?? 1;
+  let budget = (BASE_MOVE_SPEED / (isFinite(cost) ? cost : 1)) * stanceMul * minFactor * SIM_DT;
+
+  while (budget > 0 && m.idx < m.guide.length) {
+    const wp = m.guide[m.idx];
+    const tx = wp.cx + 0.5, ty = wp.cy + 0.5;
+    const dx = tx - m.x, dy = ty - m.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1e-4) { m.idx++; continue; }
+    m.hx = dx / dist; m.hy = dy / dist;
+    if (dist <= budget) { m.x = tx; m.y = ty; budget -= dist; m.idx++; }
+    else { m.x += (dx / dist) * budget; m.y += (dy / dist) * budget; budget = 0; }
+  }
+  if (m.idx >= m.guide.length) team.march = null; // arrived; men settle at their slots
+}
+
+// Steer a man toward his formation slot (a fixed offset from the advancing guide-point),
+// a touch faster than the formation so a lagging man closes up rather than trailing off.
+function steerToSlot(world: World, s: Soldier, team: Team): void {
+  const m = team.march!;
+  const tx = m.x + s.ox, ty = m.y + s.oy;
+  const dx = tx - s.x, dy = ty - s.y;
+  const dist = Math.hypot(dx, dy);
+  const cx = Math.floor(s.x), cy = Math.floor(s.y);
+  const cost = world.grid.inBounds(cx, cy) ? TERRAIN[world.grid.get(cx, cy)].moveCost : 1;
+  const step = (BASE_MOVE_SPEED / (isFinite(cost) ? cost : 1)) * (STANCE_SPEED[s.stance] ?? 1) * weaponMoveFactor(s) * s.gait * SIM_DT * 1.6;
+  if (dist > 1e-4) {
+    if (dist <= step) { s.x = tx; s.y = ty; }
+    else { s.x += (dx / dist) * step; s.y += (dy / dist) * step; }
+  }
+  s.facing = Math.atan2(m.hy, m.hx); // face the line of march
+  const nx = Math.floor(s.x), ny = Math.floor(s.y);
+  if (!world.grid.passable(nx, ny)) {
+    const c = world.nearestPassable(nx, ny, { cx: nx, cy: ny });
+    s.x = c.cx + 0.5; s.y = c.cy + 0.5;
+  }
+}
+
 function advance(world: World, s: Soldier, speedMul: number): void {
   if (!s.path) return;
   const cx = Math.floor(s.x);
   const cy = Math.floor(s.y);
   const cost = world.grid.inBounds(cx, cy) ? TERRAIN[world.grid.get(cx, cy)].moveCost : 1;
-  // Cavalry cover ground faster than men on foot; a heavy field gun is manhandled slowly.
-  // Civil War foot soldiers hold a measured pace and only really move out at the double
-  // when ordered to charge — so a rifle-musket man is slow unless his stance is "charge".
-  const moveFactor =
-    s.weapon === "carbine" ? 1.7
-    : s.weapon === "cannon" ? 0.4
-    : s.weapon === "riflemusket" ? (s.stance === "charge" ? 1.15 : 0.55)
-    : 1;
-  const speed = (BASE_MOVE_SPEED / (isFinite(cost) ? cost : 1)) * speedMul * moveFactor;
+  const speed = (BASE_MOVE_SPEED / (isFinite(cost) ? cost : 1)) * speedMul * weaponMoveFactor(s);
 
   let budget = speed * SIM_DT;
   while (budget > 0 && s.path) {

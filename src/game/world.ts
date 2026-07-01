@@ -75,6 +75,10 @@ export interface Team {
   post: Cell | null; // AI-assigned defensive position (enemy squads)
   kind: SquadKind; // weapon mix: rifle / mg / at / mortar
   volleyCD: number; // Civil War line infantry: shared reload timer so the squad fires by volley
+  // Marching in formation: a shared guide route the squad's centre walks along; each man
+  // holds his slot (ox,oy) relative to the advancing centre, so the whole body moves as one
+  // column instead of scattering. Null when the squad isn't marching in formation.
+  march: { guide: Cell[]; idx: number; x: number; y: number; hx: number; hy: number } | null;
 }
 
 export type EffectKind = "tracer" | "flash" | "hit" | "ap" | "spark" | "smoke" | "fire" | "lob" | "ricochet" | "blocked";
@@ -539,6 +543,7 @@ export class World {
       post: null,
       kind,
       volleyCD: Math.random() * 1.5, // stagger squads' first volley a little
+      march: null,
     };
     this.teams.push(team);
     const loadout = squadLoadout(kind, count, faction, this.era);
@@ -638,61 +643,72 @@ export class World {
     const men = team.soldierIds.map((id) => this.soldier(id)!).filter((s) => s && s.status === "active");
     if (men.length === 0) return true;
 
-    // For anything beyond a short shuffle, march in COLUMN of route: a narrow file a few
-    // men abreast, aligned to the direction of march (not the wide battle line). Each man's
-    // slot is his place in the column, rotated onto the march heading and stored in ox/oy
-    // so the rest of the movement/regroup code lays them out the same way.
-    let cx = 0, cy = 0;
-    for (const s of men) { cx += s.x; cy += s.y; }
-    cx /= men.length; cy /= men.length;
-    let hx = target.cx + 0.5 - cx, hy = target.cy + 0.5 - cy;
-    const hlen = Math.hypot(hx, hy);
-    const asColumn = hlen > 3.5;
-    if (asColumn) { hx /= hlen; hy /= hlen; }
-    const FILES = 3, FILE_SPACING = 0.9, RANK_SPACING = 0.95;
-    const perpx = -hy, perpy = hx;
-
-    let anyPathed = false;
-    men.forEach((s, j) => {
+    for (const s of men) {
       s.fleeGoal = null;
       s.stance = stance;
       s.manualTargetId = null;
       s.manualVehId = null;
       s.fireCell = null;
       s.fireSmoke = false;
-      if (asColumn) {
-        const file = j % FILES;
-        const rank = Math.floor(j / FILES);
-        const across = (file - (FILES - 1) / 2) * FILE_SPACING;
-        const depth = -rank * RANK_SPACING; // trail behind the head of the column
-        s.ox = depth * hx + across * perpx;
-        s.oy = depth * hy + across * perpy;
+    }
+
+    // The squad's centre and the direction to the objective.
+    let cx = 0, cy = 0;
+    for (const s of men) { cx += s.x; cy += s.y; }
+    cx /= men.length; cy /= men.length;
+    let hx = target.cx + 0.5 - cx, hy = target.cy + 0.5 - cy;
+    const hlen = Math.hypot(hx, hy);
+
+    // Short shuffle: just re-path each man to his standing formation slot (no column).
+    if (hlen <= 3.5) {
+      team.march = null;
+      let anyPathed = false;
+      for (const s of men) {
+        const pass = unitPassable(this.grid, s.weapon);
+        const goal = this.nearestPassable(Math.round(target.cx + s.ox), Math.round(target.cy + s.oy), target, pass);
+        const start: Cell = { cx: Math.floor(s.x), cy: Math.floor(s.y) };
+        const raw = findPath(this.grid, start, goal, { passable: pass });
+        if (raw && raw.length > 1) { s.path = smoothPath(this.grid, raw, { passable: pass }); s.pathIndex = 1; anyPathed = true; }
+        else if (raw && raw.length === 1 && start.cx === goal.cx && start.cy === goal.cy) { s.path = null; anyPathed = true; }
+        else s.path = null;
       }
-      // Round the per-man offset to a whole cell for the grid lookup. Cavalry and guns
-      // path with building-blocking passability so they route around houses.
-      const pass = unitPassable(this.grid, s.weapon);
-      const goal = this.nearestPassable(Math.round(target.cx + s.ox), Math.round(target.cy + s.oy), target, pass);
-      const start: Cell = { cx: Math.floor(s.x), cy: Math.floor(s.y) };
-      const raw = findPath(this.grid, start, goal, { passable: pass });
-      if (raw && raw.length > 1) {
-        s.path = smoothPath(this.grid, raw, { passable: pass });
-        s.pathIndex = 1;
-        anyPathed = true;
-      } else if (raw && raw.length === 1 && start.cx === goal.cx && start.cy === goal.cy) {
-        // Already standing on the goal cell — a valid (no-op) order, not a failure.
-        s.path = null;
-        anyPathed = true;
-      } else {
-        s.path = null;
-      }
+      return anyPathed;
+    }
+
+    // A real march: build ONE guide route the squad's centre follows, and give each man his
+    // slot in a COLUMN of route (a few files abreast, deep along the heading). The movement
+    // step walks the whole formation down the guide as one body (see moveSoldiers).
+    hx /= hlen; hy /= hlen;
+    const FILES = men.some((s) => s.weapon === "carbine") ? 4 : 3;
+    const FILE_SPACING = 0.9, RANK_SPACING = 0.95;
+    const perpx = -hy, perpy = hx;
+    men.forEach((s, j) => {
+      const file = j % FILES;
+      const rank = Math.floor(j / FILES);
+      const across = (file - (FILES - 1) / 2) * FILE_SPACING;
+      const depth = -rank * RANK_SPACING; // trail behind the head of the column
+      s.ox = depth * hx + across * perpx;
+      s.oy = depth * hy + across * perpy;
+      s.path = null; // driven by the shared guide, not an individual path
     });
-    return anyPathed;
+
+    // Guide path (centre → objective) using the squad's coarsest passability so cavalry
+    // and guns route around buildings.
+    const guidePass = unitPassable(this.grid, men.some((s) => s.weapon === "carbine" || s.weapon === "cannon") ? "cannon" : "rifle");
+    const start: Cell = this.nearestPassable(Math.round(cx), Math.round(cy), { cx: Math.round(cx), cy: Math.round(cy) }, guidePass);
+    const goal = this.nearestPassable(target.cx, target.cy, target, guidePass);
+    const raw = findPath(this.grid, start, goal, { passable: guidePass });
+    if (!raw || raw.length < 2) { team.march = null; return raw != null; }
+    const guide = smoothPath(this.grid, raw, { passable: guidePass });
+    team.march = { guide, idx: 1, x: cx, y: cy, hx, hy };
+    return true;
   }
 
   /** Hold position in a Defend or Ambush posture, facing the nearest known threat. */
   orderPosture(teamId: number, stance: Stance): void {
     const team = this.team(teamId);
     if (!team) return;
+    team.march = null;
     for (const id of team.soldierIds) {
       const s = this.soldier(id)!;
       if (s.status !== "active") continue;
@@ -712,6 +728,7 @@ export class World {
   orderFireUnit(teamId: number, enemyId: number): void {
     const team = this.team(teamId);
     if (!team) return;
+    team.march = null;
     for (const id of team.soldierIds) {
       const s = this.soldier(id)!;
       if (s.status !== "active") continue;
@@ -727,6 +744,7 @@ export class World {
   orderAreaFire(teamId: number, cell: Cell): void {
     const team = this.team(teamId);
     if (!team) return;
+    team.march = null;
     for (const id of team.soldierIds) {
       const s = this.soldier(id)!;
       if (s.status !== "active") continue;
@@ -749,6 +767,7 @@ export class World {
   orderFireVehicle(teamId: number, vehId: number): boolean {
     const team = this.team(teamId);
     if (!team) return false;
+    team.march = null;
     const veh = this.vehicle(vehId);
     let anyAT = false;
     for (const id of team.soldierIds) {
@@ -778,6 +797,7 @@ export class World {
   orderSmoke(teamId: number, cell: Cell): boolean {
     const team = this.team(teamId);
     if (!team) return false;
+    team.march = null;
     let anyTube = false;
     for (const id of team.soldierIds) {
       const s = this.soldier(id)!;
@@ -801,6 +821,7 @@ export class World {
   orderCeaseFire(teamId: number): void {
     const team = this.team(teamId);
     if (!team) return;
+    team.march = null;
     for (const id of team.soldierIds) {
       const s = this.soldier(id)!;
       if (s.status !== "active") continue;

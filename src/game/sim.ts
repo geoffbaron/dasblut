@@ -29,6 +29,7 @@ import { TERRAIN } from "./terrain.ts";
 import { updateVehicles } from "./vehicleSim.ts";
 import { updateVisibility } from "./visibility.ts";
 import { Soldier, Team, unitPassable, World } from "./world.ts";
+import { sound } from "../render/sound.ts";
 
 // One fixed simulation step, in the order that makes the firefight read correctly:
 // see → acquire → fire → feel → act.
@@ -354,6 +355,9 @@ function rushToward(world: World, s: Soldier, e: Soldier): void {
   const sprint = (BASE_MOVE_SPEED / (isFinite(cost) ? cost : 1)) * rushMul * s.gait * SIM_DT;
   const move = Math.min(sprint, Math.max(0, dist - MELEE_STOP));
   if (move > 0) moveOnto(world, s, dx / dist, dy / dist, move);
+  // Cavalry charging home: throw out pounding hooves now and then (the SoundManager
+  // throttles and distance-culls, so this can't avalanche during a big charge).
+  if (s.weapon === "carbine" && move > 0 && Math.random() < 0.03) sound.play("horse", s.x, s.y);
 }
 
 // Advance a soldier by `d` cells along the unit vector (ux,uy) but only into passable

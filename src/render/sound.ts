@@ -32,7 +32,8 @@ export type SfxId =
   | "riflemusket"
   | "carbine"
   | "cannon"
-  | "melee";
+  | "melee"
+  | "horse";
 
 // Maps each game event to one or more real audio files in public/sfx/ (filenames are
 // the exact drop-in names, including extension — they're URL-encoded at load time so
@@ -55,14 +56,26 @@ const MORTAR_FIRE = "WEAPSiege-mortar_firing_sound,-Elevenlabs.mp3";
 const GASP = "GOREMisc-Soldier_dying_gasp,_-Elevenlabs.mp3";
 const BAZOOKA_BLAST = "EXPLReal-bazooka_blast-Elevenlabs.mp3";
 // American Civil War — generated on ElevenLabs (period black-powder arms + sabre).
+// Two takes of each so volleys, batteries and melees don't sound like one looped clip.
 const ACW_MUSKET = "acw_musket.mp3";
+const ACW_MUSKET2 = "acw_musket2.mp3";
 const ACW_CARBINE = "acw_carbine.mp3";
+const ACW_CARBINE2 = "acw_carbine2.mp3";
 const ACW_CANNON = "acw_cannon.mp3";
+const ACW_CANNON2 = "acw_cannon2.mp3";
 const ACW_SABRE = "acw_sabre.mp3";
+const ACW_SABRE2 = "acw_sabre2.mp3";
+const ACW_SHELL = "acw_shell.mp3"; // shell burst — thrown into the generic explosion pool
+// Cavalry horses — galloping hooves as they charge home, plus a whinny for the ambient bed.
+const HORSE_GALLOP = "horse_gallop.mp3";
+const HORSE_WHINNY = "horse_whinny.mp3";
 const SWITCH = "UIMvmt-puzzle_UI_tab_switch-Elevenlabs.mp3"; // UI select/order click
-// A generic, non-verbal death cry, played when any soldier is killed. (The old German
-// voice screams were removed — they were jarring and wrong for the Civil War.)
+// Generic, non-verbal death cries, played when any soldier is killed. (The old German
+// voice screams were removed — they were jarring and wrong for the Civil War.) Several
+// takes so a volley's worth of men falling doesn't sound like one repeated cry.
 const SCREAM_US = "HMNMisc-A_male_soldier_screa-Elevenlabs.mp3";
+const SCREAM1 = "scream1.mp3";
+const SCREAM2 = "scream2.mp3";
 // Tank engine — looped continuously while a tank is on the move.
 const TANK_DRIVE = [
   "VEHMil-tank_driving-Elevenlabs.mp3",
@@ -85,13 +98,13 @@ const SFX_DEFS: Record<SfxId, { files: string[]; vol: number }> = {
   tank_ap:        { files: [BIG_BOOM],  vol: 1.0 },
   tank_mg:        { files: [MG42],      vol: 0.8 },
   tank_he:        { files: [TANK_BOOM], vol: 1.0 },
-  explosion:      { files: [GRENADE],   vol: 1.0 },
+  explosion:      { files: [GRENADE, ACW_SHELL], vol: 1.0 }, // grenade + a shell burst for variety
   ricochet:       { files: [],          vol: 0.6 }, // synth fallback (zing)
   tank_hit:       { files: [TANK_BOOM], vol: 1.0 },
   tank_destroy:   { files: [BIG_BOOM],  vol: 1.0 },
   soldier_hit:    { files: [GASP],      vol: 0.85 },
-  soldier_scream:    { files: [SCREAM_US],  vol: 0.95 }, // generic death cry (no German voice)
-  soldier_scream_us: { files: [SCREAM_US],  vol: 0.95 }, // US death scream
+  soldier_scream:    { files: [SCREAM_US, SCREAM1, SCREAM2], vol: 0.95 }, // generic death cries (no German voice)
+  soldier_scream_us: { files: [SCREAM_US, SCREAM1, SCREAM2], vol: 0.95 }, // US death screams
   suppress_shout: { files: [],          vol: 0.5 }, // synth fallback
   ui_select:      { files: [SWITCH],    vol: 0.5 }, // switch-flip click (selection only)
   ui_order:       { files: [],          vol: 0.0 }, // silent — no click on every order
@@ -100,11 +113,12 @@ const SFX_DEFS: Record<SfxId, { files: string[]; vol: number }> = {
   tank_engine:    { files: TANK_DRIVE,  vol: 0.45 }, // looped while a tank drives
   ambient:        { files: AMBIENT,     vol: 0.3 },  // low distant battlefield bed
   mortar:         { files: [MORTAR_FIRE], vol: 0.9 }, // tube thump when a mortar fires
-  // American Civil War — period samples generated on ElevenLabs.
-  riflemusket:    { files: [ACW_MUSKET],  vol: 0.9 }, // single black-powder report
-  carbine:        { files: [ACW_CARBINE], vol: 0.8 },
-  cannon:         { files: [ACW_CANNON],  vol: 1.0 }, // field-gun discharge
-  melee:          { files: [ACW_SABRE],   vol: 0.7 }, // sabre/bayonet clash
+  // American Civil War — period samples generated on ElevenLabs (two takes each for variety).
+  riflemusket:    { files: [ACW_MUSKET, ACW_MUSKET2],   vol: 0.9 }, // single black-powder report
+  carbine:        { files: [ACW_CARBINE, ACW_CARBINE2], vol: 0.8 },
+  cannon:         { files: [ACW_CANNON, ACW_CANNON2],   vol: 1.0 }, // field-gun discharge
+  melee:          { files: [ACW_SABRE, ACW_SABRE2],     vol: 0.7 }, // sabre/bayonet clash
+  horse:          { files: [HORSE_GALLOP, HORSE_WHINNY], vol: 0.6 }, // cavalry hooves & whinny
 };
 
 // Maximum audible sounds per frame to avoid an audio avalanche during heavy combat.
@@ -229,10 +243,13 @@ export class SoundManager {
     // Civil War: no aircraft or modern small-arms bed — instead a faint, far-off din of
     // black-powder volley fire and the occasional gun, built from the period samples.
     if (this.era === "acw") {
-      const howl = this.pickHowl(Math.random() < 0.75 ? "riflemusket" : "cannon");
+      // Mostly far-off musketry, some gunnery, and now and then a horse off in the field.
+      const r = Math.random();
+      const id: SfxId = r < 0.62 ? "riflemusket" : r < 0.85 ? "cannon" : "horse";
+      const howl = this.pickHowl(id);
       if (!howl) return;
       const sid = howl.play();
-      howl.volume(0.16, sid); // distant
+      howl.volume(id === "horse" ? 0.2 : 0.16, sid); // distant
       howl.stereo((Math.random() * 2 - 1) * 0.75, sid);
       return;
     }
@@ -343,6 +360,7 @@ const FALLBACK_PARAMS: Partial<Record<SfxId, { freq: number; dur: number; type: 
   obj_lost:       { freq: 220,  dur: 0.40, type: "sine"      },
   tank_engine:    { freq: 80,   dur: 0.20, type: "sawtooth"  },
   mortar:         { freq: 150,  dur: 0.30, type: "sawtooth"  },
+  horse:          { freq: 260,  dur: 0.30, type: "sawtooth"  },
 };
 
 // Singleton — one manager for the whole game.

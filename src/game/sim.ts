@@ -22,6 +22,7 @@ import {
   VIS_INTERVAL,
 } from "./constants.ts";
 import { Faction } from "./world.ts";
+import { hasLOS } from "./los.ts";
 import { updateMorale } from "./morale.ts";
 import { findPath, smoothPath } from "./pathfinding.ts";
 import { TERRAIN } from "./terrain.ts";
@@ -171,6 +172,10 @@ function moveSoldiers(world: World): void {
         advance(world, s, 1.25 * s.gait);
         continue;
       default: {
+        // With an enemy inside sprinting distance, close the ground and go at him with the
+        // bayonet/sabre instead of trading fire — the melee itself is resolved in updateMelee.
+        const rushTarget = meleeRush(world, s);
+        if (rushTarget) { rushToward(world, s, rushTarget); break; }
         const team = world.team(s.teamId);
         if (team && team.march) {
           // Marching in formation: hold your slot relative to the advancing guide-point.
@@ -308,16 +313,56 @@ function steerToSlot(world: World, s: Soldier, team: Team): void {
   const cx = Math.floor(s.x), cy = Math.floor(s.y);
   const cost = world.grid.inBounds(cx, cy) ? TERRAIN[world.grid.get(cx, cy)].moveCost : 1;
   const step = (BASE_MOVE_SPEED / (isFinite(cost) ? cost : 1)) * (STANCE_SPEED[s.stance] ?? 1) * weaponMoveFactor(s) * s.gait * SIM_DT * 1.6;
-  if (dist > 1e-4) {
-    if (dist <= step) { s.x = tx; s.y = ty; }
-    else { s.x += (dx / dist) * step; s.y += (dy / dist) * step; }
-  }
   s.facing = Math.atan2(m.hy, m.hx); // face the line of march
-  const nx = Math.floor(s.x), ny = Math.floor(s.y);
-  if (!world.grid.passable(nx, ny)) {
-    const c = world.nearestPassable(nx, ny, { cx: nx, cy: ny });
-    s.x = c.cx + 0.5; s.y = c.cy + 0.5;
+  if (dist <= 1e-4) return;
+  // Move only onto walkable ground — never teleport-snap (that's what made men pop in and
+  // out of buildings). If a wall is dead ahead, slide along it; if truly boxed in, hold.
+  moveOnto(world, s, dx / dist, dy / dist, Math.min(step, dist));
+}
+
+const SPRINT_MELEE_RANGE = 6; // cells; an enemy this close is rushed with cold steel
+const MELEE_STOP = 0.8; // cells; how close the rusher pulls up (inside melee reach)
+
+// If an enemy is within sprinting distance and in view, return the nearest one to charge.
+// Only assault troops rush — crew-served weapons (MG, mortar, gun) and hidden men hold.
+function meleeRush(world: World, s: Soldier): Soldier | null {
+  if (s.stance === "sneak" || s.stance === "ambush") return null;
+  const w = s.weapon;
+  if (w === "lmg" || w === "mortar" || w === "cannon" || w === "bazooka" || w === "panzerfaust") return null;
+  let best: Soldier | null = null;
+  let bestD = SPRINT_MELEE_RANGE * SPRINT_MELEE_RANGE;
+  for (const e of world.soldiers) {
+    if (e.faction === s.faction || e.status !== "active") continue;
+    const d = (e.x - s.x) ** 2 + (e.y - s.y) ** 2;
+    if (d >= bestD) continue;
+    if (!hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), Math.floor(e.x), Math.floor(e.y), world.smokeGrid)) continue;
+    best = e; bestD = d;
   }
+  return best;
+}
+
+// Sprint a man in to contact with the enemy he's charging (movement only; the blow lands
+// in updateMelee once he's in reach). He drops his order and formation to close the gap.
+function rushToward(world: World, s: Soldier, e: Soldier): void {
+  s.path = null;
+  const dx = e.x - s.x, dy = e.y - s.y;
+  const dist = Math.hypot(dx, dy) || 1;
+  s.facing = Math.atan2(dy, dx);
+  const cx = Math.floor(s.x), cy = Math.floor(s.y);
+  const cost = world.grid.inBounds(cx, cy) ? TERRAIN[world.grid.get(cx, cy)].moveCost : 1;
+  const rushMul = s.weapon === "carbine" ? 3.0 : 2.0; // a cavalry gallop vs an infantry run
+  const sprint = (BASE_MOVE_SPEED / (isFinite(cost) ? cost : 1)) * rushMul * s.gait * SIM_DT;
+  const move = Math.min(sprint, Math.max(0, dist - MELEE_STOP));
+  if (move > 0) moveOnto(world, s, dx / dist, dy / dist, move);
+}
+
+// Advance a soldier by `d` cells along the unit vector (ux,uy) but only into passable
+// cells: try the diagonal, then each axis alone, otherwise don't move. No teleporting.
+function moveOnto(world: World, s: Soldier, ux: number, uy: number, d: number): void {
+  const nx = s.x + ux * d, ny = s.y + uy * d;
+  if (world.grid.passable(Math.floor(nx), Math.floor(ny))) { s.x = nx; s.y = ny; }
+  else if (world.grid.passable(Math.floor(s.x + ux * d), Math.floor(s.y))) { s.x += ux * d; }
+  else if (world.grid.passable(Math.floor(s.x), Math.floor(s.y + uy * d))) { s.y += uy * d; }
 }
 
 function advance(world: World, s: Soldier, speedMul: number): void {

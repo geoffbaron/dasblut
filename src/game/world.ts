@@ -694,9 +694,10 @@ export class World {
       s.path = null; // driven by the shared guide, not an individual path
     });
 
-    // Guide path (centre → objective) using the squad's coarsest passability so cavalry
-    // and guns route around buildings.
-    const guidePass = unitPassable(this.grid, men.some((s) => s.weapon === "carbine" || s.weapon === "cannon") ? "cannon" : "rifle");
+    // Guide path (centre → objective) routes the whole formation AROUND buildings (not
+    // through them): a broad line can't thread a doorway, and men clipping the walls is
+    // what caused the pop-in/out. ("cannon" passability treats building interiors as solid.)
+    const guidePass = unitPassable(this.grid, "cannon");
     const start: Cell = this.nearestPassable(Math.round(cx), Math.round(cy), { cx: Math.round(cx), cy: Math.round(cy) }, guidePass);
     const goal = this.nearestPassable(target.cx, target.cy, target, guidePass);
     const raw = findPath(this.grid, start, goal, { passable: guidePass });

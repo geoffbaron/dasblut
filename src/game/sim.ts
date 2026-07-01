@@ -182,11 +182,15 @@ function moveSoldiers(world: World): void {
         if (team && team.march) {
           // Marching in formation: hold your slot relative to the advancing guide-point.
           steerToSlot(world, s, team);
-        } else {
+        } else if (s.path) {
           // Pace set by the commanded stance and the man's own gait, slowed if shaken,
           // then nudged by cohesion so the squad stays a single body on the move.
           const mul = STANCE_SPEED[s.stance] * (s.state === "shaken" ? 0.7 : 1) * s.gait;
           advance(world, s, mul * cohesionFactor(s, centers.get(s.teamId)));
+        } else {
+          // Standing around with nothing to do: a little human fidget so an idle squad
+          // doesn't read as a frozen diorama.
+          idleFidget(world, s);
         }
       }
     }
@@ -312,21 +316,49 @@ function advanceMarch(world: World, team: Team): void {
   if (m.idx >= m.guide.length) team.march = null; // arrived; men settle at their slots
 }
 
+// A stable per-soldier pseudo-random in −0.5..0.5, from his id and a salt. Used to give
+// each man his own small, fixed quirks (where he stands in the rank, how he fidgets) so
+// no two behave identically and formations look hand-placed rather than stamped.
+function idJitter(id: number, salt: number): number {
+  let h = ((id + 1) * 2654435761 + salt * 40503) >>> 0;
+  h = (h ^ (h >>> 15)) >>> 0;
+  h = (h * 2246822519) >>> 0;
+  return (h & 4095) / 4095 - 0.5;
+}
+
 // Steer a man toward his formation slot (a fixed offset from the advancing guide-point),
 // a touch faster than the formation so a lagging man closes up rather than trailing off.
 function steerToSlot(world: World, s: Soldier, team: Team): void {
   const m = team.march!;
-  const tx = m.x + s.ox, ty = m.y + s.oy;
+  // Each man holds his slot loosely, off by a stable fraction of a pace — a real rank is
+  // never a machined grid.
+  const tx = m.x + s.ox + idJitter(s.id, 1) * 0.5, ty = m.y + s.oy + idJitter(s.id, 2) * 0.5;
   const dx = tx - s.x, dy = ty - s.y;
   const dist = Math.hypot(dx, dy);
   const cx = Math.floor(s.x), cy = Math.floor(s.y);
   const cost = world.grid.inBounds(cx, cy) ? TERRAIN[world.grid.get(cx, cy)].moveCost : 1;
   const step = (BASE_MOVE_SPEED / (isFinite(cost) ? cost : 1)) * (STANCE_SPEED[s.stance] ?? 1) * weaponMoveFactor(s) * s.gait * SIM_DT * 1.6;
-  s.facing = Math.atan2(m.hy, m.hx); // face the line of march
+  s.facing = Math.atan2(m.hy, m.hx) + idJitter(s.id, 3) * 0.22; // face the line of march, not quite in unison
   if (dist <= 1e-4) return;
   // Move only onto walkable ground — never teleport-snap (that's what made men pop in and
   // out of buildings). If a wall is dead ahead, slide along it; if truly boxed in, hold.
   moveOnto(world, s, dx / dist, dy / dist, Math.min(step, dist));
+}
+
+// A steady, idle man is never perfectly still: he shifts his weight, glances about, and
+// now and then takes a half-step to resettle. Cheap and rare, so a stationary squad reads
+// as living men rather than statues, without any of them actually wandering off.
+function idleFidget(world: World, s: Soldier): void {
+  if (s.state !== "steady") return; // shaken/pinned men are handled elsewhere
+  // Glance around — but not while watching a target or just after firing.
+  if (s.targetId == null && s.manualTargetId == null && s.firedTimer <= 0 && Math.random() < 0.02) {
+    s.facing += (Math.random() - 0.5) * 0.7;
+  }
+  // A rare little resettling shuffle — not while dug in (defend/ambush hold their ground).
+  if (s.stance !== "defend" && s.stance !== "ambush" && Math.random() < 0.006) {
+    const a = Math.random() * Math.PI * 2;
+    moveOnto(world, s, Math.cos(a), Math.sin(a), 0.05 + Math.random() * 0.06);
+  }
 }
 
 const SPRINT_MELEE_RANGE = 6; // cells; an enemy this close is rushed with cold steel

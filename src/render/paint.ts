@@ -119,9 +119,15 @@ export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "
         const m = fbm(px * 0.006, py * 0.006, seed + 77, 2);
         c = mix(c, m > 0.5 ? MEADOW_WARM : MEADOW_DEEP, Math.min(0.7, Math.abs(m - 0.5) * 2.2));
       }
-      data[i] = clamp8(c.r * shade);
-      data[i + 1] = clamp8(c.g * shade);
-      data[i + 2] = clamp8(c.b * shade);
+      // Per-pixel film grain — a fast hash gives every pixel a tiny random light/dark
+      // kick, so no area is ever a dead-flat fill. This fine grit is what makes AoE2
+      // and Close Combat maps read as painted/photographic rather than vector-clean.
+      let hgrain = (px * 374761393 + py * 668265263 + seed * 1103515245) >>> 0;
+      hgrain = (hgrain ^ (hgrain >>> 13)) >>> 0;
+      const grain = 1 + ((hgrain & 255) / 255 - 0.5) * 0.16; // ±8%
+      data[i] = clamp8(c.r * shade * grain);
+      data[i + 1] = clamp8(c.g * shade * grain);
+      data[i + 2] = clamp8(c.b * shade * grain);
       data[i + 3] = 255;
     }
   }
@@ -140,6 +146,9 @@ export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "
 
   // Field furrows + grass tufts give the open ground some life.
   scatterGroundDetail(ctx, grid, rng);
+  // A dense scatter of small gritty props — pebbles, dirt clods, dry-grass patches,
+  // molehills, twigs — so no patch of ground is ever bare.
+  scatterGrit(ctx, grid, rng);
   // Road ruts.
   drawRoadRuts(ctx, grid, rng);
   // Water ripples + shoreline.
@@ -167,6 +176,78 @@ export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "
 }
 
 // ---------------------------------------------------------------------------
+
+// A dense, varied scatter of small ground props across all walkable terrain — the fine
+// clutter that makes AoE2 / Close Combat maps feel like real dirt rather than a colored
+// fill. Each cell rolls a handful of independent small features.
+function scatterGrit(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number): void {
+  for (let cy = 0; cy < grid.height; cy++) {
+    for (let cx = 0; cx < grid.width; cx++) {
+      const t = grid.get(cx, cy);
+      if (t !== Terrain.Grass && t !== Terrain.Open && t !== Terrain.Road) continue;
+      const bx = cx * CELL_SIZE, by = cy * CELL_SIZE;
+      const grassy = t === Terrain.Grass;
+
+      // Pebbles: a little cluster of tiny lit stones with a dark side.
+      if (rng() < (grassy ? 0.35 : 0.7)) {
+        const n = 1 + Math.floor(rng() * 3);
+        for (let k = 0; k < n; k++) {
+          const x = bx + rng() * CELL_SIZE, y = by + rng() * CELL_SIZE;
+          const s = 0.5 + rng() * 1.3;
+          ctx.fillStyle = "rgba(20,16,12,0.28)"; // shadow to SE
+          ctx.beginPath(); ctx.ellipse(x + 0.5, y + 0.5, s, s * 0.75, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = `hsl(${34 + rng() * 16},${8 + rng() * 10}%,${44 + rng() * 22}%)`;
+          ctx.beginPath(); ctx.ellipse(x, y, s, s * 0.75, 0, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      // Dirt clod / bare-earth smudge — darker where turf has worn through.
+      if (rng() < (grassy ? 0.22 : 0.35)) {
+        const x = bx + rng() * CELL_SIZE, y = by + rng() * CELL_SIZE;
+        const r = 1.5 + rng() * 3.5;
+        const g = ctx.createRadialGradient(x, y, r * 0.2, x, y, r);
+        g.addColorStop(0, `rgba(74,60,40,${0.16 + rng() * 0.14})`);
+        g.addColorStop(1, "rgba(74,60,40,0)");
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.ellipse(x, y, r, r * (0.6 + rng() * 0.3), rng() * Math.PI, 0, Math.PI * 2); ctx.fill();
+      }
+      // Dry / dead grass fleck — pale straw scattered over green.
+      if (grassy && rng() < 0.4) {
+        const x = bx + rng() * CELL_SIZE, y = by + rng() * CELL_SIZE;
+        ctx.strokeStyle = `hsla(${44 + rng() * 12},40%,${52 + rng() * 16}%,${0.3 + rng() * 0.25})`;
+        ctx.lineWidth = 0.6;
+        ctx.beginPath();
+        for (let b = 0; b < 2; b++) {
+          ctx.moveTo(x + (rng() - 0.5) * 1.4, y);
+          ctx.lineTo(x + (rng() - 0.5) * 2.4, y - 1.8 - rng() * 2);
+        }
+        ctx.stroke();
+      }
+      // Twig / dead stick.
+      if (rng() < 0.14) {
+        const x = bx + rng() * CELL_SIZE, y = by + rng() * CELL_SIZE;
+        const len = 2 + rng() * 3.5, a = rng() * Math.PI;
+        ctx.strokeStyle = `hsla(30,24%,${22 + rng() * 12}%,${0.4 + rng() * 0.2})`;
+        ctx.lineWidth = 0.6 + rng() * 0.4;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+        ctx.stroke();
+      }
+      // Molehill / dirt mound on grass — a small lit-topped dark heap.
+      if (grassy && rng() < 0.03) {
+        const x = bx + rng() * CELL_SIZE, y = by + rng() * CELL_SIZE;
+        const r = 2 + rng() * 2;
+        ctx.fillStyle = "rgba(18,14,10,0.3)";
+        ctx.beginPath(); ctx.ellipse(x + 1, y + 1.2, r, r * 0.6, 0, 0, Math.PI * 2); ctx.fill();
+        const g = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, 0.5, x, y, r);
+        g.addColorStop(0, "#6a5236");
+        g.addColorStop(1, "#3e301e");
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.6, 0, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+}
 
 function scatterGroundDetail(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number): void {
   for (let cy = 0; cy < grid.height; cy++) {

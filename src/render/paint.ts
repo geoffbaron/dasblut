@@ -797,6 +797,19 @@ function paintFloorTile(grid: Grid, b: Building, minCx: number, minCy: number, m
   ctx.scale(SS, SS);
   ctx.translate(-x0, -y0);
   const fRng = mulberry32((((minCx + 7) * 40503) ^ ((minCy + 13) * 12289)) >>> 0);
+  // Clip the interior to the building's smooth polygon, so the floor's edge lines up with
+  // the roofline/wall exactly instead of showing the stair-stepped per-cell footprint
+  // poking out. (Rectangular houses' poly == their cell block, so nothing changes there;
+  // this only cleans up the irregular OSM footprints.)
+  const clip = b.poly.length >= 3;
+  if (clip) {
+    ctx.save();
+    const p = new Path2D();
+    p.moveTo(b.poly[0].x * CELL_SIZE, b.poly[0].y * CELL_SIZE);
+    for (let i = 1; i < b.poly.length; i++) p.lineTo(b.poly[i].x * CELL_SIZE, b.poly[i].y * CELL_SIZE);
+    p.closePath();
+    ctx.clip(p);
+  }
   // 1. One open room: floorboards across the entire footprint (walls included — the
   //    thin wall line is drawn over the top, so there's no gap beneath it).
   for (const idx of b.cells) drawFloorCell(ctx, grid, idx % W, (idx / W) | 0);
@@ -804,6 +817,7 @@ function paintFloorTile(grid: Grid, b: Building, minCx: number, minCy: number, m
   for (const idx of b.cells) {
     if (grid.cells[idx] === Terrain.Floor && fRng() < 0.04) drawFurniture(ctx, idx % W, (idx / W) | 0, fRng);
   }
+  if (clip) ctx.restore();
   // 3. The exterior wall: a thin stone line traced along the building's polygon, so it
   //    follows the roofline exactly and reads as a real wall, not a ring of blocks.
   drawThinWall(ctx, b);

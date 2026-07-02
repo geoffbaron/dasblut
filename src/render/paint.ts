@@ -45,6 +45,9 @@ const GROUND: Partial<Record<Terrain, [RGB, RGB]>> = {
 // yellow-green swathes and deep lush pockets, so open country reads painterly zoomed out.
 const MEADOW_WARM = rgb(0x8cab4c);
 const MEADOW_DEEP = rgb(0x41682c);
+// Field-parcel tones for the farmland patchwork: harvested straw stubble and rich crop green.
+const STUBBLE = rgb(0xb3a05e);
+const CROP_DEEP = rgb(0x3f6a2e);
 
 export interface PaintedMap {
   canvas: HTMLCanvasElement;
@@ -86,6 +89,36 @@ export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "
   const data = img.data;
   const warpAmp = CELL_SIZE * 0.45;
 
+  // --- Rolling-terrain hillshade, the Close Combat depth cue: a coarse heightfield of
+  // long, gentle rises, shaded by slope against the NW sun (lit faces bright, reverse
+  // slopes dim), precomputed at 1/8 resolution and bilinearly sampled per pixel so it
+  // costs almost nothing in the main loop.
+  const RSTEP = 8;
+  const rw = Math.ceil(mapW / RSTEP) + 2;
+  const rh = Math.ceil(mapH / RSTEP) + 2;
+  const relief = new Float32Array(rw * rh);
+  for (let ry = 0; ry < rh; ry++) {
+    for (let rx = 0; rx < rw; rx++) {
+      const X = rx * RSTEP, Y = ry * RSTEP;
+      // Long swells plus a faint secondary undulation.
+      relief[ry * rw + rx] = fbm(X * 0.0035, Y * 0.0035, seed + 131, 2) + fbm(X * 0.011, Y * 0.011, seed + 177, 2) * 0.3;
+    }
+  }
+  const rshade = new Float32Array(rw * rh);
+  const HILL = 2.6; // strength of the slope lighting
+  for (let ry = 0; ry < rh; ry++) {
+    for (let rx = 0; rx < rw; rx++) {
+      const i0 = ry * rw + rx;
+      const hL = relief[ry * rw + Math.max(0, rx - 1)];
+      const hR = relief[ry * rw + Math.min(rw - 1, rx + 1)];
+      const hU = relief[Math.max(0, ry - 1) * rw + rx];
+      const hD = relief[Math.min(rh - 1, ry + 1) * rw + rx];
+      // Height rising toward the SE tilts the face toward the NW light → brighter.
+      const s = 1 + ((hR - hL) * 0.6 + (hD - hU) * 0.8) * HILL;
+      rshade[i0] = Math.max(0.8, Math.min(1.16, s));
+    }
+  }
+
   for (let py = 0; py < mapH; py++) {
     for (let px = 0; px < mapW; px++) {
       // Warp the sampling point so cell boundaries become wavy, not gridded; the extra
@@ -114,6 +147,17 @@ export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "
       const clump = valueNoise(px * 0.06, py * 0.06, seed + 55);
       shade *= 0.89 + clump * 0.22;
 
+      // Hillshade: bilinear-sample the precomputed slope lighting so the whole map rolls —
+      // sunlit rises, dim reverse slopes — like Close Combat's photographed ground.
+      {
+        const rxf = px / RSTEP, ryf = py / RSTEP;
+        const rx0 = rxf | 0, ry0 = ryf | 0;
+        const fx = rxf - rx0, fy = ryf - ry0;
+        const i00 = ry0 * rw + rx0;
+        shade *= rshade[i00] * (1 - fx) * (1 - fy) + rshade[i00 + 1] * fx * (1 - fy)
+          + rshade[i00 + rw] * (1 - fx) * fy + rshade[i00 + rw + 1] * fx * fy;
+      }
+
       const i = (py * mapW + px) * 4;
       let c = mix(pair[0], pair[1], t);
       // Grass gets very-large-scale meadow patches — swathes drift toward sunlit
@@ -122,6 +166,24 @@ export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "
       if (terrain === Terrain.Grass || terrain === Terrain.Woods || terrain === Terrain.Wall || terrain === Terrain.Hedge) {
         const m = fbm(px * 0.006, py * 0.006, seed + 77, 2);
         c = mix(c, m > 0.5 ? MEADOW_WARM : MEADOW_DEEP, Math.min(0.7, Math.abs(m - 0.5) * 2.2));
+      }
+      // Farmland patchwork: open country is a quilt of field parcels — some straw stubble,
+      // some rich crop, some ploughed with directional furrows — with boundaries that wander
+      // (they reuse the warped lookup). This is the countryside texture CC maps live on.
+      if (terrain === Terrain.Grass || terrain === Terrain.Open) {
+        const FIELD = 340; // ~15 cells per parcel
+        let fh = ((Math.floor(wx / FIELD) * 374761393 + Math.floor(wy / FIELD) * 668265263 + seed * 69069) >>> 0);
+        fh = (fh ^ (fh >>> 13)) >>> 0;
+        fh = (fh * 1274126177) >>> 0;
+        const kind = (fh >>> 8) & 255;       // which crop this parcel grows
+        const angBits = (fh >>> 16) & 3;     // furrow direction
+        if (kind < 70) c = mix(c, STUBBLE, 0.2);        // harvested stubble
+        else if (kind < 130) c = mix(c, CROP_DEEP, 0.14); // lush crop
+        if (kind >= 180) { // ploughed: fine parallel furrows catching the light
+          const ang = 0.15 + angBits * 0.42;
+          const s = Math.sin((px * Math.cos(ang) + py * Math.sin(ang)) * 0.85 + fh);
+          shade *= 1 + s * 0.05;
+        }
       }
       // Per-pixel film grain — a fast hash gives every pixel a tiny random light/dark
       // kick, so no area is ever a dead-flat fill. This fine grit is what makes AoE2
@@ -322,10 +384,21 @@ function scatterGroundDetail(ctx: CanvasRenderingContext2D, grid: Grid, rng: () 
 
 function drawRoadRuts(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number): void {
   ctx.save();
+  const isRoad = (x: number, y: number) => grid.inBounds(x, y) && grid.get(x, y) === Terrain.Road;
   for (let cy = 0; cy < grid.height; cy++) {
     for (let cx = 0; cx < grid.width; cx++) {
       if (grid.get(cx, cy) !== Terrain.Road) continue;
       const bx = cx * CELL_SIZE, by = cy * CELL_SIZE;
+
+      // Verge wear: a soft dark stain along every edge where the road meets the fields, so
+      // the track sits INTO the land (CC roads are grimed at the shoulders, not pasted on).
+      ctx.strokeStyle = `rgba(58,48,32,${0.16 + rng() * 0.08})`;
+      ctx.lineWidth = 2.2;
+      ctx.lineCap = "round";
+      if (!isRoad(cx, cy - 1)) { ctx.beginPath(); ctx.moveTo(bx - 1, by + 1); ctx.lineTo(bx + CELL_SIZE + 1, by + 1); ctx.stroke(); }
+      if (!isRoad(cx, cy + 1)) { ctx.beginPath(); ctx.moveTo(bx - 1, by + CELL_SIZE - 1); ctx.lineTo(bx + CELL_SIZE + 1, by + CELL_SIZE - 1); ctx.stroke(); }
+      if (!isRoad(cx - 1, cy)) { ctx.beginPath(); ctx.moveTo(bx + 1, by - 1); ctx.lineTo(bx + 1, by + CELL_SIZE + 1); ctx.stroke(); }
+      if (!isRoad(cx + 1, cy)) { ctx.beginPath(); ctx.moveTo(bx + CELL_SIZE - 1, by - 1); ctx.lineTo(bx + CELL_SIZE - 1, by + CELL_SIZE + 1); ctx.stroke(); }
       // Gravel speckle — more pebbles for texture.
       for (let k = 0; k < 8; k++) {
         const x = bx + rng() * CELL_SIZE, y = by + rng() * CELL_SIZE;

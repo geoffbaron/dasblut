@@ -96,12 +96,6 @@
       }
       #menu button:hover { background: #34322a; }
       #menu button.primary { background: #5a4a22; border-color: #b89a4a; color: #fff3d6; }
-      #menu .scenarios { padding-top: 0; padding-bottom: 0; }
-      #menu .scenLabel { font-size: 12px; color: #8a8474; }
-      #menu #scenarioBtns { display: flex; gap: 8px; flex-wrap: wrap; }
-      #menu .scenBtn { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 5px 11px; }
-      #menu .scenBtn b { font-size: 13px; color: #f0e6d0; font-weight: 700; }
-      #menu .scenBtn span { font-size: 10.5px; color: #948d7c; }
       #menu select {
         font: inherit; font-size: 13px; color: #d8d2c2; background: #2a2820;
         border: 1px solid #4a463c; border-radius: 5px; padding: 7px 10px; cursor: pointer;
@@ -252,12 +246,11 @@
           <option value="2">Axis: 2 tanks</option>
           <option value="3">Axis: 3 tanks</option>
         </select>
+        <select id="scenario" title="Jump to a historic battle">
+          <option value="">⚔ Historic battle…</option>
+        </select>
         <button id="deployBtn" class="primary">⚔ Deploy here</button>
         <button id="testBtn">Use test map</button>
-      </div>
-      <div class="bar scenarios">
-        <span class="scenLabel">Historic battles:</span>
-        <span id="scenarioBtns"></span>
       </div>
       <div id="map">
         <div class="reticle"><div class="box" id="reticleBox"></div></div>

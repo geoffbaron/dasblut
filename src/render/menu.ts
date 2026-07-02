@@ -112,16 +112,19 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
     map.setView([s.lat, s.lon], 16);
     deploy(s.lat, s.lon, s.name);
   };
-  const scenBox = document.getElementById("scenarioBtns");
-  if (scenBox) {
-    for (const s of SCENARIOS) {
-      const btn = document.createElement("button");
-      btn.className = "scenBtn";
-      btn.innerHTML = `<b>${s.name}</b><span>${s.blurb}</span>`;
-      btn.title = `${s.name} — ${s.blurb}`;
-      btn.addEventListener("click", () => applyScenario(s));
-      scenBox.appendChild(btn);
-    }
+  const scenSel = document.getElementById("scenario") as HTMLSelectElement | null;
+  if (scenSel) {
+    SCENARIOS.forEach((s, i) => {
+      const opt = document.createElement("option");
+      opt.value = String(i);
+      opt.textContent = `${s.name} — ${s.blurb}`;
+      scenSel.appendChild(opt);
+    });
+    scenSel.addEventListener("change", () => {
+      const s = SCENARIOS[Number(scenSel.value)];
+      if (s) applyScenario(s);
+      scenSel.value = ""; // snap back to the placeholder so it can be re-picked
+    });
   }
 
   document.getElementById("testBtn")!.addEventListener("click", () => {

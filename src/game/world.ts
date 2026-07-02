@@ -543,14 +543,28 @@ export class World {
   /** True when the human player controls every objective. */
   playerHoldsAll(): boolean { return this.objAllOwner() === this.player; }
 
-  // Spawn `count` tanks of the faction's class, clustered around (cx,cy) on drivable
-  // ground, all facing the given heading.
-  private spawnTanks(faction: Faction, count: number, cx: number, cy: number, facing: number): void {
+  // Spawn `count` tanks of the faction's class, all facing the given heading. The armour
+  // starts up WITH its infantry — at the leading edge of the friendly formation — rather
+  // than parked off on its own at the map edge. Called after the infantry are placed.
+  private spawnTanks(faction: Faction, count: number, fallbackCx: number, fallbackCy: number, facing: number): void {
     const cls: VehicleClass = faction === "us" ? "sherman" : "panzer4";
     const n = Math.max(1, Math.min(3, count));
+    // Anchor on this side's own troops: centre on their mean X, and sit at their front rank
+    // (the edge nearest the enemy) so the tanks lead the advance instead of trailing it.
+    const homeDir = faction === this.southFaction ? 1 : -1; // home edge is +y (south) / -y (north)
+    let sumX = 0, m = 0, frontY = homeDir > 0 ? Infinity : -Infinity;
+    for (const s of this.soldiers) {
+      if (s.faction !== faction) continue;
+      sumX += s.x; m++;
+      if (homeDir > 0 ? s.y < frontY : s.y > frontY) frontY = s.y;
+    }
+    const baseX = m ? Math.round(sumX / m) : fallbackCx;
+    const baseY = m && isFinite(frontY)
+      ? Math.max(0, Math.min(this.grid.height - 1, Math.round(frontY - homeDir * 1.5)))
+      : fallbackCy;
     for (let i = 0; i < n; i++) {
       const off = i === 0 ? 0 : (i % 2 === 1 ? 1 : -1) * Math.ceil(i / 2) * 3;
-      const cell = this.nearestVehicleCell(cx + off, cy);
+      const cell = this.nearestVehicleCell(baseX + off, baseY);
       this.spawnVehicle(cls, cell.cx, cell.cy, facing);
     }
   }

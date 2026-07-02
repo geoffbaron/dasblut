@@ -9,7 +9,7 @@ import { VEHICLES } from "./game/vehicleDefs.ts";
 import { updateVisibility } from "./game/visibility.ts";
 import { Renderer } from "./render/renderer.ts";
 import { Input } from "./render/input.ts";
-import { runMenu } from "./render/menu.ts";
+import { runMenu, MenuHandle } from "./render/menu.ts";
 import { sound } from "./render/sound.ts";
 import { net } from "./net/net.ts";
 import {
@@ -21,10 +21,18 @@ type ArmedOrder = "move" | "fast" | "sneak" | "fire" | "smoke" | "charge";
 
 // --- Multiplayer bootstrap ---------------------------------------------------------
 // The host runs the authoritative sim and plays US (the normal single-player flow,
-// plus broadcasting). German/spectator clients render the host's snapshots and get
-// the same HUD (the German commands the Axis; a spectator can look but not touch). If
-// no WS server answers (offline / Vite dev), we just start the normal single game.
-let booted = false;
+// plus broadcasting), and can be joined by a German commander (Axis) or spectators.
+// There is no lobby/session concept — server/index.js runs a single global room, so
+// every visitor to the site shares one match. That makes joining a DELIBERATE, opt-in
+// action: every tab always gets its own private single-player menu first; the only way
+// into someone else's battle is the explicit "Join Live Battle" prompt below. (An
+// earlier version auto-joined/auto-claimed Axis for any non-host connection, which
+// meant a stale connection or a simple page reload could silently swap a solo player
+// into commanding the wrong side of someone else's game, discarding their own menu
+// picks entirely — that's why this is opt-in now.)
+let booted = false;        // this tab has committed to a screen (its own menu, or a joined client view)
+let localStarted = false;  // the local player's own game has actually started (hides the join prompt)
+let joined = false;        // this tab has joined/spectated the live battle instead
 let pendingSetup: Setup | null = null;
 // True when a human German commander is connected (the host's "opponent ready" flag).
 let opponentPresent = false;
@@ -33,20 +41,21 @@ let onAxisOrderHost: ((o: AxisOrder) => void) | null = null;
 let onGermanPresentHost: ((present: boolean) => void) | null = null;
 // Client hook, wired up by startClientView.
 let onSnapshotClient: ((s: Snapshot) => void) | null = null;
+let menuHandle: MenuHandle | null = null;
 
 net.connect({
-  onRole: (role, germanPresent) => {
+  onRole: (_role, germanPresent) => {
     opponentPresent = germanPresent;
-    if (role === "spectator" && !germanPresent) net.claimGerman(); // first joiner takes the Axis
-    if (role === "host") startOffline();
-    else maybeStartClient();
+    startOffline(); // always show THIS tab's own local menu, whatever role the server assigned
+    updateJoinBattleUI();
   },
   onGermanPresent: (p) => {
     if (p && !opponentPresent) toast("A human German commander has joined — the AI stands down.");
     opponentPresent = p;
     onGermanPresentHost?.(p);
+    updateJoinBattleUI();
   },
-  onSetup: (d) => { pendingSetup = d as Setup; maybeStartClient(); },
+  onSetup: (d) => { pendingSetup = d as Setup; updateJoinBattleUI(); },
   onSnapshot: (d) => onSnapshotClient?.(d as Snapshot),
   onAxisOrder: (d) => onAxisOrderHost?.(d as AxisOrder),
   onClose: () => startOffline(), // host left / disconnected → fall back to local play
@@ -75,14 +84,37 @@ setTimeout(() => startOffline(), 900);
 function startOffline(): void {
   if (booted) return;
   booted = true;
-  runMenu(startGame);
+  menuHandle = runMenu((map, objectiveCount, setup) => {
+    localStarted = true;
+    updateJoinBattleUI(); // this tab has committed to its own game — hide the join prompt
+    return startGame(map, objectiveCount, setup);
+  });
 }
-function maybeStartClient(): void {
-  if (booted || !pendingSetup) return; // wait until the host has published a map
-  if (net.role !== "german" && net.role !== "spectator") return;
-  booted = true;
+
+// The ONLY path into commanding/spectating another tab's match — never automatic.
+// Shown only before the local player has started their own game, only once we know
+// we're not the host of this room, and only once the host has actually published a map.
+function updateJoinBattleUI(): void {
+  const el = document.getElementById("joinBattle");
+  const msg = document.getElementById("joinBattleMsg");
+  const btn = document.getElementById("joinBattleBtn") as HTMLButtonElement | null;
+  if (!el || !msg || !btn) return;
+  const show = !joined && !localStarted && net.role !== "host" && pendingSetup != null;
+  el.style.display = show ? "flex" : "none";
+  if (show) {
+    msg.textContent = `⚔ A battle is in progress (${pendingSetup!.mapName})`;
+    btn.textContent = opponentPresent ? "Spectate" : "Join as Axis Commander";
+  }
+}
+document.getElementById("joinBattleBtn")?.addEventListener("click", () => {
+  if (!pendingSetup || joined) return;
+  joined = true;
+  if (!opponentPresent) net.claimGerman();
+  menuHandle?.dispose();
+  const el = document.getElementById("joinBattle");
+  if (el) el.style.display = "none";
   startClientView(pendingSetup);
-}
+});
 
 // === Shared HUD ====================================================================
 
@@ -156,6 +188,9 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
   const bannerEl = document.getElementById("banner")!;
   const bannerBig = document.getElementById("bannerBig")!;
   const bannerSub = document.getElementById("bannerSub")!;
+  // The battle is genuinely over at this point (no more orders can be given — see the
+  // orders-bar visibility check below); the only way back in is a fresh battle.
+  document.getElementById("bannerNewBattle")?.addEventListener("click", () => location.reload());
   const deployBar = document.getElementById("deployBar")!;
   const launchBtn = document.getElementById("launchBtn")!;
   const ordersBar = document.getElementById("orders")!;
@@ -219,7 +254,7 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
       const amDefender = world.roleOf(world.player) === "defend";
       bannerBig.textContent = iWon ? (amDefender ? "POSITION HELD" : "OBJECTIVE SECURED") : (amDefender ? "POSITION OVERRUN" : "ATTACK REPULSED");
       bannerBig.style.color = iWon ? "#9fcf6f" : "#e0533a";
-      bannerSub.textContent = iWon ? "The field is yours." : "The battle is lost.";
+      bannerSub.textContent = (iWon ? "The field is yours. " : "The battle is lost. ") + "This engagement has ended — no further orders.";
     }
 
     if (!canCommand) { statusEl.innerHTML = `<span class="dim">spectating</span>`; return; }

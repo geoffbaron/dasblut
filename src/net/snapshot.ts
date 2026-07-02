@@ -5,7 +5,7 @@
 import { GameMap, MapFeatures, Objective } from "../game/gamemap.ts";
 import { Grid } from "../game/grid.ts";
 import { Cell } from "../game/pathfinding.ts";
-import { Faction, SquadKind, Soldier, Status, Vehicle, World } from "../game/world.ts";
+import { DEFAULT_SETUP, Era, Faction, SquadKind, Soldier, Status, Vehicle, World } from "../game/world.ts";
 import { WeaponId, WEAPONS } from "../game/weapons.ts";
 
 const STATUS: Status[] = ["active", "wounded", "dead", "surrendered"];
@@ -14,6 +14,7 @@ export interface SnapTeam { id: number; name: string; faction: Faction; kind: Sq
 
 export interface Setup {
   mapName: string;
+  era: Era; // so a client renders the host's actual war (terrain palette, faction names)
   w: number;
   h: number;
   cells: number[];
@@ -43,6 +44,7 @@ export interface Snapshot {
 export function encodeSetup(world: World): Setup {
   return {
     mapName: world.mapName,
+    era: world.era,
     w: world.grid.width,
     h: world.grid.height,
     cells: Array.from(world.grid.cells),
@@ -96,7 +98,7 @@ export function buildClientWorld(setup: Setup): World {
     objectives: setup.objectives,
     spawns: { us: [], axis: [], usVehicles: [], axisVehicles: [] },
   };
-  const world = new World(map);
+  const world = new World(map, undefined, { ...DEFAULT_SETUP, era: setup.era });
   // Recreate the host's teams (empty rosters; soldiers attach themselves via teamId).
   world.teams = setup.teams.map((t) => ({
     id: t.id, name: t.name, faction: t.faction, color: t.color, kind: t.kind,

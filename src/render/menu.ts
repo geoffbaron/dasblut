@@ -10,7 +10,14 @@ import { buildTestMap } from "../game/testmap.ts";
 // deploy it fetches OSM and hands the generated GameMap to `onStart`.
 import type { GameSetup } from "../game/world.ts";
 
-export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: GameSetup) => void): void {
+export interface MenuHandle {
+  /** Hide the menu and tear down its Leaflet map — for a caller that needs to take over
+   *  the screen without the user submitting the deploy form (e.g. joining someone else's
+   *  live battle instead of starting a local one). */
+  dispose(): void;
+}
+
+export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: GameSetup) => void): MenuHandle {
   const menu = document.getElementById("menu")!;
   const loading = document.getElementById("loading")!;
   const loadingMsg = document.getElementById("loadingMsg")!;
@@ -166,6 +173,13 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
   search.addEventListener("keydown", (e) => {
     if (e.key === "Enter") doSearch();
   });
+
+  return {
+    dispose: () => {
+      menu.style.display = "none";
+      map.remove();
+    },
+  };
 }
 
 function labelFor(lat: number, lon: number): string {

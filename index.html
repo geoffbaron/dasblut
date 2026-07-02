@@ -59,9 +59,28 @@
         padding: 8px 20px; border-radius: 8px; text-align: center;
         background: rgba(20,19,15,0.82); border: 1px solid #4a463c;
         display: flex; align-items: baseline; gap: 12px; white-space: nowrap;
+        pointer-events: auto;
       }
       #banner .big { font-size: 17px; font-weight: 700; letter-spacing: 1.5px; }
       #banner .sub { color: #9a9484; font-size: 12px; }
+      #banner button {
+        font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+        color: #f0e6d6; background: #6f4a2a; border: 1px solid #9a6a3a;
+        border-radius: 5px; padding: 6px 14px;
+      }
+      #banner button:hover { filter: brightness(1.15); }
+      #joinBattle {
+        position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+        z-index: 15; display: none; align-items: center; gap: 10px;
+        padding: 8px 16px; border-radius: 8px; font-size: 12px;
+        background: rgba(20,19,15,0.88); border: 1px solid #4a463c;
+      }
+      #joinBattle button {
+        font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+        color: #f0e6d6; background: #6f4a2a; border: 1px solid #9a6a3a;
+        border-radius: 5px; padding: 6px 12px;
+      }
+      #joinBattle button:hover { filter: brightness(1.15); }
       #orders {
         position: fixed; bottom: 44px; left: 50%; transform: translateX(-50%); z-index: 10;
         display: none; gap: 6px; padding: 7px; border-radius: 8px;
@@ -274,7 +293,14 @@
     <div id="roster"><div class="rtitle">UNITS</div></div>
     <div id="status"><span class="dim">No team selected</span></div>
     <div id="objective"></div>
-    <div id="banner"><div class="card"><div class="big" id="bannerBig"></div><div class="sub" id="bannerSub"></div></div></div>
+    <div id="banner"><div class="card">
+      <div><div class="big" id="bannerBig"></div><div class="sub" id="bannerSub"></div></div>
+      <button id="bannerNewBattle">⟳ New Battle</button>
+    </div></div>
+    <div id="joinBattle">
+      <span id="joinBattleMsg">⚔ A battle is in progress</span>
+      <button id="joinBattleBtn">Join as Axis Commander</button>
+    </div>
     <div id="orders">
       <button data-order="move"   data-key="q">Move<br><span class="k">Q</span></button>
       <button data-order="fast"   data-key="w">Fast<br><span class="k">W</span></button>
@@ -342,7 +368,7 @@
         </ul>
 
         <h2>MULTIPLAYER</h2>
-        <p>Just <b>share the page link</b>. The first person to open it hosts as the US; the next takes command of the <b>Germans</b>; anyone after that spectates. The badge in the bottom-right shows your role.</p>
+        <p><b>Share the page link.</b> The first person to open it hosts (and always plays their own chosen side). Anyone who opens the link after that gets their own private menu too — but if a battle is already running, a prompt at the bottom of the screen offers to <b>join it as the Germans</b> or spectate. Joining is always your choice; you're never dropped into someone else's battle automatically. The badge in the bottom-right shows your role.</p>
 
         <div class="actions">
           <button id="tutGot" class="primary">Got it — to battle</button>

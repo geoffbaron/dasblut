@@ -9,7 +9,15 @@ import { isPassable, Terrain, vehiclePassable } from "./terrain.ts";
 // grid, and rasterize buildings, roads, woods, water, and hedges into terrain. The
 // result is a GameMap the rest of the engine consumes exactly like the test map.
 
-const OVERPASS = "https://overpass-api.de/api/interpreter";
+// Overpass is a free, keyless public service — no API key is involved anywhere. Its main
+// instance regularly returns 504/429 when it's overloaded, so we try several independent
+// mirrors in turn and take the first that answers.
+const OVERPASS_MIRRORS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
+  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+];
 
 interface LatLon {
   lat: number;
@@ -145,14 +153,31 @@ async function fetchOverpass(s: number, w: number, n: number, e: number): Promis
     `way["waterway"](${bbox});` +
     `way["barrier"~"hedge|wall|fence"](${bbox});` +
     `);out geom;`;
-  const res = await fetch(OVERPASS, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "data=" + encodeURIComponent(q),
-  });
-  if (!res.ok) throw new Error(`Overpass ${res.status}`);
-  const json = (await res.json()) as { elements: OsmWay[] };
-  return json.elements ?? [];
+  const body = "data=" + encodeURIComponent(q);
+
+  let lastErr: unknown = null;
+  for (const url of OVERPASS_MIRRORS) {
+    // Give each mirror one shot, but don't let a hung request stall the whole deploy —
+    // abort after 30 s and move on to the next mirror.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 30_000);
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+        signal: ctrl.signal,
+      });
+      if (!res.ok) throw new Error(`Overpass ${res.status}`); // 504/429/etc → try next mirror
+      const json = (await res.json()) as { elements: OsmWay[] };
+      return json.elements ?? [];
+    } catch (err) {
+      lastErr = err; // timeout, network error, or a bad status — fall through to the next
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw new Error(`Map service busy — all Overpass mirrors failed (${lastErr instanceof Error ? lastErr.message : "unknown"})`);
 }
 
 function roadWidth(highway: string): number {

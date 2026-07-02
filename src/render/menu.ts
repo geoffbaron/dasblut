@@ -23,11 +23,12 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
     const eraVal = (document.getElementById("era") as HTMLSelectElement)?.value;
     const era = (eraVal === "acw" || eraVal === "medieval" ? eraVal : "ww2") as GameSetup["era"];
     const usTanks = tanks("usTanks"), axisTanks = tanks("axisTanks");
+    const fortify = (document.getElementById("cover") as HTMLSelectElement)?.value === "1";
     switch (mode) {
-      case "us-attacks":   return { era, player: "us",   usRole: "attack", axisRole: "defend", usTanks, axisTanks };
-      case "meeting-axis": return { era, player: "axis", usRole: "attack", axisRole: "attack", usTanks, axisTanks };
-      case "meeting-us":   return { era, player: "us",   usRole: "attack", axisRole: "attack", usTanks, axisTanks };
-      default:             return { era, player: "axis", usRole: "defend", axisRole: "attack", usTanks, axisTanks };
+      case "us-attacks":   return { era, player: "us",   usRole: "attack", axisRole: "defend", usTanks, axisTanks, fortify };
+      case "meeting-axis": return { era, player: "axis", usRole: "attack", axisRole: "attack", usTanks, axisTanks, fortify };
+      case "meeting-us":   return { era, player: "us",   usRole: "attack", axisRole: "attack", usTanks, axisTanks, fortify };
+      default:             return { era, player: "axis", usRole: "defend", axisRole: "attack", usTanks, axisTanks, fortify };
     }
   };
 
@@ -51,6 +52,10 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
     });
     opt("usTanks", { "1": `${blue}: ${unit(1)}`, "2": `${blue}: ${unit(2)}`, "3": `${blue}: ${unit(3)}` });
     opt("axisTanks", { "1": `${red}: ${unit(1)}`, "2": `${red}: ${unit(2)}`, "3": `${red}: ${unit(3)}` });
+    const coverOn = era === "medieval" ? "+ earthworks & palisades"
+      : era === "acw" ? "+ ditches & fences"
+      : "+ hedgerows, trenches & bunkers";
+    opt("cover", { "0": "No field cover", "1": coverOn });
   };
   document.getElementById("era")?.addEventListener("change", relabel);
   relabel();
@@ -108,6 +113,7 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
     setSel("objCount", String(s.obj));
     setSel("usTanks", String(s.us));
     setSel("axisTanks", String(s.axis));
+    setSel("cover", s.fortify ? "1" : "0");
     relabel();
     map.setView([s.lat, s.lon], 16);
     deploy(s.lat, s.lon, s.name);
@@ -173,6 +179,7 @@ interface Scenario {
   obj: number;
   us: number;
   axis: number;
+  fortify?: boolean; // prepared positions (foxholes, walls, earthworks) for this fight
 }
 
 const SCENARIOS: Scenario[] = [
@@ -189,16 +196,16 @@ const SCENARIOS: Scenario[] = [
   {
     name: "Bastogne",
     blurb: "Ardennes 1944 · panzers hit the 101st",
-    lat: 50.0000, lon: 5.7220, era: "ww2", mode: "axis-attacks", obj: 1, us: 1, axis: 3,
+    lat: 50.0000, lon: 5.7220, era: "ww2", mode: "axis-attacks", obj: 1, us: 1, axis: 3, fortify: true,
   },
   {
     name: "Gettysburg",
     blurb: "1863 · Pickett's charge on the ridge",
-    lat: 39.8121, lon: -77.2353, era: "acw", mode: "axis-attacks", obj: 1, us: 3, axis: 3,
+    lat: 39.8121, lon: -77.2353, era: "acw", mode: "axis-attacks", obj: 1, us: 3, axis: 3, fortify: true,
   },
   {
     name: "Château Gaillard",
     blurb: "Normandy 1204 · storming the castle",
-    lat: 49.2375, lon: 1.4040, era: "medieval", mode: "axis-attacks", obj: 1, us: 1, axis: 3,
+    lat: 49.2375, lon: 1.4040, era: "medieval", mode: "axis-attacks", obj: 1, us: 1, axis: 3, fortify: true,
   },
 ];

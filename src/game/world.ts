@@ -267,6 +267,87 @@ function medievalOrbat(list: SquadSpawn[]): SquadSpawn[] {
   });
 }
 
+// Scatter era-appropriate field fortifications across the contested ground when the player
+// asks for extra cover. Everything is baked straight into the terrain grid (so combat/LOS
+// read it for free) and, for hedges, into the feature list so they render as bocage.
+//   WW2      → hedgerows, trenches, and sandbag bunkers
+//   Civil War→ ditches (dug cover) and rail fences
+//   Medieval → earthworks and timber palisades
+function addFortifications(
+  grid: Grid,
+  features: MapFeatures,
+  era: Era,
+  objectives: { cx: number; cy: number; radius: number }[],
+  northY1: number,
+  southY0: number,
+): void {
+  const W = grid.width, H = grid.height;
+  const buildable = (cx: number, cy: number) => {
+    if (!grid.inBounds(cx, cy)) return false;
+    const t = grid.get(cx, cy);
+    return t === Terrain.Open || t === Terrain.Grass || t === Terrain.Road;
+  };
+  const rnd = () => Math.random();
+
+  // Lay a run of `t` from (cx,cy) heading (dx,dy) for `len` cells, wandering a little so a
+  // line reads hand-dug rather than ruler-straight. Only overwrites open ground.
+  const layLine = (cx: number, cy: number, dx: number, dy: number, len: number, t: Terrain, isHedge = false): void => {
+    let x = cx, y = cy;
+    const seg: { x0: number; y0: number; x1: number; y1: number } | null = isHedge ? { x0: cx, y0: cy, x1: cx, y1: cy } : null;
+    for (let i = 0; i < len; i++) {
+      const gx = Math.round(x), gy = Math.round(y);
+      if (buildable(gx, gy)) grid.set(gx, gy, t);
+      if (seg) { seg.x1 = gx; seg.y1 = gy; }
+      x += dx; y += dy;
+      if (rnd() < 0.3) { x += (rnd() - 0.5) * 0.7; y += (rnd() - 0.5) * 0.7; } // wander
+    }
+    if (seg) features.hedges.push(seg);
+  };
+
+  // A short L- or line-shaped sandbag emplacement — a defensive strongpoint.
+  const layEmplacement = (cx: number, cy: number): void => {
+    const horiz = rnd() < 0.5;
+    const n = 3 + Math.floor(rnd() * 3);
+    for (let i = 0; i < n; i++) {
+      const gx = cx + (horiz ? i : 0), gy = cy + (horiz ? 0 : i);
+      if (buildable(gx, gy)) grid.set(gx, gy, Terrain.Sandbag);
+    }
+    // a short return leg for an L
+    if (rnd() < 0.6) {
+      for (let i = 1; i < 3; i++) {
+        const gx = cx + (horiz ? 0 : i), gy = cy + (horiz ? i : 0);
+        if (buildable(gx, gy)) grid.set(gx, gy, Terrain.Sandbag);
+      }
+    }
+  };
+
+  // Prefer horizontal lines (across the north↔south line of advance) so a defensive line
+  // actually faces the attack. Anchor most cover near the objectives; sprinkle the rest.
+  const midY = () => northY1 + 2 + Math.floor(rnd() * (southY0 - northY1 - 4));
+  const midX = () => 4 + Math.floor(rnd() * (W - 8));
+
+  const trenchRuns = 3 + Math.floor((W * H) / 6000);
+  const lineRuns = 3 + Math.floor((W * H) / 5000);
+
+  if (era === "ww2") {
+    for (let i = 0; i < lineRuns; i++) layLine(midX(), midY(), rnd() < 0.7 ? 1 : 0, rnd() < 0.7 ? 0 : 1, 8 + Math.floor(rnd() * 9), Terrain.Hedge, true);
+    for (let i = 0; i < trenchRuns; i++) layLine(midX(), midY(), 1, (rnd() - 0.5) * 0.3, 6 + Math.floor(rnd() * 8), Terrain.Trench);
+    for (const o of objectives) {
+      layLine(o.cx - 5, o.cy - o.radius, 1, 0, 10, Terrain.Trench);
+      layEmplacement(o.cx + 3 - Math.floor(rnd() * 6), o.cy + 2 + Math.floor(rnd() * 3));
+      layEmplacement(o.cx - 4, o.cy - 3);
+    }
+  } else if (era === "acw") {
+    for (let i = 0; i < lineRuns + 2; i++) layLine(midX(), midY(), rnd() < 0.5 ? 1 : 0, rnd() < 0.5 ? 0 : 1, 8 + Math.floor(rnd() * 12), Terrain.Fence);
+    for (let i = 0; i < trenchRuns; i++) layLine(midX(), midY(), 1, (rnd() - 0.5) * 0.3, 6 + Math.floor(rnd() * 8), Terrain.Trench);
+    for (const o of objectives) layLine(o.cx - 6, o.cy - o.radius, 1, 0, 12, Terrain.Fence);
+  } else {
+    for (let i = 0; i < lineRuns; i++) layLine(midX(), midY(), rnd() < 0.6 ? 1 : 0, rnd() < 0.6 ? 0 : 1, 8 + Math.floor(rnd() * 10), Terrain.Fence);
+    for (let i = 0; i < trenchRuns; i++) layLine(midX(), midY(), 1, (rnd() - 0.5) * 0.3, 6 + Math.floor(rnd() * 8), Terrain.Trench);
+    for (const o of objectives) layLine(o.cx - 5, o.cy - o.radius, 1, 0, 10, Terrain.Trench);
+  }
+}
+
 export type Role = "attack" | "defend";
 
 // How a battle is configured: who the human commands, each side's role (attack the
@@ -278,6 +359,7 @@ export interface GameSetup {
   axisRole: Role;
   usTanks: number; // in ACW these count field guns instead of tanks
   axisTanks: number;
+  fortify?: boolean; // scatter era-appropriate field cover (hedgerows/trenches/bunkers, ditches/fences…)
 }
 
 export const DEFAULT_SETUP: GameSetup = {
@@ -409,6 +491,9 @@ export class World {
     this.smokeGrid = new Float32Array(this.grid.width * this.grid.height);
     this.deploySouthY0 = Math.floor(this.grid.height * 0.75);
     this.deployNorthY1 = Math.ceil(this.grid.height * 0.25);
+
+    // Optional field fortifications — dig in extra cover across the contested ground.
+    if (setup.fortify) addFortifications(this.grid, this.features, this.era, this.objectives, this.deployNorthY1, this.deploySouthY0);
 
     // map.spawns.us is always the south positions, map.spawns.axis the north ones; the
     // faction occupying each depends on who's attacking from where.

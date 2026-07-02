@@ -35,6 +35,10 @@ const GROUND: Partial<Record<Terrain, [RGB, RGB]>> = {
   // Walls & hedges sit on a grassy/dirt base; structures are drawn on top.
   [Terrain.Wall]: [rgb(0x679440), rgb(0x4f7a2e)],
   [Terrain.Hedge]: [rgb(0x679440), rgb(0x4f7a2e)],
+  // Fortifications: a fence sits on grass; a trench is dug earth; sandbags on scuffed dirt.
+  [Terrain.Fence]: [rgb(0x679440), rgb(0x4f7a2e)],
+  [Terrain.Trench]: [rgb(0x5a4a30), rgb(0x43351f)],
+  [Terrain.Sandbag]: [rgb(0x9c8c5e), rgb(0x827145)],
 };
 
 // Large-scale meadow tones the grass drifts toward (see the per-pixel pass): sun-dried
@@ -161,6 +165,8 @@ export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "
   // Woods canopy (the big visual win) and rubble debris.
   drawWoods(ctx, grid, rng);
   drawRubble(ctx, grid, rng);
+  // Field fortifications (trenches/ditches, fences, sandbag emplacements) if placed.
+  drawFortifications(ctx, grid, rng);
   // Bocage hedgerows.
   for (const h of features.hedges) drawHedge(ctx, h, rng);
   // Buildings: only the cast shadows go into the static ground. The floor plan and the
@@ -579,6 +585,86 @@ function drawRubble(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number
         ctx.ellipse(dx, dy, 2.5 + rng() * 3, 1.5 + rng() * 2, rng() * Math.PI, 0, Math.PI * 2);
         ctx.fill();
       }
+    }
+  }
+}
+
+// Draw the field fortifications baked into the grid: dug trenches/ditches, rail fences, and
+// sandbag emplacements. Each scans its own terrain and orients to its run's neighbours so
+// linear works read as continuous lines rather than disconnected stamps.
+function drawFortifications(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number): void {
+  const is = (cx: number, cy: number, t: Terrain) => grid.inBounds(cx, cy) && grid.get(cx, cy) === t;
+  for (let cy = 0; cy < grid.height; cy++) {
+    for (let cx = 0; cx < grid.width; cx++) {
+      const t = grid.get(cx, cy);
+      if (t === Terrain.Trench) drawTrenchCell(ctx, cx, cy, is, rng);
+      else if (t === Terrain.Fence) drawFenceCell(ctx, cx, cy, is, rng);
+      else if (t === Terrain.Sandbag) drawSandbagCell(ctx, cx, cy, rng);
+    }
+  }
+}
+
+type IsFn = (cx: number, cy: number, t: Terrain) => boolean;
+
+// A dug trench: a spoil berm (light thrown earth) with the ditch and its shadow below it,
+// running along whichever axis the neighbouring trench cells lie on.
+function drawTrenchCell(ctx: CanvasRenderingContext2D, cx: number, cy: number, is: IsFn, rng: () => number): void {
+  const x = cx * CELL_SIZE, y = cy * CELL_SIZE, C = CELL_SIZE;
+  const horiz = is(cx - 1, cy, Terrain.Trench) || is(cx + 1, cy, Terrain.Trench) || !(is(cx, cy - 1, Terrain.Trench) || is(cx, cy + 1, Terrain.Trench));
+  ctx.save();
+  ctx.translate(x + C / 2, y + C / 2);
+  if (!horiz) ctx.rotate(Math.PI / 2);
+  ctx.fillStyle = "#6f5836"; // spoil berm on the near lip
+  ctx.fillRect(-C / 2 - 1, -C * 0.34, C + 2, C * 0.22);
+  ctx.fillStyle = "#2c2114"; // the ditch — dark recessed channel
+  ctx.fillRect(-C / 2 - 1, -C * 0.1, C + 2, C * 0.34);
+  ctx.fillStyle = "rgba(0,0,0,0.35)"; // inner shadow
+  ctx.fillRect(-C / 2 - 1, -C * 0.1, C + 2, C * 0.1);
+  ctx.strokeStyle = "rgba(20,14,8,0.4)"; ctx.lineWidth = 0.6; // revetment ticks
+  for (let i = 0; i < 2; i++) {
+    const px = -C / 2 + rng() * C;
+    ctx.beginPath(); ctx.moveTo(px, -C * 0.08); ctx.lineTo(px, C * 0.22); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// A rail fence / palisade: two posts and a rail spanning the cell along its run.
+function drawFenceCell(ctx: CanvasRenderingContext2D, cx: number, cy: number, is: IsFn, rng: () => number): void {
+  const x = cx * CELL_SIZE, y = cy * CELL_SIZE, C = CELL_SIZE;
+  const horiz = is(cx - 1, cy, Terrain.Fence) || is(cx + 1, cy, Terrain.Fence) || !(is(cx, cy - 1, Terrain.Fence) || is(cx, cy + 1, Terrain.Fence));
+  ctx.save();
+  ctx.translate(x + C / 2, y + C / 2);
+  if (!horiz) ctx.rotate(Math.PI / 2);
+  ctx.strokeStyle = "rgba(10,8,4,0.3)"; ctx.lineWidth = 2.2; ctx.lineCap = "round"; // shadow
+  ctx.beginPath(); ctx.moveTo(-C / 2, 1.5); ctx.lineTo(C / 2, 1.5); ctx.stroke();
+  ctx.strokeStyle = "#6b5230"; ctx.lineWidth = 1.6; // rail
+  ctx.beginPath(); ctx.moveTo(-C / 2, -0.6 + (rng() - 0.5)); ctx.lineTo(C / 2, -0.6 + (rng() - 0.5)); ctx.stroke();
+  ctx.strokeStyle = "#3a2c18"; ctx.lineWidth = 1.7; // posts
+  for (const px of [-C * 0.32, C * 0.18]) {
+    ctx.beginPath(); ctx.moveTo(px, -3.2); ctx.lineTo(px, 2.4); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// A sandbag emplacement: a couple of rows of stacked tan bags with dark seams and a shadow.
+function drawSandbagCell(ctx: CanvasRenderingContext2D, cx: number, cy: number, rng: () => number): void {
+  const x = cx * CELL_SIZE, y = cy * CELL_SIZE, C = CELL_SIZE;
+  ctx.fillStyle = "rgba(12,10,6,0.3)";
+  ctx.fillRect(x + 1.5, y + 2, C - 1, C - 3); // drop shadow
+  for (let row = 0; row < 2; row++) {
+    const oy = y + 3 + row * (C * 0.44);
+    const off = row % 2 ? C * 0.16 : 0; // brick-lay the courses
+    for (let i = 0; i < 3; i++) {
+      const bx = x + 1 + off + i * (C * 0.34);
+      const g = ctx.createLinearGradient(bx, oy, bx, oy + C * 0.4);
+      g.addColorStop(0, `hsl(45,26%,${58 + rng() * 8}%)`);
+      g.addColorStop(1, "#7d6e42");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.ellipse(bx + C * 0.16, oy + C * 0.2, C * 0.2, C * 0.15, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(40,30,14,0.5)"; ctx.lineWidth = 0.6;
+      ctx.stroke();
     }
   }
 }

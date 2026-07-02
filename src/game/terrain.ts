@@ -13,6 +13,10 @@ export enum Terrain {
   Hedge, // bocage-style cover line, passable but slow
   Floor, // building interior — strong cover, occupants fire out the windows
   Window, // building window — infantry climb through (slow); fire & sight pass, vehicles can't
+  // --- Field fortifications (added by the "extra cover" option) ---
+  Trench, // dug earthwork / ditch — strong cover, you fire over the parapet (sight passes)
+  Fence, // rail fence / low wall / palisade — light cover, passable, sight passes
+  Sandbag, // sandbag emplacement / bunker parapet — heavy cover, tall enough to block sight
 }
 
 export interface TerrainDef {
@@ -39,6 +43,9 @@ export const TERRAIN: Record<Terrain, TerrainDef> = {
   [Terrain.Hedge]:  { name: "Hedge",       color: 0x445a30, moveCost: 1.8,      cover: 0.5,  concealment: 0.55, blocksSight: true  },
   [Terrain.Floor]:  { name: "Building",    color: 0x6a5d4a, moveCost: 1,        cover: 0.6,  concealment: 0.5,  blocksSight: true  },
   [Terrain.Window]: { name: "Window",      color: 0x6a5d4a, moveCost: 2.5,      cover: 0.45, concealment: 0.4,  blocksSight: false },
+  [Terrain.Trench]: { name: "Trench",      color: 0x4a3c28, moveCost: 1.2,      cover: 0.65, concealment: 0.4,  blocksSight: false },
+  [Terrain.Fence]:  { name: "Fence",       color: 0x5f7141, moveCost: 1.1,      cover: 0.32, concealment: 0.12, blocksSight: false },
+  [Terrain.Sandbag]:{ name: "Emplacement", color: 0xb0a273, moveCost: 1.5,      cover: 0.75, concealment: 0.55, blocksSight: true  },
 };
 
 export function isPassable(t: Terrain): boolean {

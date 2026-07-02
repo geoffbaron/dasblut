@@ -527,6 +527,37 @@ export class Renderer {
       }
     }
 
+    // Weapon-range ring: a thin circle at the squad's centre showing how far its
+    // longest-ranged weapon actually reaches, so it's obvious at a glance when a fire
+    // order is beyond range (the commonest reason a squad "won't fire"). Indirect
+    // weapons (mortars) also show their inner dead-zone they can't drop rounds inside.
+    {
+      let sumX = 0, sumY = 0, n = 0, bestRange = 0, bestMin = 0, bestIndirect = false;
+      for (const id of team.soldierIds) {
+        const s = world.soldier(id);
+        if (!s || s.status !== "active") continue;
+        sumX += s.x; sumY += s.y; n++;
+        const w = WEAPONS[s.weapon];
+        if (w.meleeOnly) continue;
+        if (w.rangeCells > bestRange) {
+          bestRange = w.rangeCells;
+          bestIndirect = !!w.indirect;
+          bestMin = w.minRangeCells ?? 0;
+        }
+      }
+      if (n && bestRange > 0) {
+        const cx = (sumX / n) * CELL_SIZE, cy = (sumY / n) * CELL_SIZE;
+        // Stroke widths on the overlay are in world units (scaled by the camera), so a
+        // fixed width vanishes to a hair when zoomed out. Divide by the zoom to keep the
+        // ring a consistent ~1.6 px on screen at any zoom.
+        const px = 1.6 / this.camera.scale.x;
+        g.circle(cx, cy, bestRange * CELL_SIZE).stroke({ width: px, color: 0xffe27a, alpha: 0.5 });
+        if (bestIndirect && bestMin > 0) {
+          g.circle(cx, cy, bestMin * CELL_SIZE).stroke({ width: px, color: 0xff9a6a, alpha: 0.5 });
+        }
+      }
+    }
+
     for (const id of team.soldierIds) {
       const s = world.soldier(id);
       if (!s || s.status !== "active") continue;

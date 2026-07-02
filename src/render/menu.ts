@@ -61,7 +61,14 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
   relabel();
 
   const map = L.map("map", { zoomControl: true, attributionControl: false }).setView([49.3033, -1.2456], 16); // Carentan
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+  // Basemap tiles just for framing your battlefield. We use CARTO's OSM-based Voyager
+  // tiles rather than tile.openstreetmap.org directly: the OSM tile CDN blocks/rate-limits
+  // app usage (which left the framing map blank in production), whereas CARTO's basemaps
+  // are a CORS-enabled, app-friendly CDN. (The actual battlefield data comes from Overpass.)
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+    subdomains: "abcd",
+    maxZoom: 20,
+  }).addTo(map);
 
   // Size the reticle box to the real 280 × 220 m capture footprint at the current view.
   const sizeReticle = () => {

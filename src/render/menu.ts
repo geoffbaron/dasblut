@@ -33,9 +33,13 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
     const fortify = (document.getElementById("cover") as HTMLSelectElement)?.value === "1";
     switch (mode) {
       case "us-attacks":   return { era, player: "us",   usRole: "attack", axisRole: "defend", usTanks, axisTanks, fortify };
+      // Play the defender while the AI attacks — e.g. commanding the Union line at
+      // Gettysburg while the Confederates make the charge.
+      case "us-defends":   return { era, player: "us",   usRole: "defend", axisRole: "attack", usTanks, axisTanks, fortify };
+      case "axis-defends": return { era, player: "axis", usRole: "attack", axisRole: "defend", usTanks, axisTanks, fortify };
       case "meeting-axis": return { era, player: "axis", usRole: "attack", axisRole: "attack", usTanks, axisTanks, fortify };
       case "meeting-us":   return { era, player: "us",   usRole: "attack", axisRole: "attack", usTanks, axisTanks, fortify };
-      default:             return { era, player: "axis", usRole: "defend", axisRole: "attack", usTanks, axisTanks, fortify };
+      default:             return { era, player: "axis", usRole: "defend", axisRole: "attack", usTanks, axisTanks, fortify }; // "axis-attacks"
     }
   };
 
@@ -54,6 +58,8 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
     opt("gameMode", {
       "axis-attacks": `${red} attacks · ${blue} defends`,
       "us-attacks": `${blue} attacks · ${red} defends`,
+      "us-defends": `${red} attacks · ${blue} defends (play ${blue})`,
+      "axis-defends": `${blue} attacks · ${red} defends (play ${red})`,
       "meeting-axis": `Meeting — both attack (play ${red})`,
       "meeting-us": `Meeting — both attack (play ${blue})`,
     });
@@ -221,12 +227,13 @@ const SCENARIOS: Scenario[] = [
   },
   // Pickett's Charge, July 3 1863: Confederate infantry cross ~3/4 mile of open farmland,
   // climbing roadside post-and-rail fences under fire, to storm the stone wall at The
-  // Angle on Cemetery Ridge. Union guns fire canister to the last; the charging division
-  // brought almost no artillery forward — hence 3 Union batteries to 1 Confederate.
+  // Angle on Cemetery Ridge. You command the Union line holding the wall; Union guns
+  // fire canister to the last, and the charging division brought almost no artillery
+  // forward — hence 3 Union batteries to 1 Confederate.
   {
     name: "Gettysburg",
-    blurb: "1863 · Pickett's Charge at The Angle",
-    lat: 39.8128, lon: -77.2360, era: "acw", mode: "axis-attacks", obj: 1, us: 3, axis: 1, fortify: true,
+    blurb: "1863 · Hold The Angle against Pickett's Charge",
+    lat: 39.8128, lon: -77.2360, era: "acw", mode: "us-defends", obj: 1, us: 3, axis: 1, fortify: true,
   },
   {
     name: "Château Gaillard",

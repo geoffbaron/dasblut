@@ -742,13 +742,15 @@ function drawTrenchCell(ctx: CanvasRenderingContext2D, cx: number, cy: number, i
   ctx.save();
   ctx.translate(x + C / 2, y + C / 2);
   if (!horiz) ctx.rotate(Math.PI / 2);
-  ctx.fillStyle = "#6f5836"; // spoil berm on the near lip
+  // Muted, blended into the turf rather than a bold black gouge — a dug trench should
+  // read as ground relief you'd notice on approach, not a stripe painted over the field.
+  ctx.fillStyle = "rgba(122,102,66,0.55)"; // spoil berm on the near lip
   ctx.fillRect(-C / 2 - 1, -C * 0.34, C + 2, C * 0.22);
-  ctx.fillStyle = "#2c2114"; // the ditch — dark recessed channel
+  ctx.fillStyle = "rgba(58,46,28,0.6)"; // the ditch — recessed channel, softened
   ctx.fillRect(-C / 2 - 1, -C * 0.1, C + 2, C * 0.34);
-  ctx.fillStyle = "rgba(0,0,0,0.35)"; // inner shadow
+  ctx.fillStyle = "rgba(0,0,0,0.16)"; // inner shadow
   ctx.fillRect(-C / 2 - 1, -C * 0.1, C + 2, C * 0.1);
-  ctx.strokeStyle = "rgba(20,14,8,0.4)"; ctx.lineWidth = 0.6; // revetment ticks
+  ctx.strokeStyle = "rgba(20,14,8,0.2)"; ctx.lineWidth = 0.5; // revetment ticks
   for (let i = 0; i < 2; i++) {
     const px = -C / 2 + rng() * C;
     ctx.beginPath(); ctx.moveTo(px, -C * 0.08); ctx.lineTo(px, C * 0.22); ctx.stroke();
@@ -763,11 +765,13 @@ function drawFenceCell(ctx: CanvasRenderingContext2D, cx: number, cy: number, is
   ctx.save();
   ctx.translate(x + C / 2, y + C / 2);
   if (!horiz) ctx.rotate(Math.PI / 2);
-  ctx.strokeStyle = "rgba(10,8,4,0.3)"; ctx.lineWidth = 2.2; ctx.lineCap = "round"; // shadow
+  // A thin wooden line, not a bold black bar — a rail fence should read as a marker you
+  // notice up close, not a stripe that dominates the field from across the map.
+  ctx.strokeStyle = "rgba(10,8,4,0.16)"; ctx.lineWidth = 1.4; ctx.lineCap = "round"; // shadow
   ctx.beginPath(); ctx.moveTo(-C / 2, 1.5); ctx.lineTo(C / 2, 1.5); ctx.stroke();
-  ctx.strokeStyle = "#6b5230"; ctx.lineWidth = 1.6; // rail
+  ctx.strokeStyle = "rgba(120,96,60,0.85)"; ctx.lineWidth = 1.1; // rail
   ctx.beginPath(); ctx.moveTo(-C / 2, -0.6 + (rng() - 0.5)); ctx.lineTo(C / 2, -0.6 + (rng() - 0.5)); ctx.stroke();
-  ctx.strokeStyle = "#3a2c18"; ctx.lineWidth = 1.7; // posts
+  ctx.strokeStyle = "rgba(76,60,38,0.85)"; ctx.lineWidth = 1.1; // posts
   for (const px of [-C * 0.32, C * 0.18]) {
     ctx.beginPath(); ctx.moveTo(px, -3.2); ctx.lineTo(px, 2.4); ctx.stroke();
   }

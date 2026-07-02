@@ -29,7 +29,7 @@ interface OsmWay {
   geometry?: LatLon[];
 }
 
-export async function generateMap(centerLat: number, centerLon: number, label: string): Promise<GameMap> {
+export async function generateMap(centerLat: number, centerLon: number, label: string, era: "ww2" | "acw" | "medieval" = "ww2"): Promise<GameMap> {
   const mLat = 111320;
   const mLon = 111320 * Math.cos((centerLat * Math.PI) / 180);
   const halfLat = BATTLEFIELD_H_M / 2 / mLat;
@@ -57,6 +57,7 @@ export async function generateMap(centerLat: number, centerLon: number, label: s
   const waterLines: { line: Pt[]; w: number }[] = [];
   const buildings: Pt[][] = [];
   const hedges: Pt[][] = [];
+  const fenceLines: Pt[][] = [];
 
   for (const way of ways) {
     if (!way.geometry || way.geometry.length < 2) continue;
@@ -82,7 +83,8 @@ export async function generateMap(centerLat: number, centerLon: number, label: s
     // rasterize them as a line of the type's width. Filling them as polygons (which closes
     // the last node back to the first) is what painted huge wedges of water across the map.
     else if (tags.waterway) waterLines.push({ line: poly, w: waterwayWidth(tags.waterway) });
-    else if (tags.barrier === "hedge" || tags.barrier === "wall" || tags.barrier === "fence") hedges.push(poly);
+    else if (tags.barrier === "hedge") hedges.push(poly);
+    else if (tags.barrier === "wall" || tags.barrier === "fence") fenceLines.push(poly);
     // (grass/meadow/farmland already match the default grass ground.)
   }
 
@@ -91,10 +93,13 @@ export async function generateMap(centerLat: number, centerLon: number, label: s
   for (const r of roads) rasterizeLine(grid, r.line, r.w, Terrain.Road);
   for (const poly of buildings) rasterizeBuilding(grid, poly, features);
   for (const poly of hedges) rasterizeHedge(grid, poly, features);
+  for (const poly of fenceLines) rasterizeFence(grid, poly);
 
   // Bocage quilting: real hedgerows along some field-parcel boundaries, so the painted
-  // farmland patchwork gets physical borders to fight over.
-  addParcelBocage(grid, features);
+  // farmland patchwork gets physical borders to fight over. This is a Normandy/WW2
+  // signature — Civil War and medieval fields stay open, showing only whatever hedges
+  // and fences the real OSM data maps at that spot.
+  if (era === "ww2") addParcelBocage(grid, features);
 
   // A bare patch of countryside still wants a little cover to fight over.
   if (buildings.length === 0 && areas.length < 2) scatterCover(grid, features);
@@ -326,6 +331,24 @@ function rasterizeHedge(grid: Grid, line: Pt[], features: MapFeatures): void {
   for (let i = 0; i + 1 < line.length; i++) {
     stroke(grid, line[i], line[i + 1], 0, Terrain.Hedge);
     features.hedges.push({ x0: line[i].x, y0: line[i].y, x1: line[i + 1].x, y1: line[i + 1].y });
+  }
+}
+
+// Mapped walls and fences (barrier=wall/fence) become Fence terrain — a low line you can
+// see and fire over, drawn as post-and-rail — NOT tall green bocage. At Gettysburg this is
+// the stone wall at The Angle and the park's miles of rail fence. Only open ground takes a
+// fence; roads, water and buildings are left alone (a gate where a fence meets a lane).
+function rasterizeFence(grid: Grid, line: Pt[]): void {
+  for (let i = 0; i + 1 < line.length; i++) {
+    const a = line[i], b = line[i + 1];
+    const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y)));
+    for (let s = 0; s <= steps; s++) {
+      const cx = Math.round(a.x + ((b.x - a.x) * s) / steps);
+      const cy = Math.round(a.y + ((b.y - a.y) * s) / steps);
+      if (!grid.inBounds(cx, cy)) continue;
+      const t = grid.get(cx, cy);
+      if (t === Terrain.Grass || t === Terrain.Open) grid.set(cx, cy, Terrain.Fence);
+    }
   }
 }
 

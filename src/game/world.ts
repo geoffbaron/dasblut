@@ -378,6 +378,18 @@ function addFortifications(
     for (let i = 0; i < lineRuns + 2; i++) scatterLine(Terrain.Fence, rnd() < 0.5 ? 1 : 0, rnd() < 0.5 ? 0 : 1, 8 + Math.floor(rnd() * 12));
     for (let i = 0; i < trenchRuns; i++) scatterLine(Terrain.Trench, 1, (rnd() - 0.5) * 0.3, 6 + Math.floor(rnd() * 8));
     for (const o of objectives) layLine(o.cx - 6, o.cy - o.radius, 1, 0, 12, Terrain.Fence);
+    // Post-and-rail fences lining the roads through the contested ground — the Emmitsburg
+    // Road effect: at Gettysburg the roadside fences held attacking lines under canister.
+    // Fences go on the open cells flanking a road, with gaps, never on the road itself.
+    for (let cy = northY1; cy <= southY0; cy++) {
+      for (let cx = 1; cx < W - 1; cx++) {
+        if (grid.get(cx, cy) !== Terrain.Road) continue;
+        for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]] as const) {
+          const nx = cx + dx, ny = cy + dy;
+          if (buildable(nx, ny) && rnd() < 0.55) grid.set(nx, ny, Terrain.Fence);
+        }
+      }
+    }
   } else {
     for (let i = 0; i < lineRuns; i++) scatterLine(Terrain.Fence, rnd() < 0.6 ? 1 : 0, rnd() < 0.6 ? 0 : 1, 8 + Math.floor(rnd() * 10));
     for (let i = 0; i < trenchRuns; i++) scatterLine(Terrain.Trench, 1, (rnd() - 0.5) * 0.3, 6 + Math.floor(rnd() * 8));

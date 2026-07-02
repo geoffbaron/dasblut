@@ -91,7 +91,7 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
     loading.style.display = "flex";
     loadingMsg.textContent = `Reconnoitering ${label}…`;
     try {
-      const gm = await generateMap(lat, lon, label);
+      const gm = await generateMap(lat, lon, label, setup().era);
       menu.style.display = "none";
       loading.style.display = "none";
       map.remove();
@@ -205,10 +205,14 @@ const SCENARIOS: Scenario[] = [
     blurb: "Ardennes 1944 · panzers hit the 101st",
     lat: 50.0000, lon: 5.7220, era: "ww2", mode: "axis-attacks", obj: 1, us: 1, axis: 3, fortify: true,
   },
+  // Pickett's Charge, July 3 1863: Confederate infantry cross ~3/4 mile of open farmland,
+  // climbing roadside post-and-rail fences under fire, to storm the stone wall at The
+  // Angle on Cemetery Ridge. Union guns fire canister to the last; the charging division
+  // brought almost no artillery forward — hence 3 Union batteries to 1 Confederate.
   {
     name: "Gettysburg",
-    blurb: "1863 · Pickett's charge on the ridge",
-    lat: 39.8121, lon: -77.2353, era: "acw", mode: "axis-attacks", obj: 1, us: 3, axis: 3, fortify: true,
+    blurb: "1863 · Pickett's Charge at The Angle",
+    lat: 39.8128, lon: -77.2360, era: "acw", mode: "axis-attacks", obj: 1, us: 3, axis: 1, fortify: true,
   },
   {
     name: "Château Gaillard",

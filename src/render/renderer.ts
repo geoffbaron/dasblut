@@ -1,9 +1,9 @@
 import { Application, Container, Graphics, Sprite, Texture } from "pixi.js";
 import { CELL_SIZE, OBJECTIVE_HOLD_TO_WIN, SMOKE_LOS_BLOCK } from "../game/constants.ts";
 import { VEHICLES } from "../game/vehicleDefs.ts";
-import { factionColor, MoraleState, World } from "../game/world.ts";
+import { factionColor, MoraleState, Team, World } from "../game/world.ts";
 import { Terrain, TERRAIN } from "../game/terrain.ts";
-import { WEAPONS } from "../game/weapons.ts";
+import { Weapon, WeaponId, WEAPONS } from "../game/weapons.ts";
 import { BuildingArt, paintBattlefield } from "./paint.ts";
 import { makeCannonBody, makeCasualtyCanvas, makeCatapultBody, makeCavalryBody, makeSoldierArt } from "./soldierArt.ts";
 import { makeVehicleArt, VehicleArt } from "./vehicleArt.ts";
@@ -532,28 +532,22 @@ export class Renderer {
     // order is beyond range (the commonest reason a squad "won't fire"). Indirect
     // weapons (mortars) also show their inner dead-zone they can't drop rounds inside.
     {
-      let sumX = 0, sumY = 0, n = 0, bestRange = 0, bestMin = 0, bestIndirect = false;
+      const primary = this.primaryWeapon(world, team);
+      let sumX = 0, sumY = 0, n = 0;
       for (const id of team.soldierIds) {
         const s = world.soldier(id);
         if (!s || s.status !== "active") continue;
         sumX += s.x; sumY += s.y; n++;
-        const w = WEAPONS[s.weapon];
-        if (w.meleeOnly) continue;
-        if (w.rangeCells > bestRange) {
-          bestRange = w.rangeCells;
-          bestIndirect = !!w.indirect;
-          bestMin = w.minRangeCells ?? 0;
-        }
       }
-      if (n && bestRange > 0) {
+      if (n && primary && !primary.meleeOnly) {
         const cx = (sumX / n) * CELL_SIZE, cy = (sumY / n) * CELL_SIZE;
         // Stroke widths on the overlay are in world units (scaled by the camera), so a
         // fixed width vanishes to a hair when zoomed out. Divide by the zoom to keep the
         // ring a consistent ~1.6 px on screen at any zoom.
         const px = 1.6 / this.camera.scale.x;
-        g.circle(cx, cy, bestRange * CELL_SIZE).stroke({ width: px, color: 0xffe27a, alpha: 0.5 });
-        if (bestIndirect && bestMin > 0) {
-          g.circle(cx, cy, bestMin * CELL_SIZE).stroke({ width: px, color: 0xff9a6a, alpha: 0.5 });
+        g.circle(cx, cy, primary.rangeCells * CELL_SIZE).stroke({ width: px, color: 0xffe27a, alpha: 0.5 });
+        if (primary.indirect && primary.minRangeCells) {
+          g.circle(cx, cy, primary.minRangeCells * CELL_SIZE).stroke({ width: px, color: 0xff9a6a, alpha: 0.5 });
         }
       }
     }
@@ -577,6 +571,45 @@ export class Renderer {
         g.circle(lx, ly, 6).stroke({ width: 2, color: 0xf0e0a0, alpha: 0.85 });
       }
     }
+  }
+
+  // The squad's role / primary weapon — the one that defines its job and that the range
+  // ring should reflect: the bazooka for an AT team, the mortar tube for a mortar team,
+  // the LMG for an MG team — NOT merely the longest-ranged rifle everyone also carries.
+  // Falls back to the most common non-melee weapon for plain rifle/infantry squads.
+  private primaryWeapon(world: World, team: Team): Weapon | null {
+    const present = new Set<WeaponId>();
+    const count = new Map<WeaponId, number>();
+    for (const id of team.soldierIds) {
+      const s = world.soldier(id);
+      if (!s || s.status !== "active") continue;
+      present.add(s.weapon);
+      count.set(s.weapon, (count.get(s.weapon) ?? 0) + 1);
+    }
+    if (present.size === 0) return null;
+    const find = (pred: (w: Weapon) => boolean): Weapon | null => {
+      for (const id of present) if (pred(WEAPONS[id])) return WEAPONS[id];
+      return null;
+    };
+    // The weapon that gives the squad its kind.
+    let role: Weapon | null = null;
+    switch (team.kind) {
+      case "mortar":    role = find((w) => !!w.indirect); break;
+      case "artillery": role = find((w) => !!w.artillery); break;
+      case "mg":        role = find((w) => w.id === "lmg"); break;
+      case "at":        role = find((w) => w.penetration != null); break;
+      case "archers":   role = find((w) => w.id === "bow"); break;
+    }
+    if (role) return role;
+    // Rifle/infantry/cavalry, or the role weapon is gone (crew dead): the most common
+    // non-melee weapon, tie-broken toward the longer range.
+    let best: Weapon | null = null, bestN = -1;
+    for (const [id, n] of count) {
+      const w = WEAPONS[id];
+      if (w.meleeOnly) continue;
+      if (n > bestN || (n === bestN && best !== null && w.rangeCells > best.rangeCells)) { best = w; bestN = n; }
+    }
+    return best;
   }
 
   // Draws a thin red line from each firing friendly unit to its aimpoint plus a

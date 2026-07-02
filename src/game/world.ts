@@ -282,26 +282,40 @@ function addFortifications(
   southY0: number,
 ): void {
   const W = grid.width, H = grid.height;
+  // Fortifications only go on natural open ground — never on paved roads, water, woods, or
+  // buildings. A line/hedge simply skips any cell that isn't open, so it breaks cleanly at a
+  // road or a house (a hedgerow with a gate) instead of being painted straight across it.
   const buildable = (cx: number, cy: number) => {
     if (!grid.inBounds(cx, cy)) return false;
     const t = grid.get(cx, cy);
-    return t === Terrain.Open || t === Terrain.Grass || t === Terrain.Road;
+    return t === Terrain.Open || t === Terrain.Grass;
   };
   const rnd = () => Math.random();
 
   // Lay a run of `t` from (cx,cy) heading (dx,dy) for `len` cells, wandering a little so a
-  // line reads hand-dug rather than ruler-straight. Only overwrites open ground.
+  // line reads hand-dug rather than ruler-straight. Only open cells are set; for a hedge the
+  // bocage feature is emitted per unbroken open run, so it never draws over a road/building.
   const layLine = (cx: number, cy: number, dx: number, dy: number, len: number, t: Terrain, isHedge = false): void => {
     let x = cx, y = cy;
-    const seg: { x0: number; y0: number; x1: number; y1: number } | null = isHedge ? { x0: cx, y0: cy, x1: cx, y1: cy } : null;
+    let segStart: { x: number; y: number } | null = null;
+    let lastGood: { x: number; y: number } | null = null;
+    const flush = () => {
+      if (isHedge && segStart && lastGood && (segStart.x !== lastGood.x || segStart.y !== lastGood.y))
+        features.hedges.push({ x0: segStart.x, y0: segStart.y, x1: lastGood.x, y1: lastGood.y });
+      segStart = null; lastGood = null;
+    };
     for (let i = 0; i < len; i++) {
       const gx = Math.round(x), gy = Math.round(y);
-      if (buildable(gx, gy)) grid.set(gx, gy, t);
-      if (seg) { seg.x1 = gx; seg.y1 = gy; }
+      if (buildable(gx, gy)) {
+        grid.set(gx, gy, t);
+        if (isHedge) { if (!segStart) segStart = { x: gx, y: gy }; lastGood = { x: gx, y: gy }; }
+      } else if (isHedge) {
+        flush(); // hit a road/building/water — end this hedge run, resume on the far side
+      }
       x += dx; y += dy;
       if (rnd() < 0.3) { x += (rnd() - 0.5) * 0.7; y += (rnd() - 0.5) * 0.7; } // wander
     }
-    if (seg) features.hedges.push(seg);
+    if (isHedge) flush();
   };
 
   // A short L- or line-shaped sandbag emplacement — a defensive strongpoint.
@@ -326,24 +340,47 @@ function addFortifications(
   const midY = () => northY1 + 2 + Math.floor(rnd() * (southY0 - northY1 - 4));
   const midX = () => 4 + Math.floor(rnd() * (W - 8));
 
+  // Find a bit of open ground in the contested band to start a run on, so a line begins in a
+  // field rather than in the middle of a house or a river. Gives up after a few tries.
+  const openAnchor = (): { cx: number; cy: number } | null => {
+    for (let i = 0; i < 24; i++) {
+      const cx = midX(), cy = midY();
+      if (buildable(cx, cy)) return { cx, cy };
+    }
+    return null;
+  };
+  const scatterLine = (t: Terrain, dx: number, dy: number, len: number, isHedge = false): void => {
+    const a = openAnchor();
+    if (a) layLine(a.cx, a.cy, dx, dy, len, t, isHedge);
+  };
+  // Set up a strongpoint near an objective on open ground (searching a ring around it).
+  const emplacementNear = (cx: number, cy: number): void => {
+    for (let r = 0; r < 6; r++) {
+      for (let k = 0; k < 6; k++) {
+        const gx = cx + Math.round((rnd() - 0.5) * r * 2), gy = cy + Math.round((rnd() - 0.5) * r * 2);
+        if (buildable(gx, gy)) { layEmplacement(gx, gy); return; }
+      }
+    }
+  };
+
   const trenchRuns = 3 + Math.floor((W * H) / 6000);
   const lineRuns = 3 + Math.floor((W * H) / 5000);
 
   if (era === "ww2") {
-    for (let i = 0; i < lineRuns; i++) layLine(midX(), midY(), rnd() < 0.7 ? 1 : 0, rnd() < 0.7 ? 0 : 1, 8 + Math.floor(rnd() * 9), Terrain.Hedge, true);
-    for (let i = 0; i < trenchRuns; i++) layLine(midX(), midY(), 1, (rnd() - 0.5) * 0.3, 6 + Math.floor(rnd() * 8), Terrain.Trench);
+    for (let i = 0; i < lineRuns; i++) scatterLine(Terrain.Hedge, rnd() < 0.7 ? 1 : 0, rnd() < 0.7 ? 0 : 1, 8 + Math.floor(rnd() * 9), true);
+    for (let i = 0; i < trenchRuns; i++) scatterLine(Terrain.Trench, 1, (rnd() - 0.5) * 0.3, 6 + Math.floor(rnd() * 8));
     for (const o of objectives) {
       layLine(o.cx - 5, o.cy - o.radius, 1, 0, 10, Terrain.Trench);
-      layEmplacement(o.cx + 3 - Math.floor(rnd() * 6), o.cy + 2 + Math.floor(rnd() * 3));
-      layEmplacement(o.cx - 4, o.cy - 3);
+      emplacementNear(o.cx + 2, o.cy + 3);
+      emplacementNear(o.cx - 4, o.cy - 3);
     }
   } else if (era === "acw") {
-    for (let i = 0; i < lineRuns + 2; i++) layLine(midX(), midY(), rnd() < 0.5 ? 1 : 0, rnd() < 0.5 ? 0 : 1, 8 + Math.floor(rnd() * 12), Terrain.Fence);
-    for (let i = 0; i < trenchRuns; i++) layLine(midX(), midY(), 1, (rnd() - 0.5) * 0.3, 6 + Math.floor(rnd() * 8), Terrain.Trench);
+    for (let i = 0; i < lineRuns + 2; i++) scatterLine(Terrain.Fence, rnd() < 0.5 ? 1 : 0, rnd() < 0.5 ? 0 : 1, 8 + Math.floor(rnd() * 12));
+    for (let i = 0; i < trenchRuns; i++) scatterLine(Terrain.Trench, 1, (rnd() - 0.5) * 0.3, 6 + Math.floor(rnd() * 8));
     for (const o of objectives) layLine(o.cx - 6, o.cy - o.radius, 1, 0, 12, Terrain.Fence);
   } else {
-    for (let i = 0; i < lineRuns; i++) layLine(midX(), midY(), rnd() < 0.6 ? 1 : 0, rnd() < 0.6 ? 0 : 1, 8 + Math.floor(rnd() * 10), Terrain.Fence);
-    for (let i = 0; i < trenchRuns; i++) layLine(midX(), midY(), 1, (rnd() - 0.5) * 0.3, 6 + Math.floor(rnd() * 8), Terrain.Trench);
+    for (let i = 0; i < lineRuns; i++) scatterLine(Terrain.Fence, rnd() < 0.6 ? 1 : 0, rnd() < 0.6 ? 0 : 1, 8 + Math.floor(rnd() * 10));
+    for (let i = 0; i < trenchRuns; i++) scatterLine(Terrain.Trench, 1, (rnd() - 0.5) * 0.3, 6 + Math.floor(rnd() * 8));
     for (const o of objectives) layLine(o.cx - 5, o.cy - o.radius, 1, 0, 10, Terrain.Trench);
   }
 }

@@ -298,11 +298,12 @@ export function factionColor(era: Era, f: Faction): number {
 
 function other(f: Faction): Faction { return f === "us" ? "axis" : "us"; }
 
-// Mounted troops (carbine cavalry, lance-armed knights) and crew-served engines (field
-// gun, catapult) are too big for a building interior; everyone else uses normal infantry
-// passability. Shared by every pathing call so these units route around houses.
+// Mounted troops (carbine cavalry, lance-armed knights), crew-served engines (field gun,
+// catapult) and the mortar (which needs open sky above it to fire) keep out of building
+// interiors; everyone else uses normal infantry passability. Shared by every pathing call
+// so these units route around houses rather than setting up inside them.
 export function unitPassable(grid: Grid, weapon: WeaponId): (cx: number, cy: number) => boolean {
-  if (weapon === "carbine" || weapon === "cannon" || weapon === "lance" || weapon === "catapult")
+  if (weapon === "carbine" || weapon === "cannon" || weapon === "lance" || weapon === "catapult" || weapon === "mortar")
     return (cx, cy) => grid.passable(cx, cy) && !isBuildingInterior(grid.get(cx, cy));
   return (cx, cy) => grid.passable(cx, cy);
 }

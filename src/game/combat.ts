@@ -2,7 +2,7 @@ import { addSuppression, killSoldier, woundSoldier } from "./casualty.ts";
 import { damageBuildings } from "./buildingDamage.ts";
 import { AMBUSH_ACC_MULT, AREA_FIRE_RADIUS, CANNON_SETUP_TIME, GUN_CREW_TO_SERVE, MG_ARC, MG_SETUP_TIME, MG_TRAVERSE, SMOKE_INITIAL } from "./constants.ts";
 import { hasLOS } from "./los.ts";
-import { isHardSurface, TERRAIN } from "./terrain.ts";
+import { isBuildingInterior, isHardSurface, TERRAIN } from "./terrain.ts";
 import { knockOut, resolveArmorHit } from "./vehicleCombat.ts";
 import { WEAPONS } from "./weapons.ts";
 import { Faction, PendingGrenade, Soldier, Vehicle, World } from "./world.ts";
@@ -115,6 +115,9 @@ export function resolveFire(world: World, dt: number): void {
     // Indirect mortar fire: lob HE — or a smoke screen — onto the designated cell
     // with no line-of-sight, so long as it's within the min/max range arc.
     if (s.fireCell && w.indirect) {
+      // A mortar lobs its round up through open sky — it can't fire from under a roof.
+      const uc = world.grid.inBounds(Math.floor(s.x), Math.floor(s.y)) ? world.grid.get(Math.floor(s.x), Math.floor(s.y)) : null;
+      if (uc != null && isBuildingInterior(uc)) continue;
       const d = Math.hypot(s.fireCell.cx + 0.5 - s.x, s.fireCell.cy + 0.5 - s.y);
       if (d < (w.minRangeCells ?? 0) || d > w.rangeCells) continue;
       s.fireCD -= dt * rateMul;

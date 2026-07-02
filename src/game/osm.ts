@@ -46,6 +46,7 @@ export async function generateMap(centerLat: number, centerLon: number, label: s
   // Bucket features so we can paint them back-to-front (ground → roads → structures).
   const areas: { poly: Pt[]; t: Terrain }[] = [];
   const roads: { line: Pt[]; w: number }[] = [];
+  const waterLines: { line: Pt[]; w: number }[] = [];
   const buildings: Pt[][] = [];
   const hedges: Pt[][] = [];
 
@@ -65,13 +66,20 @@ export async function generateMap(centerLat: number, centerLon: number, label: s
     if (tags.building) buildings.push(poly);
     else if (tags.highway) roads.push({ line: poly, w: roadWidth(tags.highway) });
     else if (tags.natural === "wood" || tags.landuse === "forest") areas.push({ poly, t: Terrain.Woods });
-    else if (tags.natural === "water" || tags.water || tags.waterway || tags.landuse === "reservoir")
+    // Water AREAS (lakes, ponds, wide-river polygons, docks) are filled.
+    else if (tags.natural === "water" || tags.water || tags.landuse === "reservoir"
+      || tags.waterway === "riverbank" || tags.waterway === "dock")
       areas.push({ poly, t: Terrain.Water });
+    // Water LINES (rivers, streams, canals, ditches) are just the watercourse centreline —
+    // rasterize them as a line of the type's width. Filling them as polygons (which closes
+    // the last node back to the first) is what painted huge wedges of water across the map.
+    else if (tags.waterway) waterLines.push({ line: poly, w: waterwayWidth(tags.waterway) });
     else if (tags.barrier === "hedge" || tags.barrier === "wall" || tags.barrier === "fence") hedges.push(poly);
     // (grass/meadow/farmland already match the default grass ground.)
   }
 
   for (const a of areas) fillPolygon(grid, a.poly, a.t);
+  for (const wl of waterLines) rasterizeLine(grid, wl.line, wl.w, Terrain.Water);
   for (const r of roads) rasterizeLine(grid, r.line, r.w, Terrain.Road);
   for (const poly of buildings) rasterizeBuilding(grid, poly, features);
   for (const poly of hedges) rasterizeHedge(grid, poly, features);
@@ -152,6 +160,13 @@ function roadWidth(highway: string): number {
   if (/secondary|tertiary/.test(highway)) return 1;      // ~3 cells — town road
   if (/residential|unclassified/.test(highway)) return 0; // 1 cell — lane
   return 0; // footways/tracks — 1 cell
+}
+
+// Half-width (in cells) of a watercourse drawn as a line, by its OSM waterway type.
+function waterwayWidth(waterway: string): number {
+  if (/river|canal/.test(waterway)) return 2;   // ~4-5 cells across
+  if (/stream|brook/.test(waterway)) return 1;  // ~2-3 cells
+  return 0; // ditch/drain — a 1-cell trickle
 }
 
 // --- rasterization ---

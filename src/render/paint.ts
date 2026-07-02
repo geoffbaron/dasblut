@@ -48,6 +48,9 @@ const MEADOW_DEEP = rgb(0x41682c);
 // Field-parcel tones for the farmland patchwork: harvested straw stubble and rich crop green.
 const STUBBLE = rgb(0xb3a05e);
 const CROP_DEEP = rgb(0x3f6a2e);
+// Elevation tones: high ground bakes dry and warm, hollows hold damp, deeper green.
+const DRY_HIGH = rgb(0x9aa257);
+const DAMP_LOW = rgb(0x44703a);
 
 export interface PaintedMap {
   canvas: HTMLCanvasElement;
@@ -147,16 +150,16 @@ export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "
       const clump = valueNoise(px * 0.06, py * 0.06, seed + 55);
       shade *= 0.89 + clump * 0.22;
 
-      // Hillshade: bilinear-sample the precomputed slope lighting so the whole map rolls —
-      // sunlit rises, dim reverse slopes — like Close Combat's photographed ground.
-      {
-        const rxf = px / RSTEP, ryf = py / RSTEP;
-        const rx0 = rxf | 0, ry0 = ryf | 0;
-        const fx = rxf - rx0, fy = ryf - ry0;
-        const i00 = ry0 * rw + rx0;
-        shade *= rshade[i00] * (1 - fx) * (1 - fy) + rshade[i00 + 1] * fx * (1 - fy)
-          + rshade[i00 + rw] * (1 - fx) * fy + rshade[i00 + rw + 1] * fx * fy;
-      }
+      // Hillshade + elevation: bilinear-sample the precomputed relief so the whole map
+      // rolls — sunlit rises, dim reverse slopes — like Close Combat's photographed ground.
+      // The height itself also feeds a subtle tint below (dry crests, damp hollows).
+      const rxf = px / RSTEP, ryf = py / RSTEP;
+      const rx0 = rxf | 0, ry0 = ryf | 0;
+      const rfx = rxf - rx0, rfy = ryf - ry0;
+      const ri = ry0 * rw + rx0;
+      const w00 = (1 - rfx) * (1 - rfy), w10 = rfx * (1 - rfy), w01 = (1 - rfx) * rfy, w11 = rfx * rfy;
+      shade *= rshade[ri] * w00 + rshade[ri + 1] * w10 + rshade[ri + rw] * w01 + rshade[ri + rw + 1] * w11;
+      const hgt = relief[ri] * w00 + relief[ri + 1] * w10 + relief[ri + rw] * w01 + relief[ri + rw + 1] * w11;
 
       const i = (py * mapW + px) * 4;
       let c = mix(pair[0], pair[1], t);
@@ -166,12 +169,15 @@ export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "
       if (terrain === Terrain.Grass || terrain === Terrain.Woods || terrain === Terrain.Wall || terrain === Terrain.Hedge) {
         const m = fbm(px * 0.006, py * 0.006, seed + 77, 2);
         c = mix(c, m > 0.5 ? MEADOW_WARM : MEADOW_DEEP, Math.min(0.7, Math.abs(m - 0.5) * 2.2));
+        // Elevation tint: crests bake dry and warm, hollows hold damp deeper green — the
+        // contour banding that makes the relief legible even where the slopes flatten out.
+        c = mix(c, hgt > 0.65 ? DRY_HIGH : DAMP_LOW, Math.min(0.22, Math.abs(hgt - 0.65) * 0.75));
       }
       // Farmland patchwork: open country is a quilt of field parcels — some straw stubble,
       // some rich crop, some ploughed with directional furrows — with boundaries that wander
       // (they reuse the warped lookup). This is the countryside texture CC maps live on.
       if (terrain === Terrain.Grass || terrain === Terrain.Open) {
-        const FIELD = 340; // ~15 cells per parcel
+        const FIELD = CELL_SIZE * 15; // 15-cell parcels — the same lattice orchards & bocage use
         let fh = ((Math.floor(wx / FIELD) * 374761393 + Math.floor(wy / FIELD) * 668265263 + seed * 69069) >>> 0);
         fh = (fh ^ (fh >>> 13)) >>> 0;
         fh = (fh * 1274126177) >>> 0;
@@ -215,6 +221,8 @@ export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "
   // A dense scatter of small gritty props — pebbles, dirt clods, dry-grass patches,
   // molehills, twigs — so no patch of ground is ever bare.
   scatterGrit(ctx, grid, rng);
+  // Orchard parcels: neat rows of small fruit trees on some fields.
+  drawOrchards(ctx, grid, rng, seed);
   // Road ruts.
   drawRoadRuts(ctx, grid, rng);
   // Water ripples + shoreline.
@@ -312,6 +320,53 @@ function scatterGrit(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => numbe
         g.addColorStop(1, "#3e301e");
         ctx.fillStyle = g;
         ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.6, 0, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+}
+
+// Orchards: some field parcels are planted with fruit trees in neat rows — small regular
+// canopies with soft shadows, straight off a CC Normandy map. Uses the same parcel hash as
+// the per-pixel patchwork (the 130-154 "kind" band, left untinted there) so art and parcels
+// agree. Purely decorative: trees only go on open grass/dirt cells, so roads, water and
+// buildings stay clear.
+function drawOrchards(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number, seed: number): void {
+  const FIELD = CELL_SIZE * 15;
+  const cols = Math.ceil((grid.width * CELL_SIZE) / FIELD);
+  const rows = Math.ceil((grid.height * CELL_SIZE) / FIELD);
+  for (let pj = 0; pj < rows; pj++) {
+    for (let pi = 0; pi < cols; pi++) {
+      let fh = ((pi * 374761393 + pj * 668265263 + seed * 69069) >>> 0);
+      fh = (fh ^ (fh >>> 13)) >>> 0;
+      fh = (fh * 1274126177) >>> 0;
+      const kind = (fh >>> 8) & 255;
+      if (kind < 130 || kind >= 155) continue; // ~10% of parcels are orchards
+      const alongX = ((fh >>> 16) & 1) === 0; // planting-row direction
+      const SP = CELL_SIZE * 2.2;  // tree spacing within a row
+      const ROW = CELL_SIZE * 2.7; // spacing between rows
+      const x0 = pi * FIELD + CELL_SIZE, y0 = pj * FIELD + CELL_SIZE; // margin off the lattice
+      const x1 = (pi + 1) * FIELD - CELL_SIZE, y1 = (pj + 1) * FIELD - CELL_SIZE;
+      for (let ty = y0; ty < y1; ty += alongX ? ROW : SP) {
+        for (let tx = x0; tx < x1; tx += alongX ? SP : ROW) {
+          const ox = tx + (rng() - 0.5) * 5, oy = ty + (rng() - 0.5) * 5;
+          const cx = Math.floor(ox / CELL_SIZE), cy = Math.floor(oy / CELL_SIZE);
+          if (!grid.inBounds(cx, cy)) continue;
+          const t = grid.get(cx, cy);
+          if (t !== Terrain.Grass && t !== Terrain.Open) continue;
+          const r = CELL_SIZE * (0.24 + rng() * 0.08);
+          ctx.fillStyle = "rgba(20,28,14,0.3)"; // soft shadow to the SE
+          ctx.beginPath();
+          ctx.ellipse(ox - SUN.x * r * 0.8, oy - SUN.y * r * 0.8, r * 0.95, r * 0.8, 0, 0, Math.PI * 2);
+          ctx.fill();
+          const hue = 78 + rng() * 20; // fruit trees run a touch yellower than forest
+          const g = ctx.createRadialGradient(ox + SUN.x * r * 0.4, oy + SUN.y * r * 0.4, r * 0.15, ox, oy, r);
+          g.addColorStop(0, `hsl(${hue},50%,50%)`);
+          g.addColorStop(1, `hsl(${hue},55%,26%)`);
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.arc(ox, oy, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
   }
@@ -1046,16 +1101,25 @@ function paintRoofTile(b: Building, minCx: number, minCy: number, maxCx: number,
 function drawBuildingShadow(ctx: CanvasRenderingContext2D, b: Building): void {
   // Taller buildings throw longer shadows — the AoE2 depth cue that sells the town.
   const lift = 4.5 + b.levels * 3.5;
+  // NO ctx.filter here: canvas blur filters force full-canvas intermediates, and at
+  // hundreds of shadow fills on a 4000×3000+ map Chrome intermittently drops earlier
+  // canvas content (which silently erased the bocage hedges). Softness comes from
+  // layered low-alpha fills at growing offsets instead — cheap and reliable.
   ctx.save();
-  ctx.filter = "blur(4px)";
-  ctx.fillStyle = "rgba(15,15,12,0.45)"; // strong but soft so dense blocks don't merge to mud
   const rect = asAxisRect(b.poly);
-  if (rect) {
-    const x = rect.x0 * CELL_SIZE, y = rect.y0 * CELL_SIZE;
-    ctx.fillRect(x - SUN.x * lift, y - SUN.y * lift, (rect.x1 - rect.x0) * CELL_SIZE, (rect.y1 - rect.y0) * CELL_SIZE);
-  } else {
-    const pts = b.poly.map((p) => [p.x * CELL_SIZE, p.y * CELL_SIZE] as [number, number]);
-    poly2(ctx, pts.map(([x, y]) => [x - SUN.x * lift, y - SUN.y * lift] as [number, number]));
+  for (let pass = 0; pass < 3; pass++) {
+    const grow = pass * 1.8;
+    ctx.fillStyle = `rgba(15,15,12,${0.2 - pass * 0.055})`;
+    if (rect) {
+      const x = rect.x0 * CELL_SIZE, y = rect.y0 * CELL_SIZE;
+      ctx.fillRect(
+        x - SUN.x * lift - grow, y - SUN.y * lift - grow,
+        (rect.x1 - rect.x0) * CELL_SIZE + grow * 2, (rect.y1 - rect.y0) * CELL_SIZE + grow * 2,
+      );
+    } else {
+      const pts = b.poly.map((p) => [p.x * CELL_SIZE, p.y * CELL_SIZE] as [number, number]);
+      poly2(ctx, pts.map(([x, y]) => [x - SUN.x * lift + grow * 0.4, y - SUN.y * lift + grow * 0.4] as [number, number]));
+    }
   }
   ctx.restore();
 }

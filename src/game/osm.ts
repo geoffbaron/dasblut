@@ -92,6 +92,10 @@ export async function generateMap(centerLat: number, centerLon: number, label: s
   for (const poly of buildings) rasterizeBuilding(grid, poly, features);
   for (const poly of hedges) rasterizeHedge(grid, poly, features);
 
+  // Bocage quilting: real hedgerows along some field-parcel boundaries, so the painted
+  // farmland patchwork gets physical borders to fight over.
+  addParcelBocage(grid, features);
+
   // A bare patch of countryside still wants a little cover to fight over.
   if (buildings.length === 0 && areas.length < 2) scatterCover(grid, features);
 
@@ -355,6 +359,57 @@ function fillCollect(grid: Grid, poly: Pt[], cb: (cx: number, cy: number) => voi
 
 function passableOpen(t: Terrain): boolean {
   return t === Terrain.Open || t === Terrain.Grass || t === Terrain.Road;
+}
+
+// Hedge lines along some boundaries of the 15-cell field-parcel lattice (the same parcels
+// the painter tints), each with a gate knocked through. Hedges only go on unbroken runs of
+// open country (grass/dirt), so towns, roads, water and woods stay clear — but rural ground
+// gets the physical Normandy patchwork to fight over.
+function addParcelBocage(grid: Grid, features: MapFeatures): void {
+  const P = 15;
+  const placeable = (x: number, y: number) => {
+    const t = grid.get(x, y);
+    return t === Terrain.Grass || t === Terrain.Open;
+  };
+  // Lay one parcel-edge segment: knock a 2-3 cell gate somewhere, then turn each remaining
+  // contiguous placeable run of >=4 cells into hedge (short fragments are skipped — a lone
+  // hedge cell in a town reads as noise, not bocage).
+  const lay = (cells: { x: number; y: number }[]) => {
+    if (cells.length < 5) return;
+    const gate = 1 + Math.floor(Math.random() * (cells.length - 3));
+    const gateLen = 2 + Math.floor(Math.random() * 2);
+    let run: { x: number; y: number }[] = [];
+    const flush = () => {
+      if (run.length >= 4) {
+        for (const c of run) grid.set(c.x, c.y, Terrain.Hedge);
+        features.hedges.push({ x0: run[0].x, y0: run[0].y, x1: run[run.length - 1].x, y1: run[run.length - 1].y });
+      }
+      run = [];
+    };
+    cells.forEach((c, i) => {
+      if (i < gate || i >= gate + gateLen) {
+        if (grid.inBounds(c.x, c.y) && placeable(c.x, c.y)) { run.push(c); return; }
+      }
+      flush();
+    });
+    flush();
+  };
+  for (let x = P; x < grid.width - 1; x += P) {
+    for (let j = 0; j * P < grid.height; j++) {
+      if (Math.random() >= 0.4) continue;
+      const cells: { x: number; y: number }[] = [];
+      for (let y = j * P; y < Math.min((j + 1) * P, grid.height); y++) cells.push({ x, y });
+      lay(cells);
+    }
+  }
+  for (let y = P; y < grid.height - 1; y += P) {
+    for (let j = 0; j * P < grid.width; j++) {
+      if (Math.random() >= 0.4) continue;
+      const cells: { x: number; y: number }[] = [];
+      for (let x = j * P; x < Math.min((j + 1) * P, grid.width); x++) cells.push({ x, y });
+      lay(cells);
+    }
+  }
 }
 
 function scatterCover(grid: Grid, features: MapFeatures): void {

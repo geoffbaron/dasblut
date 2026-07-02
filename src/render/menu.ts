@@ -95,6 +95,35 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
     deploy(c.lat, c.lng, labelFor(c.lat, c.lng));
   });
 
+  // Pre-created historic battles: each drops you onto the real ground (via OSM) with the
+  // era, sides and force mix of that engagement already set. Selecting one configures the
+  // dropdowns (so you can tweak before/after) and deploys straight there.
+  const setSel = (id: string, v: string) => {
+    const el = document.getElementById(id) as HTMLSelectElement | null;
+    if (el) el.value = v;
+  };
+  const applyScenario = (s: Scenario) => {
+    setSel("era", s.era);
+    setSel("gameMode", s.mode);
+    setSel("objCount", String(s.obj));
+    setSel("usTanks", String(s.us));
+    setSel("axisTanks", String(s.axis));
+    relabel();
+    map.setView([s.lat, s.lon], 16);
+    deploy(s.lat, s.lon, s.name);
+  };
+  const scenBox = document.getElementById("scenarioBtns");
+  if (scenBox) {
+    for (const s of SCENARIOS) {
+      const btn = document.createElement("button");
+      btn.className = "scenBtn";
+      btn.innerHTML = `<b>${s.name}</b><span>${s.blurb}</span>`;
+      btn.title = `${s.name} — ${s.blurb}`;
+      btn.addEventListener("click", () => applyScenario(s));
+      scenBox.appendChild(btn);
+    }
+  }
+
   document.getElementById("testBtn")!.addEventListener("click", () => {
     menu.style.display = "none";
     map.remove();
@@ -126,3 +155,47 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
 function labelFor(lat: number, lon: number): string {
   return `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
 }
+
+// A pre-created battle: real coordinates plus the era, sides and force mix of the fight.
+// `mode` uses the same values as the #gameMode dropdown (the human plays the attacker in
+// axis-attacks / us-attacks). `us`/`axis` are the 1–3 support counts (tanks / guns / siege
+// engines, per era).
+interface Scenario {
+  name: string;
+  blurb: string;
+  lat: number;
+  lon: number;
+  era: "ww2" | "acw" | "medieval";
+  mode: string;
+  obj: number;
+  us: number;
+  axis: number;
+}
+
+const SCENARIOS: Scenario[] = [
+  {
+    name: "Brécourt Manor",
+    blurb: "Normandy 1944 · Easy Co. takes the guns",
+    lat: 49.3897, lon: -1.2431, era: "ww2", mode: "us-attacks", obj: 1, us: 1, axis: 1,
+  },
+  {
+    name: "Carentan",
+    blurb: "Normandy 1944 · storming the crossroads",
+    lat: 49.3033, lon: -1.2456, era: "ww2", mode: "us-attacks", obj: 2, us: 2, axis: 1,
+  },
+  {
+    name: "Bastogne",
+    blurb: "Ardennes 1944 · panzers hit the 101st",
+    lat: 50.0000, lon: 5.7220, era: "ww2", mode: "axis-attacks", obj: 1, us: 1, axis: 3,
+  },
+  {
+    name: "Gettysburg",
+    blurb: "1863 · Pickett's charge on the ridge",
+    lat: 39.8121, lon: -77.2353, era: "acw", mode: "axis-attacks", obj: 1, us: 3, axis: 3,
+  },
+  {
+    name: "Château Gaillard",
+    blurb: "Normandy 1204 · storming the castle",
+    lat: 49.2375, lon: 1.4040, era: "medieval", mode: "axis-attacks", obj: 1, us: 1, axis: 3,
+  },
+];

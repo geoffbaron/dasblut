@@ -281,7 +281,7 @@ export interface GameSetup {
 }
 
 export const DEFAULT_SETUP: GameSetup = {
-  era: "ww2", player: "axis", usRole: "defend", axisRole: "attack", usTanks: 1, axisTanks: 1,
+  era: "ww2", player: "us", usRole: "attack", axisRole: "defend", usTanks: 1, axisTanks: 1,
 };
 
 // The two sides' display names and colours, per era. Internally the factions stay

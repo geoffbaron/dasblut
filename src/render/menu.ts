@@ -19,7 +19,7 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
   const tanks = (id: string) => parseInt((document.getElementById(id) as HTMLSelectElement)?.value || "1", 10);
   // The mode dropdown encodes both who the human plays and each side's role.
   const setup = (): GameSetup => {
-    const mode = (document.getElementById("gameMode") as HTMLSelectElement)?.value || "axis-attacks";
+    const mode = (document.getElementById("gameMode") as HTMLSelectElement)?.value || "us-attacks";
     const eraVal = (document.getElementById("era") as HTMLSelectElement)?.value;
     const era = (eraVal === "acw" || eraVal === "medieval" ? eraVal : "ww2") as GameSetup["era"];
     const usTanks = tanks("usTanks"), axisTanks = tanks("axisTanks");

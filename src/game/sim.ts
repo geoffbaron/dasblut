@@ -390,7 +390,13 @@ function steerToSlot(world: World, s: Soldier, team: Team): void {
   const cx = Math.floor(s.x), cy = Math.floor(s.y);
   const cost = world.grid.inBounds(cx, cy) ? TERRAIN[world.grid.get(cx, cy)].moveCost : 1;
   const step = (BASE_MOVE_SPEED / (isFinite(cost) ? cost : 1)) * (STANCE_SPEED[s.stance] ?? 1) * weaponMoveFactor(s) * s.gait * SIM_DT * 1.6;
-  s.facing = Math.atan2(m.hy, m.hx) + idJitter(s.id, 3) * 0.22; // face the line of march, not quite in unison
+  // Face the line of march, not quite in unison — UNLESS acquireTargets found something
+  // to shoot at this tick (it points the man at his target when he has no path, which is
+  // always true for a marching man). This ran unconditionally before, so it overwrote
+  // that aim back to the march heading every single frame: an archer or musketeer who
+  // fired mid-march never visibly turned to loose the shot, reading as if marching troops
+  // couldn't fire at all.
+  if (s.targetId == null) s.facing = Math.atan2(m.hy, m.hx) + idJitter(s.id, 3) * 0.22;
   if (dist <= 1e-4) return;
   // Move only onto walkable ground — never teleport-snap (that's what made men pop in and
   // out of buildings). If a wall is dead ahead, slide along it; if truly boxed in, hold.

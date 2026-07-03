@@ -410,6 +410,7 @@ export interface GameSetup {
   axisTanks: number;
   fortify?: boolean; // scatter era-appropriate field cover (hedgerows/trenches/bunkers, ditches/fences…)
   objectiveHoldS?: number; // seconds the attacker must hold every objective at once to win (default 60)
+  snow?: boolean; // paint the battlefield in winter dress (Bulge-style snow cover)
 }
 
 export const DEFAULT_SETUP: GameSetup = {
@@ -463,6 +464,9 @@ export class World {
   // Which historical setting this battle is fought in — picks the weapons, unit types,
   // vehicles, and the two sides' names/colors. WW2: US vs Wehrmacht. ACW: Union vs Confederate.
   era: Era = "ww2";
+  // Winter dress — a snow-covered battlefield (Bastogne et al). Purely visual; picked up
+  // by paintBattlefield, otherwise doesn't touch gameplay.
+  snow = false;
   // The faction deploying along the south edge; the other deploys north.
   southFaction: Faction = "axis";
   // Deployment bands (grid rows): south band [deploySouthY0, height), north [0, deployNorthY1).
@@ -532,6 +536,7 @@ export class World {
     this.grid = map.grid;
     this.features = map.features;
     this.era = setup.era;
+    this.snow = setup.snow ?? false;
     this.player = setup.player;
     this.aiFaction = other(setup.player);
     this.usRole = setup.usRole;

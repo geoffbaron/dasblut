@@ -32,15 +32,16 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
     const usTanks = tanks("usTanks"), axisTanks = tanks("axisTanks");
     const fortify = (document.getElementById("cover") as HTMLSelectElement)?.value === "1";
     const objectiveHoldS = parseInt((document.getElementById("holdTime") as HTMLSelectElement)?.value || "60", 10);
+    const snow = (document.getElementById("terrain") as HTMLSelectElement)?.value === "1";
     switch (mode) {
-      case "us-attacks":   return { era, player: "us",   usRole: "attack", axisRole: "defend", usTanks, axisTanks, fortify, objectiveHoldS };
+      case "us-attacks":   return { era, player: "us",   usRole: "attack", axisRole: "defend", usTanks, axisTanks, fortify, objectiveHoldS, snow };
       // Play the defender while the AI attacks — e.g. commanding the Union line at
       // Gettysburg while the Confederates make the charge.
-      case "us-defends":   return { era, player: "us",   usRole: "defend", axisRole: "attack", usTanks, axisTanks, fortify, objectiveHoldS };
-      case "axis-defends": return { era, player: "axis", usRole: "attack", axisRole: "defend", usTanks, axisTanks, fortify, objectiveHoldS };
-      case "meeting-axis": return { era, player: "axis", usRole: "attack", axisRole: "attack", usTanks, axisTanks, fortify, objectiveHoldS };
-      case "meeting-us":   return { era, player: "us",   usRole: "attack", axisRole: "attack", usTanks, axisTanks, fortify, objectiveHoldS };
-      default:             return { era, player: "axis", usRole: "defend", axisRole: "attack", usTanks, axisTanks, fortify, objectiveHoldS }; // "axis-attacks"
+      case "us-defends":   return { era, player: "us",   usRole: "defend", axisRole: "attack", usTanks, axisTanks, fortify, objectiveHoldS, snow };
+      case "axis-defends": return { era, player: "axis", usRole: "attack", axisRole: "defend", usTanks, axisTanks, fortify, objectiveHoldS, snow };
+      case "meeting-axis": return { era, player: "axis", usRole: "attack", axisRole: "attack", usTanks, axisTanks, fortify, objectiveHoldS, snow };
+      case "meeting-us":   return { era, player: "us",   usRole: "attack", axisRole: "attack", usTanks, axisTanks, fortify, objectiveHoldS, snow };
+      default:             return { era, player: "axis", usRole: "defend", axisRole: "attack", usTanks, axisTanks, fortify, objectiveHoldS, snow }; // "axis-attacks"
     }
   };
 
@@ -135,6 +136,7 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
     setSel("usTanks", String(s.us));
     setSel("axisTanks", String(s.axis));
     setSel("cover", s.fortify ? "1" : "0");
+    setSel("terrain", s.snow ? "1" : "0");
     relabel();
     map.setView([s.lat, s.lon], 16);
     deploy(s.lat, s.lon, s.name);
@@ -208,6 +210,7 @@ interface Scenario {
   us: number;
   axis: number;
   fortify?: boolean; // prepared positions (foxholes, walls, earthworks) for this fight
+  snow?: boolean; // winter dress
 }
 
 const SCENARIOS: Scenario[] = [
@@ -221,10 +224,12 @@ const SCENARIOS: Scenario[] = [
     blurb: "Normandy 1944 · storming the crossroads",
     lat: 49.3033, lon: -1.2456, era: "ww2", mode: "us-attacks", obj: 2, us: 2, axis: 1,
   },
+  // The Ardennes, Dec 1944: the 101st held Bastogne through the coldest winter in
+  // memory, snow on the ground the whole siege — the defining image of the Bulge.
   {
     name: "Bastogne",
-    blurb: "Ardennes 1944 · panzers hit the 101st",
-    lat: 50.0000, lon: 5.7220, era: "ww2", mode: "axis-attacks", obj: 1, us: 1, axis: 3, fortify: true,
+    blurb: "Ardennes 1944 · panzers hit the 101st in the snow",
+    lat: 50.0000, lon: 5.7220, era: "ww2", mode: "axis-attacks", obj: 1, us: 1, axis: 3, fortify: true, snow: true,
   },
   // Pickett's Charge, July 3 1863: Confederate infantry cross ~3/4 mile of open farmland,
   // climbing roadside post-and-rail fences under fire, to storm the stone wall at The

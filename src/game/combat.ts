@@ -714,19 +714,9 @@ function fireShot(world: World, s: Soldier, target: Soldier, dist: number): void
   const cover = cell ? cell.cover : 0;
   const conceal = cell ? cell.concealment : 0;
 
-  // Muzzle flash (firearms only — a bow has no muzzle) plus a tracer, powder streak or
-  // arrow so the shot is legible.
-  sound.play(s.weapon as SfxId, s.x, s.y);
-  if (s.weapon !== "bow") world.effects.push({ kind: "flash", x0: s.x, y0: s.y, x1: s.x, y1: s.y, ttl: 0.07 });
-  emitShot(world, s, target.x, target.y);
-  // Black-powder arms belch a thick cloud of white smoke with every shot — a firing line
-  // quickly fogs itself in. Pushed slightly toward the target (out of the muzzle).
-  if (s.weapon === "riflemusket" || s.weapon === "carbine") {
-    const a = Math.atan2(target.y - s.y, target.x - s.x);
-    world.effects.push({ kind: "smoke", x0: s.x + Math.cos(a) * 0.6, y0: s.y + Math.sin(a) * 0.6, x1: 0, y1: 0, ttl: 0.9 + Math.random() * 0.5, maxTtl: 1.4 });
-  }
-
-  // Hit probability.
+  // Hit probability — rolled BEFORE the shot is drawn, so a miss can be aimed at a
+  // scattered point instead of flying dead-center at the target and only "missing" in
+  // an invisible dice roll.
   let p = w.accuracy * (1 - 0.55 * (dist / w.rangeCells));
   p *= 1 - cover * 0.7;
   p *= 1 - conceal * 0.4;
@@ -737,12 +727,34 @@ function fireShot(world: World, s: Soldier, target: Soldier, dist: number): void
   p *= 0.7 + 0.3 * s.training;
   p *= bonus; // ambush opening volley
   p = Math.max(0, Math.min(0.95, p));
+  const hit = Math.random() < p;
+
+  // Muzzle flash (firearms only — a bow has no muzzle) plus a tracer, powder streak or
+  // arrow so the shot is legible. A missed arrow flies to a scattered point off the man
+  // instead of a dead-on shot that "just happens" to not count — a bow's low accuracy
+  // should visibly read as a ragged, wide-scattered volley, not a wall of bullseyes.
+  sound.play(s.weapon as SfxId, s.x, s.y);
+  if (s.weapon !== "bow") world.effects.push({ kind: "flash", x0: s.x, y0: s.y, x1: s.x, y1: s.y, ttl: 0.07 });
+  let aimX = target.x, aimY = target.y;
+  if (s.weapon === "bow" && !hit) {
+    const a = Math.random() * Math.PI * 2;
+    const r = (0.8 + Math.random() * 1.6) * (0.5 + dist / w.rangeCells); // wider miss at range
+    aimX += Math.cos(a) * r;
+    aimY += Math.sin(a) * r;
+  }
+  emitShot(world, s, aimX, aimY);
+  // Black-powder arms belch a thick cloud of white smoke with every shot — a firing line
+  // quickly fogs itself in. Pushed slightly toward the target (out of the muzzle).
+  if (s.weapon === "riflemusket" || s.weapon === "carbine") {
+    const a = Math.atan2(target.y - s.y, target.x - s.x);
+    world.effects.push({ kind: "smoke", x0: s.x + Math.cos(a) * 0.6, y0: s.y + Math.sin(a) * 0.6, x1: 0, y1: 0, ttl: 0.9 + Math.random() * 0.5, maxTtl: 1.4 });
+  }
 
   // Incoming fire always rattles the target (and splashes onto neighbours).
   addSuppression(target, w.suppression * bonus);
   splashSuppression(world, target, w.suppression * 0.4);
 
-  if (Math.random() < p) {
+  if (hit) {
     if (s.weapon === "bow") sound.play("arrow_hit", target.x, target.y); // the shaft finds its mark
     const lethal = w.lethality * (1 - cover * 0.5);
     const r = Math.random();

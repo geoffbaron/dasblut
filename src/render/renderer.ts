@@ -76,7 +76,7 @@ export class Renderer {
     });
     mount.appendChild(this.app.canvas);
 
-    const painted = paintBattlefield(world.grid, world.features, world.era);
+    const painted = paintBattlefield(world.grid, world.features, world.era, world.snow);
     const bg = new Sprite(Texture.from(painted.canvas));
     bg.scale.set(painted.scale);
 
@@ -603,26 +603,22 @@ export class Renderer {
       g.circle(s.x * CELL_SIZE, s.y * CELL_SIZE, 8).stroke({ width: 1.5, color: 0xffe27a, alpha: 0.55 });
     }
 
-    // Route line to each man's own destination. WW2 squads travel loose (every soldier
-    // gets his own individual path to his own scored cover cell, not a shared formation
-    // route — see orderLooseMove), so drawing only the leader's path left the rest of a
-    // scattering squad with no indication of where they were headed. The leader's line is
-    // brighter so it still reads as "the" squad route at a glance; the others are dimmer
-    // companion lines.
-    const leaderId = team.leaderId;
-    for (const id of team.soldierIds) {
-      const s = world.soldier(id);
-      if (!s || s.status !== "active" || !s.path) continue;
-      const pts = s.path.slice(s.pathIndex);
-      if (!pts.length) continue;
-      const isLeader = id === leaderId;
-      g.moveTo(s.x * CELL_SIZE, s.y * CELL_SIZE);
-      for (const p of pts) g.lineTo((p.cx + 0.5) * CELL_SIZE, (p.cy + 0.5) * CELL_SIZE);
-      g.stroke({ width: isLeader ? 2 : 1.2, color: 0xf0e0a0, alpha: isLeader ? 0.6 : 0.35 });
-      const last = pts[pts.length - 1];
-      const lx = (last.cx + 0.5) * CELL_SIZE;
-      const ly = (last.cy + 0.5) * CELL_SIZE;
-      g.circle(lx, ly, isLeader ? 6 : 3.5).stroke({ width: isLeader ? 2 : 1.2, color: 0xf0e0a0, alpha: isLeader ? 0.85 : 0.5 });
+    // A single route line for the squad — the leader's path stands for the whole unit's
+    // movement. (WW2 squads travel loose, each man on his own individual path to his own
+    // scored cover cell, so drawing every man's line fanned out into a cluttered mess of
+    // up to 11 overlapping lines per unit; one representative line reads far better.)
+    const lead = world.soldier(team.leaderId) ?? world.soldier(team.soldierIds[0]);
+    if (lead?.path) {
+      const pts = lead.path.slice(lead.pathIndex);
+      if (pts.length) {
+        g.moveTo(lead.x * CELL_SIZE, lead.y * CELL_SIZE);
+        for (const p of pts) g.lineTo((p.cx + 0.5) * CELL_SIZE, (p.cy + 0.5) * CELL_SIZE);
+        g.stroke({ width: 2, color: 0xf0e0a0, alpha: 0.6 });
+        const last = pts[pts.length - 1];
+        const lx = (last.cx + 0.5) * CELL_SIZE;
+        const ly = (last.cy + 0.5) * CELL_SIZE;
+        g.circle(lx, ly, 6).stroke({ width: 2, color: 0xf0e0a0, alpha: 0.85 });
+      }
     }
   }
 
@@ -821,9 +817,20 @@ export class Renderer {
         g.moveTo(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE).lineTo(e.x1 * CELL_SIZE, e.y1 * CELL_SIZE);
         g.stroke({ width: 1.1, color: 0xfff0cf, alpha: a });
       } else if (e.kind === "arrow") {
-        // An arrow's flight, drawn as a thin dark line from the archer to its mark.
+        // An arrow's flight: a slight lofted curve rather than a laser-straight line, so
+        // a volley reads as a scatter of individual shafts, not identical bullseyes. The
+        // bow/arc is derived from the shot's own fixed endpoints (not re-rolled every
+        // frame), so a given arrow's curve stays put for its whole flight.
         const a = Math.max(0, e.ttl / 0.28);
-        g.moveTo(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE).lineTo(e.x1 * CELL_SIZE, e.y1 * CELL_SIZE);
+        const x0 = e.x0 * CELL_SIZE, y0 = e.y0 * CELL_SIZE, x1 = e.x1 * CELL_SIZE, y1 = e.y1 * CELL_SIZE;
+        let h = (Math.imul(e.x0 * 1000 | 0, 374761393) ^ Math.imul(e.y1 * 1000 | 0, 668265263) ^ Math.imul(e.x1 * 1000 | 0, 2654435761)) >>> 0;
+        h = (h ^ (h >>> 13)) >>> 0;
+        const bow = ((h & 1023) / 1023 - 0.5) * 2; // stable per-shot value in [-1,1]
+        const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+        const dx = x1 - x0, dy = y1 - y0;
+        const len = Math.hypot(dx, dy) || 1;
+        const cx = mx - (dy / len) * len * 0.09 * bow, cy = my + (dx / len) * len * 0.09 * bow;
+        g.moveTo(x0, y0).quadraticCurveTo(cx, cy, x1, y1);
         g.stroke({ width: 0.9, color: 0x2e2415, alpha: a * 0.9 });
       } else if (e.kind === "flash") {
         g.circle(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE, 3).fill({ color: 0xffe06a, alpha: 0.9 });

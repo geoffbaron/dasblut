@@ -52,6 +52,29 @@ const CROP_DEEP = rgb(0x3f6a2e);
 const DRY_HIGH = rgb(0x9aa257);
 const DAMP_LOW = rgb(0x44703a);
 
+// --- Snow variant: a Bulge-winter reskin of the same terrain set. Ground disappears
+// under a pale blue-white blanket; only the elevation/clump shading (already computed
+// above) keeps it from reading as one flat sheet — drifts catch the light, hollows sit
+// in cold shadow. Roads are packed/salted snow, water runs colder and greyer, hedges/
+// walls/fences keep their ground tone since they're structures, not open ground.
+const GROUND_SNOW: Partial<Record<Terrain, [RGB, RGB]>> = {
+  [Terrain.Open]: [rgb(0xe4e9ee), rgb(0xc9d3da)],
+  [Terrain.Grass]: [rgb(0xdde6ec), rgb(0xc0cdd6)],
+  [Terrain.Woods]: [rgb(0xaebdc4), rgb(0x8fa2ac)], // snow-laden canopy floor, still shadowed
+  [Terrain.Water]: [rgb(0x4a7a92), rgb(0x355d72)], // colder, greyer than the summer palette
+  [Terrain.Road]: [rgb(0xa89d8f), rgb(0x867a6c)], // churned slush/mud — reads against pristine snow
+  [Terrain.Rubble]: [rgb(0x9aa1a6), rgb(0x7e858a)],
+  [Terrain.Wall]: [rgb(0xdde6ec), rgb(0xc0cdd6)],
+  [Terrain.Hedge]: [rgb(0xdde6ec), rgb(0xc0cdd6)],
+  [Terrain.Fence]: [rgb(0xdde6ec), rgb(0xc0cdd6)],
+  [Terrain.Trench]: [rgb(0x5a4a30), rgb(0x43351f)], // dug earth still shows through
+  [Terrain.Sandbag]: [rgb(0x9c8c5e), rgb(0x827145)],
+};
+const MEADOW_SNOW_WARM = rgb(0xeef2f5); // wind-scoured, brighter drift
+const MEADOW_SNOW_DEEP = rgb(0xb9c6cf); // settled, bluer drift
+const DRY_HIGH_SNOW = rgb(0xf2f5f7); // crest catching full light
+const DAMP_LOW_SNOW = rgb(0x9fb0ba); // hollow sitting in cold shadow
+
 export interface PaintedMap {
   canvas: HTMLCanvasElement;
   scale: number; // multiply canvas px by this to get logical (CSS) px
@@ -75,7 +98,12 @@ export interface BuildingArt {
   cells: number[];
 }
 
-export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "ww2"): PaintedMap {
+export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "ww2", snow = false): PaintedMap {
+  const groundPal = snow ? GROUND_SNOW : GROUND;
+  const meadowWarm = snow ? MEADOW_SNOW_WARM : MEADOW_WARM;
+  const meadowDeep = snow ? MEADOW_SNOW_DEEP : MEADOW_DEEP;
+  const dryHigh = snow ? DRY_HIGH_SNOW : DRY_HIGH;
+  const dampLow = snow ? DAMP_LOW_SNOW : DAMP_LOW;
   const mapW = grid.width * CELL_SIZE;
   const mapH = grid.height * CELL_SIZE;
   const seed = 1337;
@@ -138,7 +166,7 @@ export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "
       else if (cy >= grid.height) cy = grid.height - 1;
 
       const terrain = grid.get(cx, cy);
-      const pair = GROUND[terrain] ?? GROUND[Terrain.Grass]!;
+      const pair = groundPal[terrain] ?? groundPal[Terrain.Grass]!;
       // Two scales of noise: fine mottle + broad patches.
       const fine = valueNoise(px * 0.18, py * 0.18, seed + 7);
       const broad = fbm(px * 0.012, py * 0.012, seed + 23, 2);
@@ -168,15 +196,17 @@ export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "
       // zoom instead of one flat green carpet.
       if (terrain === Terrain.Grass || terrain === Terrain.Woods || terrain === Terrain.Wall || terrain === Terrain.Hedge) {
         const m = fbm(px * 0.006, py * 0.006, seed + 77, 2);
-        c = mix(c, m > 0.5 ? MEADOW_WARM : MEADOW_DEEP, Math.min(0.7, Math.abs(m - 0.5) * 2.2));
-        // Elevation tint: crests bake dry and warm, hollows hold damp deeper green — the
-        // contour banding that makes the relief legible even where the slopes flatten out.
-        c = mix(c, hgt > 0.65 ? DRY_HIGH : DAMP_LOW, Math.min(0.22, Math.abs(hgt - 0.65) * 0.75));
+        c = mix(c, m > 0.5 ? meadowWarm : meadowDeep, Math.min(0.7, Math.abs(m - 0.5) * 2.2));
+        // Elevation tint: crests bake dry and warm, hollows hold damp deeper green (or,
+        // under snow, a sunlit crest vs. a cold blue-shadowed hollow) — the contour
+        // banding that makes the relief legible even where the slopes flatten out.
+        c = mix(c, hgt > 0.65 ? dryHigh : dampLow, Math.min(0.22, Math.abs(hgt - 0.65) * 0.75));
       }
       // Farmland patchwork: open country is a quilt of field parcels — some straw stubble,
       // some rich crop, some ploughed with directional furrows — with boundaries that wander
       // (they reuse the warped lookup). This is the countryside texture CC maps live on.
-      if (terrain === Terrain.Grass || terrain === Terrain.Open) {
+      // Buried under snow cover, so skipped entirely for the snow variant.
+      if (!snow && (terrain === Terrain.Grass || terrain === Terrain.Open)) {
         const FIELD = CELL_SIZE * 15; // 15-cell parcels — the same lattice orchards & bocage use
         let fh = ((Math.floor(wx / FIELD) * 374761393 + Math.floor(wy / FIELD) * 668265263 + seed * 69069) >>> 0);
         fh = (fh ^ (fh >>> 13)) >>> 0;
@@ -232,19 +262,19 @@ export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "
   // lays ripples, foam and reeds on top exactly as it already did.
   for (const wl of features.waterLines) drawWaterLine(ctx, wl);
   // Water ripples + shoreline.
-  drawWater(ctx, grid, rng);
+  drawWater(ctx, grid, rng, snow);
   // Battle scars: scorched ground, shell craters, and scattered debris. Drawn on the
   // open ground (under trees/buildings) so the field reads as fought-over, not pristine.
   drawScorch(ctx, grid, rng);
   drawCraters(ctx, grid, rng);
   drawDebris(ctx, grid, rng);
   // Woods canopy (the big visual win) and rubble debris.
-  drawWoods(ctx, grid, rng);
+  drawWoods(ctx, grid, rng, snow);
   drawRubble(ctx, grid, rng);
   // Field fortifications (trenches/ditches, fences, sandbag emplacements) if placed.
   drawFortifications(ctx, grid, rng);
   // Bocage hedgerows.
-  for (const h of features.hedges) drawHedge(ctx, h, rng);
+  for (const h of features.hedges) drawHedge(ctx, h, rng, snow);
   // Buildings: only the cast shadows go into the static ground. The floor plan and the
   // roof are each their own masked tile (below), so they always line up and the floor
   // never pokes blocks out from under the roof.
@@ -252,7 +282,7 @@ export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "
   // Global grade: soft vignette.
   drawVignette(ctx, mapW, mapH);
 
-  const buildings = features.buildings.map((b) => paintBuilding(grid, b, era));
+  const buildings = features.buildings.map((b) => paintBuilding(grid, b, era, snow));
 
   return { canvas, scale: 1 / SS, buildings };
 }
@@ -533,7 +563,7 @@ function drawWaterLine(ctx: CanvasRenderingContext2D, seg: WaterLineSeg): void {
   ctx.stroke();
 }
 
-function drawWater(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number): void {
+function drawWater(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number, snow = false): void {
   for (let cy = 0; cy < grid.height; cy++) {
     for (let cx = 0; cx < grid.width; cx++) {
       if (grid.get(cx, cy) !== Terrain.Water) continue;
@@ -577,14 +607,14 @@ function drawWater(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number)
         ctx.fillStyle = gr;
         ctx.fillRect(bx - CELL_SIZE * 0.5, by - CELL_SIZE * 0.5, CELL_SIZE * 2, CELL_SIZE * 2);
       };
-      if (!shore) wash("18,55,95", 0.22);
-      // Shoreline: a sandy shallow tint plus a broken white foam line hugging the land
-      // edge — the classic bright coast read. Foam is scattered dabs biased toward the
-      // shore edge rather than one stroke traced along the cell boundary — a continuous
-      // per-cell-edge line is exactly what turns a diagonal coast into a staircase (see
-      // the same fix applied to road verges).
+      if (!shore) wash(snow ? "20,45,60" : "18,55,95", 0.22);
+      // Shoreline: a shallow-water tint (sandy in summer, icy grey-white in snow) plus a
+      // broken white foam line hugging the land edge — the classic bright coast read.
+      // Foam is scattered dabs biased toward the shore edge rather than one stroke traced
+      // along the cell boundary — a continuous per-cell-edge line is exactly what turns a
+      // diagonal coast into a staircase (see the same fix applied to road verges).
       if (shore) {
-        wash("190,205,175", 0.4);
+        wash(snow ? "210,220,225" : "190,205,175", 0.4);
         // A cell with NO orthogonal water neighbour at all (only diagonal) is a link in a
         // 1-cell-wide diagonal run — a narrow stream/river, already covered by the smooth
         // vector ribbon drawn above. Foam scattered at its raster edges would trace that
@@ -609,12 +639,12 @@ function drawWater(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number)
           if (edges[2]) foam(bx, by + 1, bx + CELL_SIZE, by + 1); // land to the north
           if (edges[3]) foam(bx, by + CELL_SIZE - 1, bx + CELL_SIZE, by + CELL_SIZE - 1);
         }
-        // Reeds at the waterline.
+        // Reeds at the waterline — bare, snow-dusted stalks in winter rather than green.
         if (rng() < 0.35) {
           const n = 2 + Math.floor(rng() * 3);
           for (let k = 0; k < n; k++) {
             const rx = bx + rng() * CELL_SIZE, ry = by + rng() * CELL_SIZE;
-            ctx.strokeStyle = `rgba(88,110,48,${0.45 + rng() * 0.25})`;
+            ctx.strokeStyle = snow ? `rgba(150,140,120,${0.4 + rng() * 0.25})` : `rgba(88,110,48,${0.45 + rng() * 0.25})`;
             ctx.lineWidth = 0.7;
             ctx.beginPath();
             ctx.moveTo(rx, ry);
@@ -627,7 +657,7 @@ function drawWater(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number)
   }
 }
 
-function drawWoods(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number): void {
+function drawWoods(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number, snow = false): void {
   // Leaf litter on the forest floor before trees go up — dead leaves, twigs, and
   // dappled light patches that make the ground under the canopy read differently.
   for (let cy = 0; cy < grid.height; cy++) {
@@ -637,7 +667,10 @@ function drawWoods(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number)
       for (let k = 0; k < 5; k++) {
         const lx = bx + rng() * CELL_SIZE, ly = by + rng() * CELL_SIZE;
         const s = 0.5 + rng() * 1.4;
-        ctx.fillStyle = `hsla(${35 + rng() * 20},20%,${22 + rng() * 14}%,${0.25 + rng() * 0.2})`;
+        // Warm dead-leaf litter in summer; cold blue-grey shadow dapples under snow.
+        ctx.fillStyle = snow
+          ? `hsla(200,15%,${60 + rng() * 14}%,${0.2 + rng() * 0.15})`
+          : `hsla(${35 + rng() * 20},20%,${22 + rng() * 14}%,${0.25 + rng() * 0.2})`;
         ctx.beginPath();
         ctx.ellipse(lx, ly, s, s * 0.6, rng() * Math.PI, 0, Math.PI * 2);
         ctx.fill();
@@ -718,6 +751,17 @@ function drawWoods(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number)
       ctx.fillStyle = `hsla(${t.hue + 8},${sat + 10}%,${55 + rng() * 12}%,0.7)`;
       ctx.beginPath();
       ctx.arc(t.x + SUN.x * r * 0.35 + (rng() - 0.5) * r * 0.6, t.y + SUN.y * r * 0.35 + (rng() - 0.5) * r * 0.6, r * (0.08 + rng() * 0.1), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Snow-capped crown: a bright white dusting on the upper (sun-facing) half of the
+    // canopy, the same silhouette every winter forest photo shows.
+    if (snow) {
+      const g2 = ctx.createRadialGradient(t.x - SUN.x * r * 0.3, t.y - SUN.y * r * 0.3, 0, t.x - SUN.x * r * 0.3, t.y - SUN.y * r * 0.3, r * 0.9);
+      g2.addColorStop(0, "rgba(240,245,248,0.85)");
+      g2.addColorStop(1, "rgba(240,245,248,0)");
+      ctx.fillStyle = g2;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -974,7 +1018,7 @@ function drawDebris(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number
   }
 }
 
-function drawHedge(ctx: CanvasRenderingContext2D, h: HedgeSeg, rng: () => number): void {
+function drawHedge(ctx: CanvasRenderingContext2D, h: HedgeSeg, rng: () => number, snow = false): void {
   const horiz = h.y0 === h.y1;
   const len = horiz ? Math.abs(h.x1 - h.x0) : Math.abs(h.y1 - h.y0);
   const steps = Math.max(2, Math.round(len * 1.6));
@@ -1003,6 +1047,19 @@ function drawHedge(ctx: CanvasRenderingContext2D, h: HedgeSeg, rng: () => number
     ctx.beginPath();
     ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
     ctx.fill();
+  }
+  // Snow-capped bocage: the same white dusting the tree canopies get, so a hedgerow
+  // doesn't read as a jarring patch of full summer green against the snow.
+  if (snow) {
+    for (const b of blobs) {
+      const g = ctx.createRadialGradient(b.x - SUN.x * b.r * 0.3, b.y - SUN.y * b.r * 0.3, 0, b.x, b.y, b.r * 0.85);
+      g.addColorStop(0, "rgba(238,244,247,0.8)");
+      g.addColorStop(1, "rgba(238,244,247,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 }
 
@@ -1038,7 +1095,7 @@ function pickRoofPalette(rng: () => number, burned: boolean, era: Era): string[]
 
 // Build both tiles for one building from its cell mask, so floor and roof line up
 // cell-for-cell and nothing pokes out from under the roof.
-function paintBuilding(grid: Grid, b: Building, era: Era): BuildingArt {
+function paintBuilding(grid: Grid, b: Building, era: Era, snow = false): BuildingArt {
   const W = grid.width;
   let minCx = Infinity, maxCx = -Infinity, minCy = Infinity, maxCy = -Infinity;
   for (const idx of b.cells) {
@@ -1048,7 +1105,7 @@ function paintBuilding(grid: Grid, b: Building, era: Era): BuildingArt {
   }
   const seed = ((minCx * 92837) ^ (minCy * 689287)) >>> 0;
   const floor = paintFloorTile(grid, b, minCx, minCy, maxCx, maxCy);
-  const roof = paintRoofTile(b, minCx, minCy, maxCx, maxCy, mulberry32(seed), era);
+  const roof = paintRoofTile(b, minCx, minCy, maxCx, maxCy, mulberry32(seed), era, snow);
   return { floor, roof, cells: b.cells };
 }
 
@@ -1131,7 +1188,7 @@ function drawWindowPane(ctx: CanvasRenderingContext2D, cx: number, cy: number): 
   ctx.stroke();
 }
 
-function paintRoofTile(b: Building, minCx: number, minCy: number, maxCx: number, maxCy: number, rng: () => number, era: Era): Tile {
+function paintRoofTile(b: Building, minCx: number, minCy: number, maxCx: number, maxCy: number, rng: () => number, era: Era, snow = false): Tile {
   const SS = 2;
   const M = CELL_SIZE; // margin for eave / chimney overhang
   const x0 = minCx * CELL_SIZE - M, y0 = minCy * CELL_SIZE - M;
@@ -1148,6 +1205,19 @@ function paintRoofTile(b: Building, minCx: number, minCy: number, maxCx: number,
   const burned = rng() < 0.1 && b.cells.length < 40;
   if (isRect) drawPitchedRoof(ctx, minCx, minCy, maxCx + 1, maxCy + 1, rng, burned, era);
   else drawFlatRoof(ctx, b, rng, burned, era);
+  // Snow dusting: a soft white wash weighted toward the sun-facing (NW) slope, plus a
+  // crisp bright line along the ridge/eave where snow actually piles up.
+  if (snow && !burned) {
+    const cx0 = x0 + M, cy0 = y0 + M, cw = w - 2 * M, ch = h - 2 * M;
+    const gx = cx0 + cw * (0.5 + SUN.x * 0.3), gy = cy0 + ch * (0.5 + SUN.y * 0.3);
+    const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, Math.max(cw, ch) * 0.75);
+    g.addColorStop(0, "rgba(238,244,247,0.55)");
+    g.addColorStop(1, "rgba(238,244,247,0.05)");
+    ctx.fillStyle = g;
+    ctx.fillRect(cx0, cy0, cw, ch);
+    ctx.fillStyle = "rgba(240,246,248,0.7)";
+    ctx.fillRect(cx0, cy0, cw, ch * 0.14); // ridge line catching the most snow
+  }
   return { canvas, x: x0, y: y0, scale: 1 / SS };
 }
 

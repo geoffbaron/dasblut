@@ -840,6 +840,18 @@ export class Renderer {
       } else if (e.kind === "ap") {
         g.moveTo(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE).lineTo(e.x1 * CELL_SIZE, e.y1 * CELL_SIZE);
         g.stroke({ width: 2.6, color: 0xfff2c0, alpha: 0.95 });
+      } else if (e.kind === "rocket") {
+        // A bazooka/Panzerfaust round in flight: deliberately NOT the tank "ap" line — a
+        // warm flame-cored streak that eats into its own trail as it flies (a rocket is
+        // much slower than a tank shell), so an AT team's own shot reads unmistakably as
+        // "that's a bazooka," not "a tank just fired."
+        const age = 1 - e.ttl / (e.maxTtl ?? 0.34);
+        const hx = e.x0 + (e.x1 - e.x0) * age, hy = e.y0 + (e.y1 - e.y0) * age; // rocket's head
+        g.moveTo(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE).lineTo(hx * CELL_SIZE, hy * CELL_SIZE);
+        g.stroke({ width: 4.5, color: 0x8a4a1a, alpha: 0.35 }); // dull smoky outer trail
+        g.moveTo(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE).lineTo(hx * CELL_SIZE, hy * CELL_SIZE);
+        g.stroke({ width: 2.2, color: 0xffb347, alpha: 0.9 }); // warm flame core
+        g.circle(hx * CELL_SIZE, hy * CELL_SIZE, 2.6).fill({ color: 0xfff0c0, alpha: 0.95 }); // bright rocket head
       } else if (e.kind === "ricochet") {
         // A round spitting off in a random direction — quick, bright, white-hot.
         const a = Math.max(0, e.ttl / 0.14);

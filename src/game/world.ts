@@ -81,7 +81,7 @@ export interface Team {
   march: { guide: Cell[]; idx: number; x: number; y: number; hx: number; hy: number } | null;
 }
 
-export type EffectKind = "tracer" | "shotline" | "arrow" | "flash" | "hit" | "ap" | "spark" | "smoke" | "fire" | "lob" | "ricochet" | "blocked" | "blood";
+export type EffectKind = "tracer" | "shotline" | "arrow" | "flash" | "hit" | "ap" | "rocket" | "spark" | "smoke" | "fire" | "lob" | "ricochet" | "blocked" | "blood";
 
 // A burning smoke canister that emits into the smoke grid over its lifetime.
 export interface SmokeSource { cx: number; cy: number; t: number; }

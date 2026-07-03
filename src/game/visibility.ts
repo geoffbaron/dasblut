@@ -1,12 +1,19 @@
 import { ACW_SPOT_BASE, ACW_VISION_CELLS, SPOT_BASE, SPOT_HYSTERESIS, VISION_CELLS } from "./constants.ts";
 import { hasLOS } from "./los.ts";
-import { TERRAIN } from "./terrain.ts";
+import { isBuildingInterior, TERRAIN } from "./terrain.ts";
 import { WEAPONS } from "./weapons.ts";
 import { Soldier, Vehicle, World } from "./world.ts";
 
 interface Spotter {
   x: number;
   y: number;
+  // A buttoned-up tank crew has poor close-in vision, especially peering into a
+  // building — this is what lets an AT team hole up in a house rather than being
+  // spotted through the wall the instant a tank rolls into view.
+  vehicle?: boolean;
+  // An anti-tank man watches for armor and knows what he's looking for — he spots a
+  // tank at a real distance instead of squinting at a generic distant shape.
+  atCapable?: boolean;
 }
 
 // Recomputes, for the visibility tick:
@@ -21,11 +28,12 @@ export function updateVisibility(world: World, dt: number): void {
   const foePts: Spotter[] = [];
   for (const s of world.soldiers) {
     if (s.status === "dead" || s.status === "surrendered") continue; // a man with his hands up isn't scouting
-    (s.faction === me ? myPts : foePts).push({ x: s.x, y: s.y });
+    const atCapable = WEAPONS[s.weapon].penetration != null;
+    (s.faction === me ? myPts : foePts).push({ x: s.x, y: s.y, atCapable });
   }
   for (const v of world.vehicles) {
     if (v.status === "ko") continue;
-    (v.faction === me ? myPts : foePts).push({ x: v.x, y: v.y });
+    (v.faction === me ? myPts : foePts).push({ x: v.x, y: v.y, vehicle: true });
   }
 
   // 1. The human player's shroud (their line of sight).
@@ -63,7 +71,8 @@ function spotSoldier(world: World, t: Soldier, spotters: Spotter[], dt: number):
   const { grid } = world;
   const tcx = Math.floor(t.x);
   const tcy = Math.floor(t.y);
-  const conceal = grid.inBounds(tcx, tcy) ? TERRAIN[grid.get(tcx, tcy)].concealment : 0;
+  const terrain = grid.inBounds(tcx, tcy) ? grid.get(tcx, tcy) : null;
+  const conceal = terrain != null ? TERRAIN[terrain].concealment : 0;
   const moving = t.path != null && t.status === "active";
   const firing = t.firedTimer > 0;
   // Massed ranks standing upright in the open are visible at long range in the Civil War;
@@ -81,14 +90,21 @@ function spotSoldier(world: World, t: Soldier, spotters: Spotter[], dt: number):
   // firing on can always spot him back, so you can never be killed from concealment by
   // an enemy you had no chance of seeing. (Holding fire — ambush/sneak — stays hidden.)
   if (firing) range = Math.max(range, WEAPONS[t.weapon].rangeCells * (1 - conceal * 0.3));
-  applySeen(world, t, spotters, tcx, tcy, range, dt);
+  // A buttoned-up tank crew, peering through narrow vision slits/periscopes, is far worse
+  // than infantry at picking a man out of a doorway or window — this is what lets an AT
+  // team hole up in a house and let armor close in without being spotted through the wall
+  // the instant it comes into general view.
+  const indoors = terrain != null && isBuildingInterior(terrain);
+  applySeen(world, t, spotters, tcx, tcy, (s) => (s.vehicle && indoors ? range * 0.45 : range), dt);
 }
 
 function spotVehicle(world: World, v: Vehicle, spotters: Spotter[], dt: number): void {
   // Tanks are conspicuous; movement and the gun going off give them away further.
   let range = SPOT_BASE * 1.4;
   if (v.path) range *= 1.2;
-  applySeen(world, v, spotters, Math.floor(v.x), Math.floor(v.y), range, dt);
+  // An anti-tank man watches for armor — he picks a tank's silhouette/engine note out at
+  // real distance instead of needing it as close as a rifleman would.
+  applySeen(world, v, spotters, Math.floor(v.x), Math.floor(v.y), (s) => (s.atCapable ? range * 1.5 : range), dt);
 }
 
 function applySeen(
@@ -97,15 +113,15 @@ function applySeen(
   spotters: Spotter[],
   tcx: number,
   tcy: number,
-  range: number,
+  rangeFor: (s: Spotter) => number,
   dt: number,
 ): void {
-  const range2 = range * range;
   let visible = false;
   for (const s of spotters) {
+    const range = rangeFor(s);
     const dx = s.x - t.x;
     const dy = s.y - t.y;
-    if (dx * dx + dy * dy > range2) continue;
+    if (dx * dx + dy * dy > range * range) continue;
     // Smoke blocks spotting (but not the friendly shroud above) — that's what makes
     // a mortar screen hide a moving squad from the enemy.
     if (hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), tcx, tcy, world.smokeGrid)) {

@@ -770,13 +770,18 @@ function fireShot(world: World, s: Soldier, target: Soldier, dist: number): void
 // The impact itself is shown by resolveArmorHit (on a strike) or bazookaMiss (a miss).
 function bazookaLaunch(world: World, sx: number, sy: number, tx: number, ty: number): void {
   const ang = Math.atan2(ty - sy, tx - sx);
-  // Back-blast: a plume of smoke kicked out behind the launcher.
+  // Back-blast: a plume of smoke kicked out behind the launcher — the unmistakable
+  // "someone just fired an AT rocket" tell, distinct from a rifle muzzle flash or a
+  // tank's gun report (no back-blast, no smoke plume opposite the shot).
   const bx = sx - Math.cos(ang) * 1.3;
   const by = sy - Math.sin(ang) * 1.3;
   world.effects.push({ kind: "flash", x0: sx, y0: sy, x1: sx, y1: sy, ttl: 0.16 });
-  world.effects.push({ kind: "smoke", x0: bx, y0: by, x1: 0, y1: 0, ttl: 1.2, maxTtl: 1.2 });
-  // Bright rocket streak in flight.
-  world.effects.push({ kind: "ap", x0: sx, y0: sy, x1: tx, y1: ty, ttl: 0.2 });
+  world.effects.push({ kind: "smoke", x0: bx, y0: by, x1: 0, y1: 0, ttl: 1.3, maxTtl: 1.3 });
+  world.effects.push({ kind: "smoke", x0: bx, y0: by, x1: 0, y1: 0, ttl: 1.0, maxTtl: 1.0 });
+  // "rocket", not "ap" — a bazooka/Panzerfaust round is its own thing: a slower, warm
+  // flame-cored streak with a visible smoke trail, not a tank's crisp instant AP line —
+  // so it's obvious at a glance an infantryman just loosed his one shot at the tank.
+  world.effects.push({ kind: "rocket", x0: sx, y0: sy, x1: tx, y1: ty, ttl: 0.34, maxTtl: 0.34 });
   // Smoke trail puffs along the flight path — the rocket's signature.
   const segs = 5;
   for (let i = 1; i <= segs; i++) {

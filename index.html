@@ -32,10 +32,18 @@
         padding: 6px 10px; border-radius: 6px; font-size: 12px;
         background: rgba(20, 19, 15, 0.7); color: #9a9484;
       }
-      #status {
+      /* Right-side stack: selection status → casualty ticker → minimap → net badge.
+         Kept to one corner column so nothing else on screen ever has to compete with
+         it for space or float over the battlefield. */
+      #rightDock {
         position: fixed; top: 12px; right: 12px; z-index: 10;
+        display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+        width: 200px;
+      }
+      #status {
+        width: 100%;
         padding: 8px 12px; border: 1px solid #3a3730; border-radius: 6px;
-        background: rgba(20, 19, 15, 0.82); font-size: 12px; min-width: 150px;
+        background: rgba(20, 19, 15, 0.82); font-size: 12px;
       }
       #status .name { color: #e8e2d2; font-weight: 600; }
       #status .dim { color: #8a8474; }
@@ -43,6 +51,23 @@
       #status .tag { padding: 1px 6px; border-radius: 8px; font-size: 11px; background: #2a2820; }
       .s-steady { color: #8fbf6f; } .s-shaken { color: #f0c040; }
       .s-pinned { color: #e07a2a; } .s-panicked { color: #e0533a; } .s-routing { color: #ff5a3a; }
+      /* Casualty ticker: the last few kills/losses, newest on top, fading with age. */
+      #ticker {
+        display: none; flex-direction: column; gap: 3px; width: 100%;
+        padding: 6px 10px; border: 1px solid #3a3730; border-radius: 6px;
+        background: rgba(20, 19, 15, 0.78); font-size: 11px;
+      }
+      #ticker .trow {
+        display: flex; align-items: center; gap: 5px; white-space: nowrap;
+        overflow: hidden; text-overflow: ellipsis; color: #cfc8b6;
+      }
+      #ticker .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+      /* Minimap: a small radar, click to recentre the camera there. */
+      #minimap {
+        display: block; width: 100%; height: 150px;
+        border: 1px solid #3a3730; border-radius: 6px;
+        background: #14130f; cursor: pointer;
+      }
       /* Objective status lives INSIDE the top HUD strip — a floating mid-screen panel
          sat right on top of the battlefield (and the objective flag itself). */
       #objective {
@@ -65,6 +90,7 @@
       }
       #banner .big { font-size: 17px; font-weight: 700; letter-spacing: 1.5px; }
       #banner .sub { color: #9a9484; font-size: 12px; }
+      #banner .stats { color: #b0aa98; font-size: 11px; margin-top: 3px; }
       #banner button {
         font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
         color: #f0e6d6; background: #6f4a2a; border: 1px solid #9a6a3a;
@@ -387,9 +413,13 @@
       <button id="helpBtn" title="How to play">?</button>
     </div>
     <div id="roster"><div class="rtitle">UNITS</div></div>
-    <div id="status"><span class="dim">No team selected</span></div>
+    <div id="rightDock">
+      <div id="status"><span class="dim">No team selected</span></div>
+      <div id="ticker"></div>
+      <canvas id="minimap" width="200" height="150" title="Click to jump the camera there"></canvas>
+    </div>
     <div id="banner"><div class="card">
-      <div><div class="big" id="bannerBig"></div><div class="sub" id="bannerSub"></div></div>
+      <div><div class="big" id="bannerBig"></div><div class="sub" id="bannerSub"></div><div class="stats" id="bannerStats"></div></div>
       <button id="bannerNewBattle">⟳ New Battle</button>
     </div></div>
     <div id="joinBattle">

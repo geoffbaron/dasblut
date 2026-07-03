@@ -339,6 +339,14 @@ export class Renderer {
     this.applyCamera(world);
   }
 
+  /** Center the view on a raw world-cell point (used by the minimap's click-to-pan). */
+  centerOnWorldPoint(world: World, wx: number, wy: number): void {
+    const c = this.regionCenter();
+    this.camX = wx * CELL_SIZE * this.zoom - c.x;
+    this.camY = wy * CELL_SIZE * this.zoom - c.y;
+    this.applyCamera(world);
+  }
+
   screenToWorld(sx: number, sy: number): { x: number; y: number } {
     return { x: (sx + this.camX) / (CELL_SIZE * this.zoom), y: (sy + this.camY) / (CELL_SIZE * this.zoom) };
   }

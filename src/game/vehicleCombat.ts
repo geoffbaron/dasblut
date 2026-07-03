@@ -74,6 +74,7 @@ export function knockOut(world: World, v: Vehicle): void {
   // Initial fireball.
   for (let i = 0; i < 3; i++)
     world.effects.push({ kind: "fire", x0: v.x, y0: v.y, x1: v.x, y1: v.y, ttl: 0.4 + i * 0.2 });
+  world.logEvent(v.faction, "vehicle", `${v.name} destroyed`);
   koShock(world, v);
 }
 

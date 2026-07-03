@@ -117,6 +117,16 @@ export interface Effect {
   maxTtl?: number; // for effects that grow/fade over their lifetime (smoke)
 }
 
+// A line for the casualty ticker and the end-of-battle report. `faction` is whoever
+// suffered the loss (the side that's down a man or a vehicle), not who caused it.
+export interface BattleEvent {
+  seq: number; // monotonic — lets multiplayer clients ask for "everything after N"
+  time: number; // world.time this happened
+  faction: Faction;
+  kind: "kill" | "wound" | "vehicle";
+  text: string; // e.g. "Rifle killed", "M4 Sherman destroyed"
+}
+
 // An armored vehicle. Hull and turret face independently; armor is directional, so
 // where a shot lands (front/side/rear) decides whether it bounces or brews up.
 export interface Vehicle {
@@ -516,6 +526,18 @@ export class World {
     this.bloodDecals.push({ x, y, seed: (Math.random() * 0xffffffff) >>> 0, big });
     if (this.bloodDecals.length > 300) this.bloodDecals.shift();
     this.bloodVersion++;
+  }
+
+  // Casualty/loss feed — drives the on-screen ticker and the end-of-battle report.
+  // Capped well past anything the ticker itself ever shows, but bounded all the same.
+  events: BattleEvent[] = [];
+  eventsVersion = 0;
+  private nextEventSeq = 0;
+
+  logEvent(faction: Faction, kind: BattleEvent["kind"], text: string): void {
+    this.events.push({ seq: this.nextEventSeq++, time: this.time, faction, kind, text });
+    if (this.events.length > 200) this.events.shift();
+    this.eventsVersion++;
   }
 
   // Per-cell smoke density (0..~1.6). Decays over time; cells above SMOKE_LOS_BLOCK

@@ -5,7 +5,7 @@
 import { GameMap, MapFeatures, Objective } from "../game/gamemap.ts";
 import { Grid } from "../game/grid.ts";
 import { Cell } from "../game/pathfinding.ts";
-import { DEFAULT_SETUP, Era, Faction, SquadKind, Soldier, Status, Vehicle, World } from "../game/world.ts";
+import { BattleEvent, DEFAULT_SETUP, Era, Faction, SquadKind, Soldier, Status, Vehicle, World } from "../game/world.ts";
 import { WeaponId, WEAPONS } from "../game/weapons.ts";
 
 const STATUS: Status[] = ["active", "wounded", "dead", "surrendered"];
@@ -28,6 +28,9 @@ type SnapSoldier = [id: number, f: number, x: number, y: number, fa: number, st:
 type SnapVehicle = [id: number, f: number, x: number, y: number, fa: number, tu: number, st: number, cls: string, name: string];
 // Per-objective dynamic state, in objectives order: [owner, capturing, progress*100, contested].
 type SnapObj = [owner: number, capturing: number, progress: number, contested: number];
+// New casualty/loss events since the last snapshot the host actually sent (by seq) —
+// drives the client's ticker and end-of-battle stats the same way the host's own does.
+type SnapEvent = [seq: number, faction: number, kind: number, text: string];
 
 export interface Snapshot {
   time: number;
@@ -37,7 +40,10 @@ export interface Snapshot {
   S: SnapSoldier[];
   V: SnapVehicle[];
   sm: number[]; // sparse smoke: [cellIndex, density*100, …] so both sides see screens
+  E: SnapEvent[];
 }
+
+const EVENT_KIND: BattleEvent["kind"][] = ["kill", "wound", "vehicle"];
 
 // --- host side ---
 
@@ -54,7 +60,10 @@ export function encodeSetup(world: World): Setup {
   };
 }
 
-export function encodeSnapshot(world: World): Snapshot {
+// `sinceEventSeq`: only events newer than this are sent — the host tracks the highest
+// seq it has already transmitted so a chatty battle doesn't resend its whole history
+// every ~120ms tick.
+export function encodeSnapshot(world: World, sinceEventSeq = -1): Snapshot {
   const S: SnapSoldier[] = [];
   for (const s of world.soldiers) {
     S.push([s.id, s.faction === "us" ? 0 : 1, round2(s.x), round2(s.y), round2(s.facing), STATUS.indexOf(s.status), s.teamId, s.seen ? 1 : 0]);
@@ -72,12 +81,15 @@ export function encodeSnapshot(world: World): Snapshot {
     Math.round(o.progress * 100),
     o.contested ? 1 : 0,
   ]);
+  const E: SnapEvent[] = world.events
+    .filter((e) => e.seq > sinceEventSeq)
+    .map((e) => [e.seq, e.faction === "us" ? 0 : 1, EVENT_KIND.indexOf(e.kind), e.text]);
   return {
     time: world.time,
     phase: world.phase === "deploy" ? 0 : 1,
     outcome: world.outcome ?? "",
     O, oh: world.objHoldTimer,
-    S, V, sm,
+    S, V, sm, E,
   };
 }
 
@@ -164,6 +176,15 @@ export function applySnapshot(world: World, snap: Snapshot): void {
   world.smokeGrid.fill(0);
   const sm = snap.sm;
   if (sm) for (let k = 0; k < sm.length; k += 2) world.smokeGrid[sm[k]] = sm[k + 1] / 100;
+
+  // The host only ever sends events we haven't seen yet, so just append them.
+  if (snap.E?.length) {
+    for (const [seq, f, kind, text] of snap.E) {
+      world.events.push({ seq, time: world.time, faction: f === 0 ? "us" : "axis", kind: EVENT_KIND[kind], text });
+    }
+    if (world.events.length > 200) world.events.splice(0, world.events.length - 200);
+    world.eventsVersion++;
+  }
 }
 
 // World keeps byId/byVid private; on the client we own the instance, so poke them.

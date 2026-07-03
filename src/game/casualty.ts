@@ -1,5 +1,6 @@
 import { CASUALTY_SHOCK, SHOCK_RADIUS } from "./constants.ts";
 import { Soldier, World } from "./world.ts";
+import { WEAPONS } from "./weapons.ts";
 import { sound } from "../render/sound.ts";
 
 // Shared casualty/suppression helpers, used by both infantry fire and vehicle HE/MG
@@ -28,6 +29,7 @@ export function killSoldier(world: World, t: Soldier, shockMul = 1, cause: Death
     world.effects.push({ kind: "blood", x0: t.x, y0: t.y, x1: t.x + Math.cos(a) * r, y1: t.y + Math.sin(a) * r, ttl: 0.22 + Math.random() * 0.15 });
   }
   world.addBloodDecal(t.x, t.y, violent);
+  world.logEvent(t.faction, "kill", `${WEAPONS[t.weapon].name} killed`);
   // A man screaming as he falls — Germans and Americans sound distinct. Routed
   // through the priority audio budget so it's never drowned out by gunfire.
   sound.play(t.faction === "axis" ? "soldier_scream" : "soldier_scream_us", t.x, t.y, true);

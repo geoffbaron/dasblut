@@ -3,11 +3,12 @@ import { SPEED_STEPS, VIS_INTERVAL } from "./game/constants.ts";
 import { GameMap } from "./game/gamemap.ts";
 import { step } from "./game/sim.ts";
 import { Cell } from "./game/pathfinding.ts";
-import { DEFAULT_SETUP, factionName, Faction, GameSetup, Stance, World } from "./game/world.ts";
+import { DEFAULT_SETUP, factionColor, factionName, Faction, GameSetup, Stance, World } from "./game/world.ts";
 import { WEAPONS } from "./game/weapons.ts";
 import { VEHICLES } from "./game/vehicleDefs.ts";
 import { updateVisibility } from "./game/visibility.ts";
 import { Renderer } from "./render/renderer.ts";
+import { drawMinimap, minimapClickToWorld } from "./render/minimap.ts";
 import { Input } from "./render/input.ts";
 import { runMenu, MenuHandle } from "./render/menu.ts";
 import { sound } from "./render/sound.ts";
@@ -188,6 +189,9 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
   const bannerEl = document.getElementById("banner")!;
   const bannerBig = document.getElementById("bannerBig")!;
   const bannerSub = document.getElementById("bannerSub")!;
+  const bannerStats = document.getElementById("bannerStats")!;
+  const tickerEl = document.getElementById("ticker")!;
+  const minimapEl = document.getElementById("minimap") as HTMLCanvasElement;
   // The battle is genuinely over at this point (no more orders can be given — see the
   // orders-bar visibility check below); the only way back in is a fresh battle.
   document.getElementById("bannerNewBattle")?.addEventListener("click", () => location.reload());
@@ -196,16 +200,38 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
   const ordersBar = document.getElementById("orders")!;
   const rosterEl = document.getElementById("roster")!;
 
-  // Multiplayer role badge.
+  // Multiplayer role badge — docked at the foot of the right-side status stack rather
+  // than floating loose in the corner, so it never overlaps the minimap beneath it.
+  const rightDock = document.getElementById("rightDock")!;
   let badge = document.getElementById("netbadge");
   if (!badge) {
     badge = document.createElement("div");
     badge.id = "netbadge";
     badge.style.cssText =
-      "position:fixed;bottom:12px;right:12px;z-index:30;font:600 12px ui-monospace,monospace;" +
+      "width:100%;box-sizing:border-box;font:600 12px ui-monospace,monospace;" +
       "padding:5px 12px;border-radius:6px;background:rgba(20,19,15,0.88);border:1px solid #4a463c;color:#cfc8b6;";
-    document.body.appendChild(badge);
+    rightDock.appendChild(badge);
   }
+
+  // Minimap click-to-pan — works for a spectator too, it's just camera movement.
+  minimapEl.addEventListener("click", (e) => {
+    const wp = minimapClickToWorld(minimapEl, world, e.clientX, e.clientY);
+    renderer.centerOnWorldPoint(world, wp.x, wp.y);
+  });
+
+  // Casualty ticker: the last handful of kills/losses, newest first, fading with age.
+  const refreshTicker = () => {
+    const recent = world.events.slice(-6).reverse();
+    tickerEl.style.display = recent.length ? "flex" : "none";
+    tickerEl.innerHTML = recent
+      .map((e) => {
+        const age = world.time - e.time;
+        const opacity = Math.max(0.2, 1 - age / 14).toFixed(2);
+        const col = "#" + factionColor(world.era, e.faction).toString(16).padStart(6, "0");
+        return `<div class="trow" style="opacity:${opacity}"><span class="dot" style="background:${col}"></span>${e.text}</div>`;
+      })
+      .join("");
+  };
 
   // There is no deployment phase any more — the battle starts at once from the static
   // spawn positions, so the deploy bar and Launch button are never shown.
@@ -255,6 +281,18 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
       bannerBig.textContent = iWon ? (amDefender ? "POSITION HELD" : "OBJECTIVE SECURED") : (amDefender ? "POSITION OVERRUN" : "ATTACK REPULSED");
       bannerBig.style.color = iWon ? "#9fcf6f" : "#e0533a";
       bannerSub.textContent = (iWon ? "The field is yours. " : "The battle is lost. ") + "This engagement has ended — no further orders.";
+
+      // Aggregate losses from the casualty feed for a plain end-of-battle summary.
+      const men = { us: 0, axis: 0 }, veh = { us: 0, axis: 0 };
+      for (const e of world.events) {
+        if (e.kind === "kill") men[e.faction]++;
+        else if (e.kind === "vehicle") veh[e.faction]++;
+      }
+      const lossLine = (f: Faction) =>
+        `${sideLabel(f)}: ${men[f]} ${men[f] === 1 ? "man" : "men"} lost` + (veh[f] ? `, ${veh[f]} vehicle${veh[f] === 1 ? "" : "s"}` : "");
+      const t = Math.max(0, Math.floor(world.time));
+      const clock = `${Math.floor(t / 60)}:${(t % 60).toString().padStart(2, "0")}`;
+      bannerStats.textContent = `${lossLine("us")} · ${lossLine("axis")} · time ${clock}`;
     }
 
     if (!canCommand) { statusEl.innerHTML = `<span class="dim">spectating</span>`; return; }
@@ -602,8 +640,6 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
       clockEl.textContent = `⏱ ${Math.floor(left / 60)}:${Math.floor(left % 60).toString().padStart(2, "0")}`;
       clockEl.style.color = left < 60 ? "#e0796f" : "";
     }
-    // Lift the badge above the deploy bar so it doesn't overlap the launch button.
-    badge!.style.bottom = world.phase === "deploy" ? "56px" : "12px";
     badge!.style.display = "block";
     if (!net.connected) {
       badge!.textContent = "SINGLE PLAYER";
@@ -619,6 +655,8 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
       badge!.style.color = "#9a9484";
     }
     refreshStatus(); updateOrdersBar(); refreshRoster();
+    refreshTicker();
+    drawMinimap(minimapEl, world, renderer);
   };
   return { frame, update: (ms: number) => input.update(ms) };
 }
@@ -689,7 +727,7 @@ async function startGame(map: GameMap, objectiveCount = 1, setup: GameSetup = DE
   // Multiplayer host: apply relayed orders; disable the AI side while a human is in.
   onAxisOrderHost = (o) => applyAxisOrder(world, o);
   onGermanPresentHost = (present) => { world.aiHuman = present; };
-  let setupSent = false, netAccum = 0;
+  let setupSent = false, netAccum = 0, lastSentEventSeq = -1;
 
   let lastRenderTs = performance.now();
   let prevAtkOwned = world.objectives.filter((o) => o.owner === world.player).length;
@@ -704,7 +742,11 @@ async function startGame(map: GameMap, objectiveCount = 1, setup: GameSetup = DE
       if (net.role === "host") {
         if (!setupSent) { net.sendSetup(encodeSetup(world)); setupSent = true; }
         netAccum += dtSec;
-        if (netAccum >= 0.12) { net.sendSnapshot(encodeSnapshot(world)); netAccum = 0; }
+        if (netAccum >= 0.12) {
+          net.sendSnapshot(encodeSnapshot(world, lastSentEventSeq));
+          if (world.events.length) lastSentEventSeq = world.events[world.events.length - 1].seq;
+          netAccum = 0;
+        }
       }
       sound.updateAmbient(dtSec, world.phase === "battle" && !world.outcome && !loop.paused);
       const atkOwned = world.objectives.filter((o) => o.owner === world.player).length;

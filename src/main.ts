@@ -1,5 +1,5 @@
 import { GameLoop } from "./game/loop.ts";
-import { BATTLE_TIME_S, OBJECTIVE_HOLD_TO_WIN, SPEED_STEPS, VIS_INTERVAL } from "./game/constants.ts";
+import { SPEED_STEPS, VIS_INTERVAL } from "./game/constants.ts";
 import { GameMap } from "./game/gamemap.ts";
 import { step } from "./game/sim.ts";
 import { Cell } from "./game/pathfinding.ts";
@@ -234,7 +234,7 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
       let line: string;
       if (holder && world.roleOf(holder) === "attack") {
         const c = holder === world.player ? "hold" : holder;
-        line = `<span class="obj-${c}">${sideLabel(holder)} HOLD ${Math.ceil(world.objHoldTimer)} / ${OBJECTIVE_HOLD_TO_WIN}s</span>`;
+        line = `<span class="obj-${c}">${sideLabel(holder)} HOLD ${Math.ceil(world.objHoldTimer)} / ${world.objectiveHoldS}s</span>`;
       } else if (total === 1) {
         const o = objs[0];
         if (contested) line = `<span class="obj-contested">CONTESTED</span>`;
@@ -598,7 +598,7 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
   const frame = () => {
     if (world.phase === "deploy") { clockEl.textContent = "DEPLOY"; clockEl.style.color = "#7fa8e8"; }
     else {
-      const left = Math.max(0, BATTLE_TIME_S - world.time);
+      const left = Math.max(0, world.battleTimeS - world.time);
       clockEl.textContent = `⏱ ${Math.floor(left / 60)}:${Math.floor(left % 60).toString().padStart(2, "0")}`;
       clockEl.style.color = left < 60 ? "#e0796f" : "";
     }
@@ -647,11 +647,13 @@ function applyEraTutorial(world: World): void {
     : era === "acw" ? "Close-Combat-style US Civil War tactics. Here's how to play."
     : "Close-Combat-style WW2 tactics. Here's how to play.";
   set("tutSub", sub);
+  const holdS = world.objectiveHoldS;
+  const holdTxt = holdS % 60 === 0 ? `${holdS / 60} minute${holdS === 60 ? "" : "s"}` : `${holdS} seconds`;
   const mission = era === "medieval"
-    ? "Take the crossroads <b>objective</b> and hold it for <b>60 seconds</b> before the clock runs out. Aldmere (blue) and Corvath (crimson) contest the ground."
+    ? `Take the crossroads <b>objective</b> and hold it for <b>${holdTxt}</b> before the clock runs out. Aldmere (blue) and Corvath (crimson) contest the ground.`
     : era === "acw"
-    ? "Take the crossroads <b>objective</b> and hold it for <b>60 seconds</b> before the clock runs out. Union (blue) and Confederate (grey) fight for the ground."
-    : "Take the crossroads <b>objective</b> and hold it for <b>60 seconds</b> before the clock runs out. US (blue) and the Germans (red) fight for the ground.";
+    ? `Take the crossroads <b>objective</b> and hold it for <b>${holdTxt}</b> before the clock runs out. Union (blue) and Confederate (grey) fight for the ground.`
+    : `Take the crossroads <b>objective</b> and hold it for <b>${holdTxt}</b> before the clock runs out. US (blue) and the Germans (red) fight for the ground.`;
   set("tutMission", mission);
   const units = era === "medieval"
     ? "<li><b>MEN-AT-ARMS</b> — a shieldwall of swords and spears; they advance and settle it hand-to-hand.</li>"

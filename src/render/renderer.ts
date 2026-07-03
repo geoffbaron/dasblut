@@ -1,5 +1,5 @@
 import { Application, Container, Graphics, Sprite, Texture } from "pixi.js";
-import { CELL_SIZE, OBJECTIVE_HOLD_TO_WIN, SMOKE_LOS_BLOCK } from "../game/constants.ts";
+import { CELL_SIZE, SMOKE_LOS_BLOCK } from "../game/constants.ts";
 import { VEHICLES } from "../game/vehicleDefs.ts";
 import { factionColor, MoraleState, Team, World } from "../game/world.ts";
 import { Terrain, TERRAIN } from "../game/terrain.ts";
@@ -734,7 +734,7 @@ export class Renderer {
 
   private drawObjective(world: World): void {
     const g = this.overlay;
-    const holdFrac = Math.min(1, world.objHoldTimer / OBJECTIVE_HOLD_TO_WIN);
+    const holdFrac = Math.min(1, world.objHoldTimer / world.objectiveHoldS);
     for (const o of world.objectives) {
       const cx = (o.cx + 0.5) * CELL_SIZE;
       const cy = (o.cy + 0.5) * CELL_SIZE;

@@ -31,15 +31,16 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
     const era = (eraVal === "acw" || eraVal === "medieval" ? eraVal : "ww2") as GameSetup["era"];
     const usTanks = tanks("usTanks"), axisTanks = tanks("axisTanks");
     const fortify = (document.getElementById("cover") as HTMLSelectElement)?.value === "1";
+    const objectiveHoldS = parseInt((document.getElementById("holdTime") as HTMLSelectElement)?.value || "60", 10);
     switch (mode) {
-      case "us-attacks":   return { era, player: "us",   usRole: "attack", axisRole: "defend", usTanks, axisTanks, fortify };
+      case "us-attacks":   return { era, player: "us",   usRole: "attack", axisRole: "defend", usTanks, axisTanks, fortify, objectiveHoldS };
       // Play the defender while the AI attacks — e.g. commanding the Union line at
       // Gettysburg while the Confederates make the charge.
-      case "us-defends":   return { era, player: "us",   usRole: "defend", axisRole: "attack", usTanks, axisTanks, fortify };
-      case "axis-defends": return { era, player: "axis", usRole: "attack", axisRole: "defend", usTanks, axisTanks, fortify };
-      case "meeting-axis": return { era, player: "axis", usRole: "attack", axisRole: "attack", usTanks, axisTanks, fortify };
-      case "meeting-us":   return { era, player: "us",   usRole: "attack", axisRole: "attack", usTanks, axisTanks, fortify };
-      default:             return { era, player: "axis", usRole: "defend", axisRole: "attack", usTanks, axisTanks, fortify }; // "axis-attacks"
+      case "us-defends":   return { era, player: "us",   usRole: "defend", axisRole: "attack", usTanks, axisTanks, fortify, objectiveHoldS };
+      case "axis-defends": return { era, player: "axis", usRole: "attack", axisRole: "defend", usTanks, axisTanks, fortify, objectiveHoldS };
+      case "meeting-axis": return { era, player: "axis", usRole: "attack", axisRole: "attack", usTanks, axisTanks, fortify, objectiveHoldS };
+      case "meeting-us":   return { era, player: "us",   usRole: "attack", axisRole: "attack", usTanks, axisTanks, fortify, objectiveHoldS };
+      default:             return { era, player: "axis", usRole: "defend", axisRole: "attack", usTanks, axisTanks, fortify, objectiveHoldS }; // "axis-attacks"
     }
   };
 

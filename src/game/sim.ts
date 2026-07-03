@@ -3,13 +3,11 @@ import { commandAI } from "./axisAI.ts";
 import { resolveFire, updateGrenades, updateGunCrews, updateMelee } from "./combat.ts";
 import {
   BASE_MOVE_SPEED,
-  BATTLE_TIME_S,
   COHESION_GAIN,
   COHESION_LEAD,
   COHESION_MAX,
   COHESION_NEAR,
   OBJECTIVE_CAPTURE_TIME,
-  OBJECTIVE_HOLD_TO_WIN,
   REGROUP_DIST,
   SIM_DT,
   SMOKE_BUILD,
@@ -71,7 +69,7 @@ export function step(world: World): void {
   // Time's up. An attacker that doesn't hold all objectives by the deadline has failed;
   // a defender that still denies them has held. The winner is resolved relative to the
   // human player.
-  if (!world.outcome && world.time >= BATTLE_TIME_S) world.outcome = timeoutOutcome(world);
+  if (!world.outcome && world.time >= world.battleTimeS) world.outcome = timeoutOutcome(world);
 }
 
 // Who wins if the clock runs out: whoever holds every objective wins outright; if nobody
@@ -97,7 +95,8 @@ function timeoutOutcome(world: World): "win" | "lose" {
 
 // Capture-and-hold. A side captures an objective by being the only one with units in
 // its zone for OBJECTIVE_CAPTURE_TIME; the attacker (US) wins by controlling EVERY
-// objective at once for OBJECTIVE_HOLD_TO_WIN seconds. Elimination still ends it.
+// objective at once for world.objectiveHoldS seconds (configurable 1-10 min, default
+// 60s). Elimination still ends it.
 function updateObjective(world: World, dt: number): void {
   for (const o of world.objectives) {
     const r2 = o.radius * o.radius;
@@ -131,7 +130,7 @@ function updateObjective(world: World, dt: number): void {
   if (holder && world.roleOf(holder) === "attack") {
     if (world.holdFaction !== holder) { world.holdFaction = holder; world.objHoldTimer = 0; }
     world.objHoldTimer += dt;
-    if (world.objHoldTimer >= OBJECTIVE_HOLD_TO_WIN && !world.outcome) {
+    if (world.objHoldTimer >= world.objectiveHoldS && !world.outcome) {
       world.outcome = holder === world.player ? "win" : "lose";
     }
   } else {

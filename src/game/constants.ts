@@ -81,7 +81,7 @@ export const SMOKE_INITIAL = 0.45;  // density of the puff the instant the shell
 
 export const OBJECTIVE_RADIUS = 7; // cells; the capture zone
 export const OBJECTIVE_CAPTURE_TIME = 6; // seconds of uncontested presence to flip it
-export const OBJECTIVE_HOLD_TO_WIN = 60; // seconds the attacker must hold it to win
-export const BATTLE_TIME_S = 360; // the attacker must take the objective before this expires
+// The hold-to-win timer and total battle clock are configurable per-game (1-10 min via
+// the menu) — see World.objectiveHoldS / World.battleTimeS.
 export const AI_INTERVAL = 1.5; // seconds between enemy command re-evaluations
 

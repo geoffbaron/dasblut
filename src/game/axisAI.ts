@@ -3,7 +3,7 @@ import { hasLOS } from "./los.ts";
 import { Cell } from "./pathfinding.ts";
 import { isPassable, TERRAIN, vehiclePassable } from "./terrain.ts";
 import { WEAPONS } from "./weapons.ts";
-import { Faction, Soldier, Team, World } from "./world.ts";
+import { Faction, Soldier, Team, Vehicle, World } from "./world.ts";
 
 // The computer commander, run on a throttle. It fights with combined arms instead of
 // shoving every squad at the flag: machine guns set up as a base of fire that rakes the
@@ -37,7 +37,8 @@ export function commandAI(world: World, dt: number): void {
     else if (team.kind === "artillery") commandSupport(world, team, men, o, foe, WEAPONS.cannon.rangeCells * 0.7);
     else if (team.kind === "mortar") commandMortar(world, team, men, objs, foe);
     else if (team.kind === "cavalry") commandCavalry(world, team, men, o, idx, aiTeams.length, foe, needs, changed);
-    else commandAssault(world, team, men, o, idx, aiTeams.length, foe, needs, changed, team.kind === "at");
+    else if (team.kind === "at") commandAT(world, team, men, o, idx, aiTeams.length, foe, needs, changed);
+    else commandAssault(world, team, men, o, idx, aiTeams.length, foe, needs, changed, false);
   });
 
   // Armor pushes onto the nearest objective that needs taking, else holds near one.
@@ -111,6 +112,86 @@ function commandAssault(
   } else if (!defending(men)) {
     world.orderPosture(team.id, "defend");
   }
+}
+
+// Anti-tank teams actively hunt a flank/rear shot on the nearest spotted enemy tank,
+// instead of parking in a generic support position near the objective and slugging it
+// out head-on. A tank's frontal plate is the one angle a bazooka/Panzerfaust struggles
+// against (see resolveArmorHit) — the AI used to fight there anyway, simply because it
+// held a static post while the tank beelined the objective and arrived nose-first. Now,
+// once a tank is spotted, the team maneuvers to its flank/rear arc at engagement range
+// and locks onto it with orderFireVehicle; with no tank in sight it falls back to the
+// ordinary objective-support behaviour.
+function commandAT(
+  world: World, team: Team, men: Soldier[], o: Objective, idx: number, n: number,
+  foe: Faction, needs: (o: Objective) => boolean, changed: boolean,
+): void {
+  if (isMauled(men)) {
+    if (!moving(men)) world.orderMove(team.id, fallbackPost(world, men), "move");
+    return;
+  }
+  const a = men[0];
+  let tank: Vehicle | null = null;
+  let bestD = Infinity;
+  for (const v of world.vehicles) {
+    if (v.faction !== foe || v.status === "ko" || !v.seen) continue;
+    const d = Math.hypot(v.x - a.x, v.y - a.y);
+    if (d < bestD) { bestD = d; tank = v; }
+  }
+  if (tank) {
+    const ENGAGE_RANGE = 13; // comfortably inside both bazooka (18) and Panzerfaust (11) reach
+    // Fire the instant the CURRENT position already qualifies (in range, off the front
+    // arc, clear LOS) — don't wait to reach some freshly recomputed "ideal" cell. Judging
+    // readiness by distance-to-a-recomputed-flank-cell instead of by the tank itself let
+    // the team dither forever: flankPosition can return a slightly different cell every AI
+    // tick (rounding, a tank inching its facing), so "am I within 3 of the goal" never
+    // reliably went true even after the team had, in practice, arrived.
+    const dTank = Math.hypot(a.x - tank.x, a.y - tank.y);
+    const bearing = Math.atan2(a.y - tank.y, a.x - tank.x);
+    let rel = bearing - tank.facing;
+    while (rel > Math.PI) rel -= 2 * Math.PI;
+    while (rel < -Math.PI) rel += 2 * Math.PI;
+    const offFront = Math.abs(rel) >= Math.PI / 4; // side or rear arc — where armor is thin
+    const clearLOS = hasLOS(world.grid, Math.floor(a.x), Math.floor(a.y), Math.floor(tank.x), Math.floor(tank.y));
+    if (dTank <= ENGAGE_RANGE && offFront && clearLOS) {
+      world.orderFireVehicle(team.id, tank.id);
+      return;
+    }
+    // Sneak, not a "fast" sprint or even a plain walk — a bazooka team's whole advantage
+    // is not being spotted before it's ready to shoot. A tank's MG reaches out to 22
+    // cells, well past the ~13-cell engagement range the flank position is chosen
+    // within, so the WHOLE approach happens inside its potential engagement envelope.
+    // Sneaking cuts the enemy's spotting range on them by more than half (see
+    // visibility.ts) — slower, but a team that arrives alive and unnoticed is worth far
+    // more than one that gets machine-gunned crossing open ground at a jog.
+    // orderFireVehicle (above) already un-sneaks them the instant they're ready to fire.
+    const goal = flankPosition(world, tank, ENGAGE_RANGE);
+    if (changed || !moving(men) || !headedTo(men, goal)) world.orderMove(team.id, goal, "sneak");
+    return;
+  }
+  commandAssault(world, team, men, o, idx, n, foe, needs, changed, true);
+}
+
+// A passable, LOS-clear cell within the tank's flank or rear arc (±90°/180° off its hull
+// facing — deliberately skipping the front ±45° cone, the one angle armor actually holds
+// up), preferring cover and a distance near the target engagement range.
+function flankPosition(world: World, tank: Vehicle, range: number): Cell {
+  let best: Cell | null = null;
+  let bestScore = -Infinity;
+  for (const off of [Math.PI / 2, -Math.PI / 2, Math.PI * 0.75, -Math.PI * 0.75, Math.PI]) {
+    const ang = tank.facing + off;
+    for (let rr = range * 0.5; rr <= range; rr += 2) {
+      const x = Math.round(tank.x + Math.cos(ang) * rr);
+      const y = Math.round(tank.y + Math.sin(ang) * rr);
+      if (!world.grid.inBounds(x, y)) continue;
+      const t = world.grid.get(x, y);
+      if (!isPassable(t)) continue;
+      if (!hasLOS(world.grid, x, y, Math.floor(tank.x), Math.floor(tank.y))) continue;
+      const score = TERRAIN[t].cover * 2 + TERRAIN[t].concealment - Math.abs(rr - range * 0.75) * 0.05;
+      if (score > bestScore) { bestScore = score; best = { cx: x, cy: y }; }
+    }
+  }
+  return best ?? world.nearestPassable(Math.round(tank.x), Math.round(tank.y), { cx: Math.floor(tank.x), cy: Math.floor(tank.y) });
 }
 
 // Cavalry skirmish with carbines like assault troops, but seize the chance to charge: if

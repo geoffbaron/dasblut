@@ -445,15 +445,29 @@ function drawRoadRuts(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => numb
       if (grid.get(cx, cy) !== Terrain.Road) continue;
       const bx = cx * CELL_SIZE, by = cy * CELL_SIZE;
 
-      // Verge wear: a soft dark stain along every edge where the road meets the fields, so
-      // the track sits INTO the land (CC roads are grimed at the shoulders, not pasted on).
-      ctx.strokeStyle = `rgba(58,48,32,${0.16 + rng() * 0.08})`;
-      ctx.lineWidth = 2.2;
-      ctx.lineCap = "round";
-      if (!isRoad(cx, cy - 1)) { ctx.beginPath(); ctx.moveTo(bx - 1, by + 1); ctx.lineTo(bx + CELL_SIZE + 1, by + 1); ctx.stroke(); }
-      if (!isRoad(cx, cy + 1)) { ctx.beginPath(); ctx.moveTo(bx - 1, by + CELL_SIZE - 1); ctx.lineTo(bx + CELL_SIZE + 1, by + CELL_SIZE - 1); ctx.stroke(); }
-      if (!isRoad(cx - 1, cy)) { ctx.beginPath(); ctx.moveTo(bx + 1, by - 1); ctx.lineTo(bx + 1, by + CELL_SIZE + 1); ctx.stroke(); }
-      if (!isRoad(cx + 1, cy)) { ctx.beginPath(); ctx.moveTo(bx + CELL_SIZE - 1, by - 1); ctx.lineTo(bx + CELL_SIZE - 1, by + CELL_SIZE + 1); ctx.stroke(); }
+      // Verge wear: a soft dark grime concentrated where the road meets the fields, so
+      // the track sits INTO the land (CC roads are grimed at the shoulders, not pasted
+      // on). Scattered speckle rather than a stroked line along the cell edge — a single
+      // straight per-cell edge is exactly what turns a diagonal road into a staircase (a
+      // hard, grid-aligned stroke has nowhere to hide the quantization the way an
+      // irregular scatter does).
+      const edges: [number, number][] = [];
+      if (!isRoad(cx, cy - 1)) edges.push([0, -1]);
+      if (!isRoad(cx, cy + 1)) edges.push([0, 1]);
+      if (!isRoad(cx - 1, cy)) edges.push([-1, 0]);
+      if (!isRoad(cx + 1, cy)) edges.push([1, 0]);
+      for (const [ex, ey] of edges) {
+        for (let k = 0; k < 3; k++) {
+          const along = rng() * CELL_SIZE;
+          const depth = 1 + rng() * 3.5; // how far the grime creeps in from the verge
+          const px = bx + (ex === 0 ? along : ex > 0 ? CELL_SIZE - depth : depth);
+          const py = by + (ey === 0 ? along : ey > 0 ? CELL_SIZE - depth : depth);
+          ctx.fillStyle = `rgba(58,48,32,${0.14 + rng() * 0.1})`;
+          ctx.beginPath();
+          ctx.ellipse(px, py, 1 + rng() * 1.4, 0.7 + rng() * 1, rng() * Math.PI, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
       // Gravel speckle — more pebbles for texture.
       for (let k = 0; k < 8; k++) {
         const x = bx + rng() * CELL_SIZE, y = by + rng() * CELL_SIZE;

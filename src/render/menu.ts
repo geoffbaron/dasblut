@@ -75,7 +75,9 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
   document.getElementById("era")?.addEventListener("change", relabel);
   relabel();
 
-  const map = L.map("map", { zoomControl: true, attributionControl: false }).setView([49.3033, -1.2456], 16); // Carentan
+  // fadeAnimation off: the tile fade runs on rAF, so in a backgrounded tab it freezes
+  // mid-fade and the map sits half-washed-out; instant tiles are also snappier anyway.
+  const map = L.map("map", { zoomControl: true, attributionControl: false, fadeAnimation: false }).setView([49.3033, -1.2456], 16); // Carentan
   // Basemap tiles just for framing your battlefield. We use CARTO's OSM-based Voyager
   // tiles rather than tile.openstreetmap.org directly: the OSM tile CDN blocks/rate-limits
   // app usage (which left the framing map blank in production), whereas CARTO's basemaps
@@ -97,10 +99,19 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
     reticle.style.height = Math.abs(b.y - a.y) + "px";
   };
   map.on("move zoom resize", sizeReticle);
-  setTimeout(() => {
+  // Re-measure whenever the map pane's size actually settles/changes — a one-shot
+  // setTimeout(0) raced the flex layout (Leaflet kept a stale size and only drew tiles
+  // in a small offset square of the pane).
+  const mapEl = document.getElementById("map")!;
+  const remeasure = () => {
     map.invalidateSize();
     sizeReticle();
-  }, 0);
+  };
+  setTimeout(remeasure, 0);
+  // A second pass after the flex layout (fonts, scrollbars) has fully settled — the
+  // frame-0 pass can still catch Leaflet mid-layout and leave a stale tile origin.
+  setTimeout(remeasure, 300);
+  new ResizeObserver(remeasure).observe(mapEl);
 
   const deploy = async (lat: number, lon: number, label: string) => {
     loading.style.display = "flex";

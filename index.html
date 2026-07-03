@@ -43,12 +43,14 @@
       #status .tag { padding: 1px 6px; border-radius: 8px; font-size: 11px; background: #2a2820; }
       .s-steady { color: #8fbf6f; } .s-shaken { color: #f0c040; }
       .s-pinned { color: #e07a2a; } .s-panicked { color: #e0533a; } .s-routing { color: #ff5a3a; }
+      /* Objective status lives INSIDE the top HUD strip — a floating mid-screen panel
+         sat right on top of the battlefield (and the objective flag itself). */
       #objective {
-        position: fixed; top: 62px; left: 50%; transform: translateX(-50%); z-index: 10;
-        padding: 6px 14px; border: 1px solid #3a3730; border-radius: 6px;
-        background: rgba(20, 19, 15, 0.82); font-size: 12px; text-align: center; min-width: 220px;
+        display: flex; align-items: center; gap: 7px;
+        padding: 2px 9px; border-radius: 10px; background: #2a2820; font-size: 12px;
+        white-space: nowrap;
       }
-      #objective .obj-title { color: #e8e2d2; font-weight: 600; letter-spacing: 1px; }
+      #objective .obj-title { color: #8a8474; font-size: 10px; font-weight: 600; letter-spacing: 1px; }
       #objective .obj-us { color: #7fa8e8; } #objective .obj-axis { color: #e0796f; }
       #objective .obj-hold { color: #8fcf6f; } #objective .obj-contested { color: #f0c040; }
       #banner {
@@ -101,12 +103,29 @@
         position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column;
         background: #14130f;
       }
-      #menu .head { padding: 14px 18px; border-bottom: 1px solid #2e2b24; }
+      #menu .head { padding: 12px 18px 10px; border-bottom: 1px solid #2e2b24; }
       #menu h1 { margin: 0; font-size: 20px; letter-spacing: 3px; color: #e8e2d2; }
       #menu .tag { margin-top: 3px; font-size: 12px; color: #8a8474; }
-      #menu .bar { display: flex; gap: 8px; padding: 10px 18px; align-items: center; flex-wrap: wrap; }
+      /* Setup sidebar + framing map, instead of one long soup of unlabeled dropdowns. */
+      #menu .layout { flex: 1; display: flex; min-height: 0; }
+      #menu .setup {
+        width: 330px; flex-shrink: 0; overflow-y: auto;
+        display: flex; flex-direction: column; gap: 10px;
+        padding: 12px 14px; border-right: 1px solid #2e2b24;
+      }
+      #menu .group {
+        display: flex; flex-direction: column; gap: 7px;
+        padding: 10px 11px; border: 1px solid #2e2b24; border-radius: 8px; background: #191813;
+      }
+      #menu .gtitle { font-size: 10px; letter-spacing: 2px; color: #c7a23f; }
+      #menu .ghint { font-size: 11px; line-height: 1.4; color: #8a8474; }
+      #menu .row { display: flex; align-items: center; gap: 8px; }
+      #menu .row > span { width: 84px; flex-shrink: 0; font-size: 11.5px; color: #9a9484; }
+      #menu .row select { flex: 1; min-width: 0; }
+      #menu .row2 { display: flex; gap: 6px; flex: 1; min-width: 0; }
+      #menu .row2 select { flex: 1; min-width: 0; }
       #menu input[type=text] {
-        flex: 1; min-width: 200px; font: inherit; font-size: 13px; color: #e8e2d2;
+        flex: 1; min-width: 0; font: inherit; font-size: 13px; color: #e8e2d2;
         background: #201f19; border: 1px solid #46423a; border-radius: 5px; padding: 7px 10px;
       }
       #menu button {
@@ -115,17 +134,42 @@
       }
       #menu button:hover { background: #34322a; }
       #menu button.primary { background: #5a4a22; border-color: #b89a4a; color: #fff3d6; }
-      #menu select {
-        font: inherit; font-size: 13px; color: #d8d2c2; background: #2a2820;
-        border: 1px solid #4a463c; border-radius: 5px; padding: 7px 10px; cursor: pointer;
+      /* THE way to start a game: one big unmissable button at the foot of the setup panel. */
+      #menu button.start {
+        margin-top: 2px; padding: 13px 12px; font-size: 14px; font-weight: 700; letter-spacing: 1.5px;
+        background: #7a3020; border: 1.5px solid #e0533a; border-radius: 7px; color: #fff3d6;
       }
-      #map { flex: 1; min-height: 0; }
+      #menu button.start:hover { background: #9a4030; }
+      #menu button.ghost {
+        background: none; border: none; color: #8a8474; font-size: 11.5px;
+        text-decoration: underline; padding: 2px;
+      }
+      #menu button.ghost:hover { color: #b0aa98; background: none; }
+      #menu select {
+        font: inherit; font-size: 12.5px; color: #d8d2c2; background: #2a2820;
+        border: 1px solid #4a463c; border-radius: 5px; padding: 6px 8px; cursor: pointer;
+      }
+      #map { flex: 1; min-height: 0; position: relative; }
+      /* Place search floats on the map it controls, not in the settings column
+         (left offset clears Leaflet's +/- zoom control). */
+      #menu .mapsearch {
+        position: absolute; top: 10px; left: 56px; z-index: 600;
+        display: flex; gap: 6px; width: min(420px, calc(100% - 66px));
+      }
+      #menu .mapsearch input { box-shadow: 0 2px 10px rgba(0,0,0,0.45); }
       #menu .foot { padding: 8px 18px; font-size: 11px; color: #6f6a5c; border-top: 1px solid #2e2b24; }
       .reticle {
         position: absolute; inset: 0; pointer-events: none; z-index: 500;
         display: flex; align-items: center; justify-content: center;
       }
-      .reticle .box { border: 2px solid #ffe27a; box-shadow: 0 0 0 9999px rgba(10,10,8,0.28); }
+      /* No 9999px box-shadow veil: a giant shadow spread over Leaflet's GPU-transformed
+         tile layers miscomposited in Chrome (most of the map rendered dim/stale with one
+         bright square). A bordered box with a small glow is artifact-free. */
+      .reticle .box {
+        border: 2px solid #ffe27a;
+        outline: 1px solid rgba(20, 18, 10, 0.55);
+        box-shadow: 0 0 14px rgba(255, 226, 122, 0.45), inset 0 0 14px rgba(255, 226, 122, 0.22);
+      }
       #loading {
         position: fixed; inset: 0; z-index: 60; display: none;
         align-items: center; justify-content: center; background: rgba(10,10,8,0.82);
@@ -236,67 +280,100 @@
         <h1>ANY WAR</h1>
         <div class="tag">Any war, anywhere. Pick any spot on Earth — it becomes the battlefield.</div>
       </div>
-      <div class="bar">
-        <input id="search" type="text" placeholder="Search a place (e.g. Carentan, Bastogne, your street)…" />
-        <button id="searchBtn">Search</button>
-        <select id="era" title="Which war?">
-          <option value="ww2">⚔ World War II</option>
-          <option value="acw">⚔ US Civil War</option>
-          <option value="medieval">⚔ Medieval</option>
-        </select>
-        <select id="gameMode" title="Who attacks and who defends?">
-          <option value="us-attacks">US attacks · Axis defends</option>
-          <option value="axis-attacks">Axis attacks · US defends</option>
-          <option value="us-defends">Axis attacks · US defends (play US)</option>
-          <option value="axis-defends">US attacks · Axis defends (play Axis)</option>
-          <option value="meeting-us">Meeting — both attack (play US)</option>
-          <option value="meeting-axis">Meeting — both attack (play Axis)</option>
-        </select>
-        <select id="objCount" title="How many objectives to capture &amp; hold">
-          <option value="1">1 objective</option>
-          <option value="2">2 objectives</option>
-          <option value="3">3 objectives</option>
-        </select>
-        <select id="holdTime" title="How long the attacker must hold every objective at once to win">
-          <option value="60">Hold 1 min</option>
-          <option value="120">Hold 2 min</option>
-          <option value="180">Hold 3 min</option>
-          <option value="240">Hold 4 min</option>
-          <option value="300">Hold 5 min</option>
-          <option value="360">Hold 6 min</option>
-          <option value="420">Hold 7 min</option>
-          <option value="480">Hold 8 min</option>
-          <option value="540">Hold 9 min</option>
-          <option value="600">Hold 10 min</option>
-        </select>
-        <select id="cover" title="Dig in extra field cover">
-          <option value="0">No field cover</option>
-          <option value="1">Add field cover</option>
-        </select>
-        <select id="terrain" title="Ground/weather dress">
-          <option value="0">Normal terrain</option>
-          <option value="1">Snowy terrain</option>
-        </select>
-        <select id="usTanks" title="US tanks">
-          <option value="1">US: 1 tank</option>
-          <option value="2">US: 2 tanks</option>
-          <option value="3">US: 3 tanks</option>
-        </select>
-        <select id="axisTanks" title="Axis tanks">
-          <option value="1">Axis: 1 tank</option>
-          <option value="2">Axis: 2 tanks</option>
-          <option value="3">Axis: 3 tanks</option>
-        </select>
-        <select id="scenario" title="Jump to a historic battle">
-          <option value="">⚔ Historic battle…</option>
-        </select>
-        <button id="deployBtn" class="primary">⚔ Deploy here</button>
-        <button id="testBtn">Use test map</button>
+      <div class="layout">
+        <aside class="setup">
+          <div class="group">
+            <div class="gtitle">QUICK START</div>
+            <div class="row"><span>Battle</span>
+              <select id="scenario" title="Jump straight into a historic battle">
+                <option value="">Pick a historic battle…</option>
+              </select>
+            </div>
+            <div class="ghint">Sets everything below and deploys instantly — or build your own battle:</div>
+          </div>
+          <div class="group">
+            <div class="gtitle">1 · THE WAR</div>
+            <div class="row"><span>Era</span>
+              <select id="era" title="Which war?">
+                <option value="ww2">World War II</option>
+                <option value="acw">US Civil War</option>
+                <option value="medieval">Medieval</option>
+              </select>
+            </div>
+            <div class="row"><span>Sides</span>
+              <select id="gameMode" title="Who attacks, who defends, and which side you command">
+                <option value="us-attacks">US attacks · Axis defends</option>
+                <option value="axis-attacks">Axis attacks · US defends</option>
+                <option value="us-defends">Axis attacks · US defends (play US)</option>
+                <option value="axis-defends">US attacks · Axis defends (play Axis)</option>
+                <option value="meeting-us">Meeting — both attack (play US)</option>
+                <option value="meeting-axis">Meeting — both attack (play Axis)</option>
+              </select>
+            </div>
+            <div class="row"><span>Support</span>
+              <div class="row2">
+                <select id="usTanks" title="US tanks">
+                  <option value="1">US: 1 tank</option>
+                  <option value="2">US: 2 tanks</option>
+                  <option value="3">US: 3 tanks</option>
+                </select>
+                <select id="axisTanks" title="Axis tanks">
+                  <option value="1">Axis: 1 tank</option>
+                  <option value="2">Axis: 2 tanks</option>
+                  <option value="3">Axis: 3 tanks</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="group">
+            <div class="gtitle">2 · THE RULES</div>
+            <div class="row"><span>Objectives</span>
+              <select id="objCount" title="How many objectives to capture &amp; hold">
+                <option value="1">1 objective</option>
+                <option value="2">2 objectives</option>
+                <option value="3">3 objectives</option>
+              </select>
+            </div>
+            <div class="row"><span>Hold to win</span>
+              <select id="holdTime" title="How long the attacker must hold every objective at once to win">
+                <option value="60">1 minute</option>
+                <option value="120">2 minutes</option>
+                <option value="180">3 minutes</option>
+                <option value="240">4 minutes</option>
+                <option value="300">5 minutes</option>
+                <option value="360">6 minutes</option>
+                <option value="420">7 minutes</option>
+                <option value="480">8 minutes</option>
+                <option value="540">9 minutes</option>
+                <option value="600">10 minutes</option>
+              </select>
+            </div>
+            <div class="row"><span>Field cover</span>
+              <select id="cover" title="Dig in extra era-appropriate field cover">
+                <option value="0">No field cover</option>
+                <option value="1">Add field cover</option>
+              </select>
+            </div>
+            <div class="row"><span>Weather</span>
+              <select id="terrain" title="Ground/weather dress">
+                <option value="0">Normal terrain</option>
+                <option value="1">Snowy terrain</option>
+              </select>
+            </div>
+          </div>
+          <div class="ghint" style="padding: 0 2px;"><b style="color:#c7a23f">3 · THE GROUND</b> — search or pan the map; the yellow box is your ~380 × 300 m battlefield.</div>
+          <button id="deployBtn" class="start">⚔ START BATTLE HERE</button>
+          <button id="testBtn" class="ghost">…or play the tuned test map</button>
+        </aside>
+        <div id="map">
+          <div class="mapsearch">
+            <input id="search" type="text" placeholder="Search a place (e.g. Carentan, Bastogne, your street)…" />
+            <button id="searchBtn">Search</button>
+          </div>
+          <div class="reticle"><div class="box" id="reticleBox"></div></div>
+        </div>
       </div>
-      <div id="map">
-        <div class="reticle"><div class="box" id="reticleBox"></div></div>
-      </div>
-      <div class="foot">Pan/zoom to frame ~380 × 300 m inside the yellow box · map data © OpenStreetMap contributors · tiles © CARTO</div>
+      <div class="foot">Map data © OpenStreetMap contributors · tiles © CARTO</div>
     </div>
     <div id="loading"><div><div class="spin"></div><div id="loadingMsg">Reconnoitering the ground…</div></div></div>
     <div id="app"></div>
@@ -306,11 +383,11 @@
       <button id="speedBtn">Speed</button>
       <span class="dim" id="clock">t 0.0s</span>
       <span class="pill" id="forces">US — · AXIS —</span>
+      <span id="objective"></span>
       <button id="helpBtn" title="How to play">?</button>
     </div>
     <div id="roster"><div class="rtitle">UNITS</div></div>
     <div id="status"><span class="dim">No team selected</span></div>
-    <div id="objective"></div>
     <div id="banner"><div class="card">
       <div><div class="big" id="bannerBig"></div><div class="sub" id="bannerSub"></div></div>
       <button id="bannerNewBattle">⟳ New Battle</button>

@@ -81,7 +81,7 @@ export interface Team {
   march: { guide: Cell[]; idx: number; x: number; y: number; hx: number; hy: number } | null;
 }
 
-export type EffectKind = "tracer" | "shotline" | "arrow" | "flash" | "hit" | "ap" | "spark" | "smoke" | "fire" | "lob" | "ricochet" | "blocked";
+export type EffectKind = "tracer" | "shotline" | "arrow" | "flash" | "hit" | "ap" | "spark" | "smoke" | "fire" | "lob" | "ricochet" | "blocked" | "blood";
 
 // A burning smoke canister that emits into the smoke grid over its lifetime.
 export interface SmokeSource { cx: number; cy: number; t: number; }
@@ -494,6 +494,19 @@ export class World {
   // bumps whenever damage or collapse changes, so the renderer can redraw its overlay.
   buildDmg: Float32Array;
   buildDmgVersion = 0;
+
+  // Permanent blood decals left where men fall — the field reads as fought-over rather
+  // than pristine even once the fighting has moved on. `big` marks a violent (blast/
+  // melee) death, which gets a wider splatter plus a few scattered gib chunks rather
+  // than a plain pool. Capped so a long battle can't grow the draw list unbounded.
+  bloodDecals: { x: number; y: number; seed: number; big: boolean }[] = [];
+  bloodVersion = 0;
+
+  addBloodDecal(x: number, y: number, big: boolean): void {
+    this.bloodDecals.push({ x, y, seed: (Math.random() * 0xffffffff) >>> 0, big });
+    if (this.bloodDecals.length > 300) this.bloodDecals.shift();
+    this.bloodVersion++;
+  }
 
   // Per-cell smoke density (0..~1.6). Decays over time; cells above SMOKE_LOS_BLOCK
   // break line of sight, so a mortar smoke screen conceals units moving behind it.

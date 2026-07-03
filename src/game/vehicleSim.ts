@@ -151,7 +151,7 @@ function fireHEAtPoint(world: World, v: Vehicle, tx: number, ty: number, def: (t
     const tcx = Math.floor(s.x);
     const tcy = Math.floor(s.y);
     const cover = world.grid.inBounds(tcx, tcy) ? TERRAIN[world.grid.get(tcx, tcy)].cover : 0;
-    if (Math.random() < def.gun.heKill * falloff * (1 - cover * 0.5)) killSoldier(world, s, 1.1);
+    if (Math.random() < def.gun.heKill * falloff * (1 - cover * 0.5)) killSoldier(world, s, 1.1, "blast");
     else addSuppression(s, 0.6 * falloff);
   }
 }

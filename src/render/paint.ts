@@ -1,5 +1,5 @@
 import { CELL_SIZE } from "../game/constants.ts";
-import { Building, HedgeSeg, MapFeatures, Pt } from "../game/gamemap.ts";
+import { Building, HedgeSeg, MapFeatures, Pt, WaterLineSeg } from "../game/gamemap.ts";
 import { Grid } from "../game/grid.ts";
 import { Terrain } from "../game/terrain.ts";
 import type { Era } from "../game/world.ts";
@@ -225,6 +225,12 @@ export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "
   drawOrchards(ctx, grid, rng, seed);
   // Road ruts.
   drawRoadRuts(ctx, grid, rng);
+  // A smooth vector ribbon along the real watercourse centreline, painted before the
+  // per-cell ripple/shore detail below — a narrow river/stream is only 1-3 cells wide,
+  // so its raster edge stair-steps badly on a diagonal course (the same problem roads
+  // had). The ribbon covers that blocky edge with a clean curve; the per-cell pass then
+  // lays ripples, foam and reeds on top exactly as it already did.
+  for (const wl of features.waterLines) drawWaterLine(ctx, wl);
   // Water ripples + shoreline.
   drawWater(ctx, grid, rng);
   // Battle scars: scorched ground, shell craters, and scattered debris. Drawn on the
@@ -510,6 +516,23 @@ function drawRoadRuts(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => numb
   ctx.restore();
 }
 
+// One segment of a real watercourse centreline, stroked as a solid ribbon a shade under
+// the rasterized width so it sits inside the raster water without spilling onto land.
+// Round caps/joins mean consecutive segments of the same way connect into one smooth
+// curve — real OSM rivers already have plenty of vertices, so this reads as a natural
+// winding course rather than the grid's staircase.
+function drawWaterLine(ctx: CanvasRenderingContext2D, seg: WaterLineSeg): void {
+  const width = (seg.w * 2 + 1) * CELL_SIZE * 0.92;
+  ctx.strokeStyle = "#356f97"; // between the two GROUND[Water] stops
+  ctx.lineWidth = width;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  ctx.moveTo(seg.x0 * CELL_SIZE, seg.y0 * CELL_SIZE);
+  ctx.lineTo(seg.x1 * CELL_SIZE, seg.y1 * CELL_SIZE);
+  ctx.stroke();
+}
+
 function drawWater(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number): void {
   for (let cy = 0; cy < grid.height; cy++) {
     for (let cx = 0; cx < grid.width; cx++) {
@@ -542,38 +565,50 @@ function drawWater(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number)
         ctx.arc(x, y, 1.2 + rng() * 2.5, rng() * Math.PI, rng() * Math.PI + 1.5 + rng());
         ctx.stroke();
       }
-      // Deep-water saturate (center of large water bodies) — richer blue, not murk.
+      // Deep-water saturate (center of large water bodies) — richer blue, not murk. A
+      // feathered radial wash rather than a flat cell-rect: overlapping softly with its
+      // neighbours, it blends across cells instead of stair-stepping a diagonal shore.
       const edges = [!isWater(grid, cx - 1, cy), !isWater(grid, cx + 1, cy), !isWater(grid, cx, cy - 1), !isWater(grid, cx, cy + 1)];
       const shore = edges.some(Boolean);
-      if (!shore) {
-        ctx.fillStyle = "rgba(18,55,95,0.16)";
-        ctx.fillRect(bx, by, CELL_SIZE, CELL_SIZE);
-      }
+      const wash = (color: string, alpha: number) => {
+        const gr = ctx.createRadialGradient(bx + CELL_SIZE / 2, by + CELL_SIZE / 2, 0, bx + CELL_SIZE / 2, by + CELL_SIZE / 2, CELL_SIZE * 0.95);
+        gr.addColorStop(0, `rgba(${color},${alpha})`);
+        gr.addColorStop(1, `rgba(${color},0)`);
+        ctx.fillStyle = gr;
+        ctx.fillRect(bx - CELL_SIZE * 0.5, by - CELL_SIZE * 0.5, CELL_SIZE * 2, CELL_SIZE * 2);
+      };
+      if (!shore) wash("18,55,95", 0.22);
       // Shoreline: a sandy shallow tint plus a broken white foam line hugging the land
-      // edge — the classic bright coast read.
+      // edge — the classic bright coast read. Foam is scattered dabs biased toward the
+      // shore edge rather than one stroke traced along the cell boundary — a continuous
+      // per-cell-edge line is exactly what turns a diagonal coast into a staircase (see
+      // the same fix applied to road verges).
       if (shore) {
-        ctx.fillStyle = "rgba(190,205,175,0.3)";
-        ctx.fillRect(bx, by, CELL_SIZE, CELL_SIZE);
+        wash("190,205,175", 0.4);
+        // A cell with NO orthogonal water neighbour at all (only diagonal) is a link in a
+        // 1-cell-wide diagonal run — a narrow stream/river, already covered by the smooth
+        // vector ribbon drawn above. Foam scattered at its raster edges would trace that
+        // same staircase the ribbon exists to hide, so skip it there; broad lake/pond
+        // shores (which DO have orthogonal water neighbours) still get the full foam line.
+        const isolatedDiag = edges.every(Boolean);
         const foam = (x0: number, y0: number, x1: number, y1: number) => {
-          ctx.strokeStyle = `rgba(235,245,245,${0.4 + rng() * 0.25})`;
-          ctx.lineWidth = 1.1 + rng() * 0.7;
-          ctx.beginPath();
-          const midx = (x0 + x1) / 2 + (rng() - 0.5) * 3, midy = (y0 + y1) / 2 + (rng() - 0.5) * 3;
-          ctx.moveTo(x0, y0);
-          ctx.quadraticCurveTo(midx, midy, x1, y1);
-          ctx.stroke();
-          // a couple of foam flecks just off the line
-          for (let f = 0; f < 2; f++) {
-            ctx.fillStyle = `rgba(240,248,248,${0.3 + rng() * 0.25})`;
+          const ex = x1 === x0 ? 1 : 0, ey = y1 === y0 ? 1 : 0; // unit vector along the edge
+          for (let f = 0; f < 4; f++) {
+            const t = rng();
+            const fx = x0 + (x1 - x0) * t + ey * (rng() - 0.5) * 3;
+            const fy = y0 + (y1 - y0) * t + ex * (rng() - 0.5) * 3;
+            ctx.fillStyle = `rgba(240,248,248,${0.32 + rng() * 0.28})`;
             ctx.beginPath();
-            ctx.arc(midx + (rng() - 0.5) * 5, midy + (rng() - 0.5) * 5, 0.5 + rng() * 0.7, 0, Math.PI * 2);
+            ctx.ellipse(fx, fy, 0.7 + rng() * 1.1, 0.4 + rng() * 0.6, rng() * Math.PI, 0, Math.PI * 2);
             ctx.fill();
           }
         };
-        if (edges[0]) foam(bx + 1, by, bx + 1, by + CELL_SIZE); // land to the west
-        if (edges[1]) foam(bx + CELL_SIZE - 1, by, bx + CELL_SIZE - 1, by + CELL_SIZE);
-        if (edges[2]) foam(bx, by + 1, bx + CELL_SIZE, by + 1); // land to the north
-        if (edges[3]) foam(bx, by + CELL_SIZE - 1, bx + CELL_SIZE, by + CELL_SIZE - 1);
+        if (!isolatedDiag) {
+          if (edges[0]) foam(bx + 1, by, bx + 1, by + CELL_SIZE); // land to the west
+          if (edges[1]) foam(bx + CELL_SIZE - 1, by, bx + CELL_SIZE - 1, by + CELL_SIZE);
+          if (edges[2]) foam(bx, by + 1, bx + CELL_SIZE, by + 1); // land to the north
+          if (edges[3]) foam(bx, by + CELL_SIZE - 1, bx + CELL_SIZE, by + CELL_SIZE - 1);
+        }
         // Reeds at the waterline.
         if (rng() < 0.35) {
           const n = 2 + Math.floor(rng() * 3);

@@ -291,7 +291,7 @@ function mortarShot(world: World, s: Soldier): void {
     const falloff = 1 - d / blast;
     addSuppression(e, w.suppression * falloff);
     if (Math.random() < w.lethality * falloff * 0.5) {
-      if (Math.random() < 0.5) killSoldier(world, e);
+      if (Math.random() < 0.5) killSoldier(world, e, 1, "blast");
       else woundSoldier(world, e);
     }
   }
@@ -355,7 +355,7 @@ function catapultBoulder(world: World, s: Soldier, tx: number, ty: number): void
     const falloff = 1 - d / radius;
     addSuppression(e, w.suppression * falloff);
     if (Math.random() < w.lethality * falloff * 0.75) { // crushing: mostly kills, cover barely helps
-      if (Math.random() < 0.7) killSoldier(world, e);
+      if (Math.random() < 0.7) killSoldier(world, e, 1, "blast");
       else woundSoldier(world, e);
     }
   }
@@ -392,7 +392,7 @@ function shellBurst(world: World, s: Soldier, tx: number, ty: number): void {
     const falloff = 1 - d / radius;
     addSuppression(e, w.suppression * falloff);
     if (Math.random() < 0.5 * falloff) {
-      if (Math.random() < 0.6) killSoldier(world, e);
+      if (Math.random() < 0.6) killSoldier(world, e, 1, "blast");
       else woundSoldier(world, e);
     }
   }
@@ -440,7 +440,7 @@ function canisterBlast(world: World, s: Soldier, tx: number, ty: number): void {
     addSuppression(e, 0.55 * rangeFall);
     const p = 0.9 * rangeFall * (0.5 + 0.5 * coneFall); // brutal near the muzzle, on-axis
     if (Math.random() < p) {
-      if (Math.random() < 0.7) killSoldier(world, e);
+      if (Math.random() < 0.7) killSoldier(world, e, 1, "blast");
       else woundSoldier(world, e);
     }
   }
@@ -622,7 +622,7 @@ function meleeStrike(world: World, s: Soldier, foe: Soldier): void {
   kill *= 0.7 + 0.3 * s.training;
   kill = Math.max(0.015, Math.min(0.45, kill));
   if (Math.random() < kill) {
-    if (Math.random() < 0.6) killSoldier(world, foe, 1.4); // a man cut down in the melee shakes his fellows hard
+    if (Math.random() < 0.6) killSoldier(world, foe, 1.4, "melee"); // a man cut down in the melee shakes his fellows hard
     else woundSoldier(world, foe);
   }
 }
@@ -643,7 +643,7 @@ function detonateGrenade(world: World, g: PendingGrenade): void {
     const falloff = 1 - d / GRENADE_RADIUS;
     // Frag ignores small-arms cover — the whole point of grenading a holed-up man.
     if (Math.random() < 0.55 * falloff) {
-      if (Math.random() < 0.5) killSoldier(world, e);
+      if (Math.random() < 0.5) killSoldier(world, e, 1, "blast");
       else woundSoldier(world, e);
     } else {
       addSuppression(e, 0.5 * falloff);

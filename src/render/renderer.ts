@@ -16,6 +16,9 @@ export class Renderer {
   app = new Application();
   private camera = new Container();
   private damageLayer = new Graphics();
+  // Permanent blood decals — sits on the ground under vehicles/shadows/bodies, so a
+  // corpse reads as lying in the pool it left rather than floating over it.
+  private bloodLayer = new Graphics();
   // Fog rendered as a 1-texel-per-cell sprite upscaled with linear smoothing — soft haze
   // at any map size, unlike a blur-filtered Graphics which overflows the GPU's max
   // texture size on large OSM towns and silently renders nothing.
@@ -45,6 +48,7 @@ export class Renderer {
   revealAll = false;
   private shroudVersion = -1;
   private damageVersion = -1;
+  private bloodDrawVersion = -1;
 
   private shadowTex!: Texture;
   private casualtyTex!: Texture;
@@ -94,7 +98,7 @@ export class Renderer {
     // damage, and the order overlay (waypoints, objectives, fire lines) sit ABOVE the
     // roofs so fog still hides un-scouted buildings and your planned routes stay visible
     // where they cross rooftops.
-    this.camera.addChild(bg, this.waterFx, this.floorLayer, this.vehicleLayer, this.shadowLayer, this.bodyLayer, this.roofLayer, this.damageLayer, this.shroud, this.overlay, this.smokeScreen, this.fx);
+    this.camera.addChild(bg, this.waterFx, this.floorLayer, this.bloodLayer, this.vehicleLayer, this.shadowLayer, this.bodyLayer, this.roofLayer, this.damageLayer, this.shroud, this.overlay, this.smokeScreen, this.fx);
 
     // Seed the water glints: a sparkle point on roughly half the water cells, each with
     // its own phase/speed so the shimmer never looks synchronized. Capped for huge maps.
@@ -361,6 +365,7 @@ export class Renderer {
     sound.cameraY = (this.camY + this.app.screen.height / 2) / (CELL_SIZE * this.zoom);
     sound.tick();
     this.drawDamage(world);
+    this.drawBlood(world);
     this.drawShroud(world);
     this.drawOverlay(world);
     this.drawVehicles(world, alpha);
@@ -460,6 +465,46 @@ export class Renderer {
             const px = x + rnd() * CELL_SIZE, py = y + rnd() * CELL_SIZE, s = 1 + rnd() * 2;
             g.rect(px, py, s, s).fill({ color: 0x3a342c, alpha: 0.6 });
           }
+        }
+      }
+    }
+  }
+
+  // Permanent blood pools (and, for a violent blast/melee kill, scattered gib chunks)
+  // where men have fallen. Rebuilt only when a new decal is added — cheap since it's a
+  // capped list, not a per-cell scan.
+  private drawBlood(world: World): void {
+    if (world.bloodVersion === this.bloodDrawVersion) return;
+    this.bloodDrawVersion = world.bloodVersion;
+    const g = this.bloodLayer;
+    g.clear();
+    for (const d of world.bloodDecals) {
+      let seed = d.seed >>> 0;
+      const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+      const cx = d.x * CELL_SIZE, cy = d.y * CELL_SIZE;
+      const scale = d.big ? 1.5 : 1;
+      // The pool: a few overlapping dark maroon blobs so it reads as an irregular stain,
+      // not a perfect circle.
+      const blobs = d.big ? 5 : 3;
+      for (let i = 0; i < blobs; i++) {
+        const a = rnd() * Math.PI * 2, r = rnd() * 3 * scale;
+        const px = cx + Math.cos(a) * r, py = cy + Math.sin(a) * r * 0.7;
+        const rad = (1.6 + rnd() * 2.2) * scale;
+        g.ellipse(px, py, rad, rad * (0.62 + rnd() * 0.2))
+          .fill({ color: i % 2 === 0 ? 0x5c0c08 : 0x3d0805, alpha: 0.55 + rnd() * 0.2 });
+      }
+      // A darker core where the body actually lies.
+      g.ellipse(cx, cy, 2.6 * scale, 1.7 * scale).fill({ color: 0x2a0604, alpha: 0.6 });
+      if (d.big) {
+        // Violent death: a few chunks flung clear of the pool, each trailing a short smear
+        // back toward the body — the visual shorthand for a man blown or hacked apart.
+        const chunks = 2 + Math.floor(rnd() * 3);
+        for (let i = 0; i < chunks; i++) {
+          const a = rnd() * Math.PI * 2, r = 4 + rnd() * 7;
+          const px = cx + Math.cos(a) * r, py = cy + Math.sin(a) * r;
+          g.moveTo(cx, cy).lineTo(px, py).stroke({ width: 1.2 + rnd(), color: 0x4a0906, alpha: 0.5 });
+          g.ellipse(px, py, 1.3 + rnd() * 1.4, 1 + rnd()).fill({ color: 0x241a14, alpha: 0.85 });
+          g.ellipse(px - 0.4, py - 0.4, 0.7 + rnd() * 0.6, 0.6).fill({ color: 0x6a2a20, alpha: 0.7 });
         }
       }
     }
@@ -798,6 +843,13 @@ export class Renderer {
          .stroke({ width: 2, color: 0xe0463a, alpha: a });
       } else if (e.kind === "spark") {
         g.circle(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE, 4).fill({ color: 0xffd24a, alpha: Math.max(0, e.ttl / 0.18) });
+      } else if (e.kind === "blood") {
+        // A droplet flying off the body at the moment of the killing/wounding hit — a
+        // short dark-red streak from the man out to where the spatter lands.
+        const a = Math.max(0, e.ttl / 0.3);
+        g.moveTo(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE).lineTo(e.x1 * CELL_SIZE, e.y1 * CELL_SIZE);
+        g.stroke({ width: 1.6, color: 0x7a0f0a, alpha: a * 0.85 });
+        g.circle(e.x1 * CELL_SIZE, e.y1 * CELL_SIZE, 1.4).fill({ color: 0x5c0c08, alpha: a });
       } else if (e.kind === "fire") {
         const r = 6 + (0.4 - e.ttl) * 26;
         g.circle(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE, Math.max(3, r)).fill({ color: 0xff7a1e, alpha: Math.max(0, e.ttl) * 1.6 });

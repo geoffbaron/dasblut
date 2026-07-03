@@ -9,7 +9,7 @@ import { Terrain } from "./terrain.ts";
 // battlefield used for development and as a fallback for the map generator.
 export function buildTestMap(): GameMap {
   const g = new Grid(56, 42, Terrain.Grass);
-  const features: MapFeatures = { buildings: [], hedges: [] };
+  const features: MapFeatures = { buildings: [], hedges: [], waterLines: [] };
 
   const addBuilding = (x0: number, y0: number, x1: number, y1: number, levels = 1) => {
     g.building(x0, y0, x1, y1); // walls for collision

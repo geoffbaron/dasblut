@@ -26,9 +26,17 @@ export interface HedgeSeg {
   y1: number;
 }
 
+export interface WaterLineSeg extends HedgeSeg {
+  w: number; // half-width in cells, matching the rasterized waterway's width
+}
+
 export interface MapFeatures {
   buildings: Building[];
   hedges: HedgeSeg[];
+  // Real river/stream/canal centrelines (cell coordinates), kept alongside the rasterized
+  // grid so the renderer can paint a smooth vector ribbon instead of the blocky staircase
+  // a 1-cell-wide diagonal raster line makes.
+  waterLines: WaterLineSeg[];
 }
 
 export interface SquadSpawn {

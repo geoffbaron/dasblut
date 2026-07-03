@@ -9,13 +9,25 @@ export function addSuppression(s: Soldier, amt: number): void {
   s.suppression = Math.min(1, s.suppression + amt);
 }
 
-export function killSoldier(world: World, t: Soldier, shockMul = 1): void {
+// "gun"/"melee" leave the body whole (a normal blood pool); "blast" (HE, canister,
+// catapult stone, grenade) is violent enough to warrant the wider splatter + gib decal.
+export type DeathCause = "gun" | "blast" | "melee";
+
+export function killSoldier(world: World, t: Soldier, shockMul = 1, cause: DeathCause = "gun"): void {
   if (t.status === "dead") return;
   t.status = "dead";
   t.path = null;
   t.targetId = null;
   t.targetVehId = null;
   world.effects.push({ kind: "hit", x0: t.x, y0: t.y, x1: t.x, y1: t.y, ttl: 0.3 });
+  // A burst of blood flying off the body at the moment of death, plus the permanent
+  // pool (and, for a violent blast death, scattered gib) it leaves on the ground.
+  const violent = cause === "blast";
+  for (let i = 0; i < (violent ? 7 : 3); i++) {
+    const a = Math.random() * Math.PI * 2, r = (violent ? 1.4 : 0.7) * Math.random();
+    world.effects.push({ kind: "blood", x0: t.x, y0: t.y, x1: t.x + Math.cos(a) * r, y1: t.y + Math.sin(a) * r, ttl: 0.22 + Math.random() * 0.15 });
+  }
+  world.addBloodDecal(t.x, t.y, violent);
   // A man screaming as he falls — Germans and Americans sound distinct. Routed
   // through the priority audio budget so it's never drowned out by gunfire.
   sound.play(t.faction === "axis" ? "soldier_scream" : "soldier_scream_us", t.x, t.y, true);
@@ -29,6 +41,11 @@ export function woundSoldier(world: World, t: Soldier): void {
   t.targetId = null;
   t.targetVehId = null;
   world.effects.push({ kind: "hit", x0: t.x, y0: t.y, x1: t.x, y1: t.y, ttl: 0.25 });
+  for (let i = 0; i < 2; i++) {
+    const a = Math.random() * Math.PI * 2, r = 0.5 * Math.random();
+    world.effects.push({ kind: "blood", x0: t.x, y0: t.y, x1: t.x + Math.cos(a) * r, y1: t.y + Math.sin(a) * r, ttl: 0.18 + Math.random() * 0.1 });
+  }
+  world.addBloodDecal(t.x, t.y, false); // a smaller pool — he's down bleeding, not blown apart
   sound.play("soldier_hit", t.x, t.y, true); // a cry of pain, also priority
   casualtyShock(world, t, CASUALTY_SHOCK * 0.6);
 }

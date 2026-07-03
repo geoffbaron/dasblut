@@ -44,7 +44,7 @@ export async function generateMap(centerLat: number, centerLon: number, label: s
   const width = Math.round(BATTLEFIELD_W_M / METERS_PER_CELL);
   const height = Math.round(BATTLEFIELD_H_M / METERS_PER_CELL);
   const grid = new Grid(width, height, Terrain.Grass);
-  const features: MapFeatures = { buildings: [], hedges: [] };
+  const features: MapFeatures = { buildings: [], hedges: [], waterLines: [] };
 
   const project = (p: LatLon): Pt => ({
     x: ((p.lon - west) * mLon) / METERS_PER_CELL,
@@ -89,7 +89,14 @@ export async function generateMap(centerLat: number, centerLon: number, label: s
   }
 
   for (const a of areas) fillPolygon(grid, a.poly, a.t);
-  for (const wl of waterLines) rasterizeLine(grid, wl.line, wl.w, Terrain.Water);
+  for (const wl of waterLines) {
+    rasterizeLine(grid, wl.line, wl.w, Terrain.Water);
+    // Keep the real centreline too — a 1-2 cell-wide raster strip stair-steps badly on a
+    // diagonal course, so the renderer paints a smooth vector ribbon over it instead.
+    for (let i = 0; i + 1 < wl.line.length; i++) {
+      features.waterLines.push({ x0: wl.line[i].x, y0: wl.line[i].y, x1: wl.line[i + 1].x, y1: wl.line[i + 1].y, w: wl.w });
+    }
+  }
   for (const r of roads) rasterizeLine(grid, r.line, r.w, Terrain.Road);
   for (const poly of buildings) rasterizeBuilding(grid, poly, features);
   for (const poly of hedges) rasterizeHedge(grid, poly, features);

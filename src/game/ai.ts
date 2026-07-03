@@ -27,6 +27,16 @@ export function acquireTargets(world: World): void {
       continue;
     }
 
+    // An archer needs firm footing to draw and loose a shot — he can't nock an arrow at
+    // a dead run. Hold fire while on the march (individually pathing, or advancing in the
+    // squad's line-abreast formation) and resume the instant he stops or a manual Fire
+    // order halts him (orderFireUnit/orderAreaFire already clear the march themselves).
+    if (s.weapon === "bow" && (s.path != null || world.team(s.teamId)?.march)) {
+      s.targetId = null;
+      s.targetVehId = null;
+      continue;
+    }
+
     const w = WEAPONS[s.weapon];
     const scx = Math.floor(s.x);
     const scy = Math.floor(s.y);

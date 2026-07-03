@@ -225,11 +225,13 @@ const SCENARIOS: Scenario[] = [
     lat: 49.3033, lon: -1.2456, era: "ww2", mode: "us-attacks", obj: 2, us: 2, axis: 1,
   },
   // The Ardennes, Dec 1944: the 101st held Bastogne through the coldest winter in
-  // memory, snow on the ground the whole siege — the defining image of the Bulge.
+  // memory, snow on the ground the whole siege — the defining image of the Bulge. You
+  // command the American defenders (the Germans still historically attack); "us-defends"
+  // keeps that attack direction but hands the player the Allied side being attacked.
   {
     name: "Bastogne",
-    blurb: "Ardennes 1944 · panzers hit the 101st in the snow",
-    lat: 50.0000, lon: 5.7220, era: "ww2", mode: "axis-attacks", obj: 1, us: 1, axis: 3, fortify: true, snow: true,
+    blurb: "Ardennes 1944 · hold against the panzers in the snow",
+    lat: 50.0000, lon: 5.7220, era: "ww2", mode: "us-defends", obj: 1, us: 1, axis: 3, fortify: true, snow: true,
   },
   // Pickett's Charge, July 3 1863: Confederate infantry cross ~3/4 mile of open farmland,
   // climbing roadside post-and-rail fences under fire, to storm the stone wall at The

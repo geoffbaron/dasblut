@@ -1206,8 +1206,14 @@ function paintRoofTile(b: Building, minCx: number, minCy: number, maxCx: number,
   if (isRect) drawPitchedRoof(ctx, minCx, minCy, maxCx + 1, maxCy + 1, rng, burned, era);
   else drawFlatRoof(ctx, b, rng, burned, era);
   // Snow dusting: a soft white wash weighted toward the sun-facing (NW) slope, plus a
-  // crisp bright line along the ridge/eave where snow actually piles up.
+  // crisp bright line along the ridge/eave where snow actually piles up. The roof art
+  // above is an irregular polygon (pitched rectangle or an arbitrary OSM footprint) that
+  // doesn't necessarily fill this tile's axis-aligned bounding box — "source-atop"
+  // confines the wash to pixels the roof itself already painted, instead of a plain
+  // fillRect spilling into the transparent eave margin around a rotated/irregular roof.
   if (snow && !burned) {
+    ctx.save();
+    ctx.globalCompositeOperation = "source-atop";
     const cx0 = x0 + M, cy0 = y0 + M, cw = w - 2 * M, ch = h - 2 * M;
     const gx = cx0 + cw * (0.5 + SUN.x * 0.3), gy = cy0 + ch * (0.5 + SUN.y * 0.3);
     const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, Math.max(cw, ch) * 0.75);
@@ -1217,6 +1223,7 @@ function paintRoofTile(b: Building, minCx: number, minCy: number, maxCx: number,
     ctx.fillRect(cx0, cy0, cw, ch);
     ctx.fillStyle = "rgba(240,246,248,0.7)";
     ctx.fillRect(cx0, cy0, cw, ch * 0.14); // ridge line catching the most snow
+    ctx.restore();
   }
   return { canvas, x: x0, y: y0, scale: 1 / SS };
 }

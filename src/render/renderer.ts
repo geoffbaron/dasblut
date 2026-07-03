@@ -603,18 +603,26 @@ export class Renderer {
       g.circle(s.x * CELL_SIZE, s.y * CELL_SIZE, 8).stroke({ width: 1.5, color: 0xffe27a, alpha: 0.55 });
     }
 
-    const lead = world.soldier(team.leaderId) ?? world.soldier(team.soldierIds[0]);
-    if (lead?.path) {
-      const pts = lead.path.slice(lead.pathIndex);
-      if (pts.length) {
-        g.moveTo(lead.x * CELL_SIZE, lead.y * CELL_SIZE);
-        for (const p of pts) g.lineTo((p.cx + 0.5) * CELL_SIZE, (p.cy + 0.5) * CELL_SIZE);
-        g.stroke({ width: 2, color: 0xf0e0a0, alpha: 0.6 });
-        const last = pts[pts.length - 1];
-        const lx = (last.cx + 0.5) * CELL_SIZE;
-        const ly = (last.cy + 0.5) * CELL_SIZE;
-        g.circle(lx, ly, 6).stroke({ width: 2, color: 0xf0e0a0, alpha: 0.85 });
-      }
+    // Route line to each man's own destination. WW2 squads travel loose (every soldier
+    // gets his own individual path to his own scored cover cell, not a shared formation
+    // route — see orderLooseMove), so drawing only the leader's path left the rest of a
+    // scattering squad with no indication of where they were headed. The leader's line is
+    // brighter so it still reads as "the" squad route at a glance; the others are dimmer
+    // companion lines.
+    const leaderId = team.leaderId;
+    for (const id of team.soldierIds) {
+      const s = world.soldier(id);
+      if (!s || s.status !== "active" || !s.path) continue;
+      const pts = s.path.slice(s.pathIndex);
+      if (!pts.length) continue;
+      const isLeader = id === leaderId;
+      g.moveTo(s.x * CELL_SIZE, s.y * CELL_SIZE);
+      for (const p of pts) g.lineTo((p.cx + 0.5) * CELL_SIZE, (p.cy + 0.5) * CELL_SIZE);
+      g.stroke({ width: isLeader ? 2 : 1.2, color: 0xf0e0a0, alpha: isLeader ? 0.6 : 0.35 });
+      const last = pts[pts.length - 1];
+      const lx = (last.cx + 0.5) * CELL_SIZE;
+      const ly = (last.cy + 0.5) * CELL_SIZE;
+      g.circle(lx, ly, isLeader ? 6 : 3.5).stroke({ width: isLeader ? 2 : 1.2, color: 0xf0e0a0, alpha: isLeader ? 0.85 : 0.5 });
     }
   }
 

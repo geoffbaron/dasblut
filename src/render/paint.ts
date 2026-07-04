@@ -939,15 +939,39 @@ function drawScorch(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number
     const x = (cx + rng()) * CELL_SIZE;
     const y = (cy + rng()) * CELL_SIZE;
     const r = CELL_SIZE * (0.6 + rng() * 1.2);
-    const g = ctx.createRadialGradient(x, y, r * 0.2, x, y, r);
+    scorchMark(ctx, x, y, r, rng);
+    placed++;
+  }
+}
+
+// A single burn scar: a cluster of overlapping soft blobs at jittered offsets/sizes
+// (the same trick blood decals and tree canopies use) instead of one stamped ellipse,
+// so it reads as a ragged char mark, plus a few dark fleck dots along the edge for
+// texture. Fire never burns a perfect oval into the ground.
+function scorchMark(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, rng: () => number): void {
+  const blobs = 4 + Math.floor(rng() * 3);
+  for (let i = 0; i < blobs; i++) {
+    const a = rng() * Math.PI * 2;
+    const rr = rng() * r * 0.55;
+    const px = x + Math.cos(a) * rr;
+    const py = y + Math.sin(a) * rr * 0.75;
+    const rad = r * (0.5 + rng() * 0.55);
+    const g = ctx.createRadialGradient(px, py, rad * 0.2, px, py, rad);
     g.addColorStop(0, "rgba(22,18,13,0.5)");
     g.addColorStop(0.7, "rgba(22,18,13,0.22)");
     g.addColorStop(1, "rgba(22,18,13,0)");
     ctx.fillStyle = g;
     ctx.beginPath();
-    ctx.ellipse(x, y, r, r * (0.7 + rng() * 0.25), rng() * Math.PI, 0, Math.PI * 2);
+    ctx.ellipse(px, py, rad, rad * (0.7 + rng() * 0.25), rng() * Math.PI, 0, Math.PI * 2);
     ctx.fill();
-    placed++;
+  }
+  for (let i = 0; i < 6; i++) {
+    const a = rng() * Math.PI * 2;
+    const rr = r * (0.45 + rng() * 0.6);
+    ctx.fillStyle = `rgba(14,11,8,${0.22 + rng() * 0.25})`;
+    ctx.beginPath();
+    ctx.arc(x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.8, 0.6 + rng() * 1.1, 0, Math.PI * 2);
+    ctx.fill();
   }
 }
 
@@ -974,29 +998,63 @@ function drawCraters(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => numbe
 }
 
 function crater(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, rng: () => number): void {
-  // Scorched halo.
-  let g = ctx.createRadialGradient(x, y, r * 0.3, x, y, r * 1.45);
-  g.addColorStop(0, "rgba(18,14,10,0.5)");
-  g.addColorStop(1, "rgba(18,14,10,0)");
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(x, y, r * 1.45, 0, Math.PI * 2);
-  ctx.fill();
-  // Raised earth lip, brighter on the top-left sun side.
-  ctx.lineWidth = r * 0.34;
+  // Scorched halo — a ragged cluster of soft blobs at jittered offsets, not one
+  // stamped ring, so the burn reads as an irregular scar rather than a drafting-
+  // compass circle.
+  for (let i = 0; i < 5; i++) {
+    const a = rng() * Math.PI * 2;
+    const rr = rng() * r * 0.5;
+    const px = x + Math.cos(a) * rr;
+    const py = y + Math.sin(a) * rr * 0.85;
+    const rad = r * (0.95 + rng() * 0.5);
+    const g = ctx.createRadialGradient(px, py, rad * 0.25, px, py, rad);
+    g.addColorStop(0, "rgba(18,14,10,0.42)");
+    g.addColorStop(1, "rgba(18,14,10,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(px, py, rad, rad * 0.82, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Raised earth lip: built from overlapping short arcs of jittered radius/width
+  // instead of one smooth stroked ellipse, so the rim reads as thrown-up clods of
+  // dirt rather than a perfect ring.
+  const rimSegs = 9;
   ctx.strokeStyle = "rgba(124,106,78,0.45)";
-  ctx.beginPath();
-  ctx.ellipse(x, y, r, r * 0.85, 0, 0, Math.PI * 2);
-  ctx.stroke();
-  // Dark bowl with a shaded inner wall.
-  g = ctx.createRadialGradient(x - r * 0.25, y - r * 0.25, r * 0.1, x, y, r * 0.85);
-  g.addColorStop(0, "rgba(52,43,31,0.95)");
-  g.addColorStop(0.7, "rgba(28,22,16,0.95)");
-  g.addColorStop(1, "rgba(40,33,24,0.6)");
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.ellipse(x, y, r * 0.8, r * 0.66, 0, 0, Math.PI * 2);
-  ctx.fill();
+  for (let i = 0; i < rimSegs; i++) {
+    const a0 = (i / rimSegs) * Math.PI * 2;
+    const a1 = ((i + 1) / rimSegs) * Math.PI * 2;
+    const rr = r * (0.9 + rng() * 0.2);
+    ctx.lineWidth = r * (0.24 + rng() * 0.18);
+    ctx.beginPath();
+    ctx.ellipse(x, y, rr, rr * 0.85, 0, a0, a1);
+    ctx.stroke();
+  }
+  // Dark bowl — two overlapping, slightly offset blobs instead of a single ellipse,
+  // so the crater's floor isn't a perfect oval either.
+  for (let i = 0; i < 2; i++) {
+    const ox = i === 0 ? -r * 0.12 : r * 0.14;
+    const oy = i === 0 ? -r * 0.1 : r * 0.08;
+    const g = ctx.createRadialGradient(x + ox - r * 0.25, y + oy - r * 0.25, r * 0.1, x + ox, y + oy, r * 0.8);
+    g.addColorStop(0, "rgba(52,43,31,0.95)");
+    g.addColorStop(0.7, "rgba(28,22,16,0.95)");
+    g.addColorStop(1, "rgba(40,33,24,0.6)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(x + ox, y + oy, r * (0.62 + rng() * 0.16), r * (0.5 + rng() * 0.14), rng() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Dirt/rubble clumps kicked out onto the rim for texture.
+  for (let i = 0; i < 4; i++) {
+    const a = rng() * Math.PI * 2;
+    const rr = r * (0.75 + rng() * 0.3);
+    const px = x + Math.cos(a) * rr;
+    const py = y + Math.sin(a) * rr * 0.85;
+    const s = r * (0.09 + rng() * 0.1);
+    ctx.fillStyle = `hsl(30,20%,${20 + rng() * 14}%)`;
+    ctx.beginPath();
+    ctx.ellipse(px, py, s, s * 0.75, rng() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
   // Ejecta streaks thrown clear of the rim.
   for (let i = 0; i < 5; i++) {
     const a = rng() * Math.PI * 2;

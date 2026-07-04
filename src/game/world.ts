@@ -887,7 +887,7 @@ export class World {
     // for the best bit of cover near where he's sent, Close-Combat style.
     if (this.era === "ww2") {
       team.march = null;
-      return this.orderLooseMove(men, target);
+      return this.orderLooseMove(men, target, team.kind);
     }
 
     // The squad's centre and the direction to the objective.
@@ -954,7 +954,13 @@ export class World {
   // near the destination — a hedge, a wall, woods, rubble, or just inside a house — so the
   // squad travels as a scattered gaggle and goes to ground on arrival instead of standing
   // in a neat block in the open. Falls back to spread-out open cells when cover is scarce.
-  private orderLooseMove(men: Soldier[], target: Cell): boolean {
+  // A mortar team is the exception: the tube already can't enter a building (it needs open
+  // sky to fire — see unitPassable), but its rifle-armed escorts otherwise would, splitting
+  // the crew from its guard. They stay outdoors by default; only when the player's own
+  // click lands inside a building do they treat it as a deliberate order and go in.
+  private orderLooseMove(men: Soldier[], target: Cell, kind: SquadKind): boolean {
+    const targetIsInterior = this.grid.inBounds(target.cx, target.cy) && isBuildingInterior(this.grid.get(target.cx, target.cy));
+    const avoidBuildings = kind === "mortar" && !targetIsInterior;
     const R = 5; // how far around the destination to look for cover
     // Score every reachable cell in the neighbourhood by how good a fighting position it is.
     const cands: { cx: number; cy: number; score: number }[] = [];
@@ -965,6 +971,7 @@ export class World {
         const d = Math.hypot(dx, dy);
         if (d > R) continue;
         const t = this.grid.get(gcx, gcy) as Terrain;
+        if (avoidBuildings && isBuildingInterior(t)) continue;
         const def = TERRAIN[t];
         // Cover + concealment make a good spot; a house interior is best; closer to the
         // aimpoint is preferred, with a little noise so identical cells don't tie forever.
@@ -982,7 +989,13 @@ export class World {
     const used = new Set<number>();
     let anyPathed = false;
     for (const s of order) {
-      const pass = unitPassable(this.grid, s.weapon);
+      const basePass = unitPassable(this.grid, s.weapon);
+      // Every man in a mortar team stays out of buildings on a plain move order, not just
+      // the tube (whose weapon already forces this) — an escort rifleman ducking indoors
+      // would otherwise strand the crew he's meant to be guarding.
+      const pass = avoidBuildings
+        ? (cx: number, cy: number) => basePass(cx, cy) && !isBuildingInterior(this.grid.get(cx, cy))
+        : basePass;
       let goal: Cell | null = null;
       for (const c of cands) {
         const key = c.cy * this.grid.width + c.cx;

@@ -6,6 +6,7 @@ import { Cell } from "./game/pathfinding.ts";
 import { DEFAULT_SETUP, factionColor, factionName, Faction, GameSetup, Stance, World } from "./game/world.ts";
 import { WEAPONS } from "./game/weapons.ts";
 import { VEHICLES } from "./game/vehicleDefs.ts";
+import { isBuildingInterior } from "./game/terrain.ts";
 import { updateVisibility } from "./game/visibility.ts";
 import { Renderer } from "./render/renderer.ts";
 import { drawMinimap, minimapClickToWorld } from "./render/minimap.ts";
@@ -328,13 +329,31 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
     const tags = (["steady", "shaken", "pinned", "panicked", "routing"] as const)
       .filter((st) => counts[st]).map((st) => `<span class="tag s-${st}">${counts[st]} ${st}</span>`).join("");
     let ammoLine = "";
+    let mortarWarn = "";
     if (team.kind === "mortar") {
       const tube = live.find((s) => WEAPONS[s.weapon].indirect);
-      if (tube) ammoLine = ` · HE ${tube.ammo} · Smoke ${tube.smokeAmmo}`;
+      if (tube) {
+        ammoLine = ` · HE ${tube.ammo} · Smoke ${tube.smokeAmmo}`;
+        // A fire order is standing but the tube can't actually drop a round — surface
+        // exactly why, so the player repositions/rearms instead of assuming it's broken.
+        if (tube.fireCell) {
+          const tcx = Math.floor(tube.x), tcy = Math.floor(tube.y);
+          const indoors = world.grid.inBounds(tcx, tcy) && isBuildingInterior(world.grid.get(tcx, tcy));
+          const w = WEAPONS[tube.weapon];
+          const dist = Math.hypot(tube.fireCell.cx + 0.5 - tube.x, tube.fireCell.cy + 0.5 - tube.y);
+          const outOfRange = dist < (w.minRangeCells ?? 0) || dist > w.rangeCells;
+          const dry = tube.fireSmoke ? tube.smokeAmmo <= 0 : tube.ammo <= 0;
+          const reason = indoors ? "indoors — move into the open to fire"
+            : outOfRange ? (dist < (w.minRangeCells ?? 0) ? "target too close — dead zone" : "target out of range")
+            : dry ? `out of ${tube.fireSmoke ? "smoke" : "HE"}`
+            : "";
+          if (reason) mortarWarn = `<div class="row"><span class="tag s-pinned">⚠ can't fire — ${reason}</span></div>`;
+        }
+      }
     }
     statusEl.innerHTML =
       `<div class="name">${team.name} <span class="dim">· ${live[0]?.stance ?? "move"}</span></div>` +
-      `<div class="dim">${live.length} effective · ${casualties} down${ammoLine}</div><div class="row">${tags}</div>`;
+      `<div class="dim">${live.length} effective · ${casualties} down${ammoLine}</div><div class="row">${tags}</div>${mortarWarn}`;
   };
 
   // --- orders bar ---

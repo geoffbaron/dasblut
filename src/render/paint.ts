@@ -402,13 +402,24 @@ function drawOrchards(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => numb
           ctx.beginPath();
           ctx.arc(ox, oy, r, 0, Math.PI * 2);
           ctx.fill();
-          // A few leaf-cluster flecks so even these small canopies read as foliage.
-          for (let lf = 0; lf < 5; lf++) {
+          // Edge bumps breaking the circle, same treatment as the forest canopy, so a
+          // small fruit tree still reads as a rounded mass and not a flat disc.
+          for (let b = 0; b < 4; b++) {
+            const a = rng() * Math.PI * 2;
+            const sunSide = Math.cos(a) * SUN.x + Math.sin(a) * SUN.y > 0;
+            ctx.fillStyle = `hsl(${hue},50%,${sunSide ? 42 + rng() * 12 : 22 + rng() * 10}%)`;
+            ctx.beginPath();
+            ctx.arc(ox + Math.cos(a) * r * 0.7, oy + Math.sin(a) * r * 0.7, r * (0.22 + rng() * 0.22), 0, Math.PI * 2);
+            ctx.fill();
+          }
+          // A denser scatter of leaf-cluster flecks so even these small canopies read as
+          // individual foliage rather than a smooth gradient blob.
+          for (let lf = 0; lf < 8; lf++) {
             const a = rng() * Math.PI * 2, rr = rng() * r * 0.85;
             const sunward = Math.cos(a) * SUN.x + Math.sin(a) * SUN.y;
             ctx.fillStyle = sunward > -0.1 && rng() < 0.6
-              ? `hsla(${hue + 8},60%,${58 + rng() * 14}%,0.6)`
-              : `hsla(${hue - 6},50%,${18 + rng() * 10}%,0.4)`;
+              ? `hsla(${hue + 8},62%,${58 + rng() * 14}%,0.65)`
+              : `hsla(${hue - 6},52%,${16 + rng() * 12}%,0.45)`;
             ctx.beginPath();
             ctx.arc(ox + Math.cos(a) * rr, oy + Math.sin(a) * rr, r * (0.08 + rng() * 0.08), 0, Math.PI * 2);
             ctx.fill();
@@ -1068,6 +1079,27 @@ function drawHedge(ctx: CanvasRenderingContext2D, h: HedgeSeg, rng: () => number
     ctx.beginPath();
     ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
     ctx.fill();
+    // Edge bumps + a leaf-cluster stipple, the same treatment the forest/orchard
+    // canopies get, so a hedgerow reads as a knotted run of individual bushes rather
+    // than a smooth string of pom-poms.
+    for (let bm = 0; bm < 4; bm++) {
+      const a = rng() * Math.PI * 2;
+      const sunSide = Math.cos(a) * SUN.x + Math.sin(a) * SUN.y > 0;
+      ctx.fillStyle = `hsl(97,48%,${sunSide ? 40 + rng() * 12 : 20 + rng() * 10}%)`;
+      ctx.beginPath();
+      ctx.arc(b.x + Math.cos(a) * b.r * 0.7, b.y + Math.sin(a) * b.r * 0.7, b.r * (0.22 + rng() * 0.22), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    for (let lf = 0; lf < 7; lf++) {
+      const a = rng() * Math.PI * 2, rr = rng() * b.r * 0.85;
+      const sunward = Math.cos(a) * SUN.x + Math.sin(a) * SUN.y;
+      ctx.fillStyle = sunward > -0.1 && rng() < 0.6
+        ? `hsla(103,58%,${56 + rng() * 14}%,0.6)`
+        : `hsla(90,50%,${16 + rng() * 12}%,0.45)`;
+      ctx.beginPath();
+      ctx.arc(b.x + Math.cos(a) * rr, b.y + Math.sin(a) * rr, b.r * (0.08 + rng() * 0.08), 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   // Snow-capped bocage: the same white dusting the tree canopies get, so a hedgerow
   // doesn't read as a jarring patch of full summer green against the snow.

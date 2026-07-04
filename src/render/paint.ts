@@ -22,35 +22,35 @@ interface RGB {
   b: number;
 }
 
-// Bright, sunlit palette in the spirit of Age of Empires' hand-painted maps: lush
-// saturated grass, warm sandy earth, vivid water. Each entry is a base color plus a
-// second color the per-pixel noise blends toward, giving mottled, painterly ground.
+// A darker, grittier war-worn palette — muddier and less saturated than a bright
+// hand-painted travel map, closer to a scuffed, fought-over field. Each entry is a base
+// color plus a second color the per-pixel noise blends toward, giving mottled ground.
 const GROUND: Partial<Record<Terrain, [RGB, RGB]>> = {
-  [Terrain.Open]: [rgb(0xb59d68), rgb(0x96814e)],
-  [Terrain.Grass]: [rgb(0x679440), rgb(0x4f7a2e)],
-  [Terrain.Woods]: [rgb(0x477232), rgb(0x365e24)],
-  [Terrain.Water]: [rgb(0x3f7fa8), rgb(0x2c6089)],
-  [Terrain.Road]: [rgb(0xc4aa79), rgb(0xa38a58)],
-  [Terrain.Rubble]: [rgb(0x8f8474), rgb(0x746a57)],
+  [Terrain.Open]: [rgb(0xa08b5c), rgb(0x7f6d46)],
+  [Terrain.Grass]: [rgb(0x577f38), rgb(0x426627)],
+  [Terrain.Woods]: [rgb(0x3d6129), rgb(0x2e4d1e)],
+  [Terrain.Water]: [rgb(0x386f93), rgb(0x28567a)],
+  [Terrain.Road]: [rgb(0xaa9268), rgb(0x8c754c)],
+  [Terrain.Rubble]: [rgb(0x7a705f), rgb(0x615948)],
   // Walls & hedges sit on a grassy/dirt base; structures are drawn on top.
-  [Terrain.Wall]: [rgb(0x679440), rgb(0x4f7a2e)],
-  [Terrain.Hedge]: [rgb(0x679440), rgb(0x4f7a2e)],
+  [Terrain.Wall]: [rgb(0x577f38), rgb(0x426627)],
+  [Terrain.Hedge]: [rgb(0x577f38), rgb(0x426627)],
   // Fortifications: a fence sits on grass; a trench is dug earth; sandbags on scuffed dirt.
-  [Terrain.Fence]: [rgb(0x679440), rgb(0x4f7a2e)],
-  [Terrain.Trench]: [rgb(0x5a4a30), rgb(0x43351f)],
-  [Terrain.Sandbag]: [rgb(0x9c8c5e), rgb(0x827145)],
+  [Terrain.Fence]: [rgb(0x577f38), rgb(0x426627)],
+  [Terrain.Trench]: [rgb(0x4d3f29), rgb(0x392c1a)],
+  [Terrain.Sandbag]: [rgb(0x87794f), rgb(0x6c5f3e)],
 };
 
 // Large-scale meadow tones the grass drifts toward (see the per-pixel pass): sun-dried
 // yellow-green swathes and deep lush pockets, so open country reads painterly zoomed out.
-const MEADOW_WARM = rgb(0x8cab4c);
-const MEADOW_DEEP = rgb(0x41682c);
+const MEADOW_WARM = rgb(0x7a9642);
+const MEADOW_DEEP = rgb(0x365726);
 // Field-parcel tones for the farmland patchwork: harvested straw stubble and rich crop green.
-const STUBBLE = rgb(0xb3a05e);
-const CROP_DEEP = rgb(0x3f6a2e);
+const STUBBLE = rgb(0x998752);
+const CROP_DEEP = rgb(0x365a27);
 // Elevation tones: high ground bakes dry and warm, hollows hold damp, deeper green.
-const DRY_HIGH = rgb(0x9aa257);
-const DAMP_LOW = rgb(0x44703a);
+const DRY_HIGH = rgb(0x848b4a);
+const DAMP_LOW = rgb(0x3a5f31);
 
 // --- Snow variant: a Bulge-winter reskin of the same terrain set. Ground disappears
 // under a pale blue-white blanket; only the elevation/clump shading (already computed
@@ -58,22 +58,22 @@ const DAMP_LOW = rgb(0x44703a);
 // in cold shadow. Roads are packed/salted snow, water runs colder and greyer, hedges/
 // walls/fences keep their ground tone since they're structures, not open ground.
 const GROUND_SNOW: Partial<Record<Terrain, [RGB, RGB]>> = {
-  [Terrain.Open]: [rgb(0xe4e9ee), rgb(0xc9d3da)],
-  [Terrain.Grass]: [rgb(0xdde6ec), rgb(0xc0cdd6)],
-  [Terrain.Woods]: [rgb(0xaebdc4), rgb(0x8fa2ac)], // snow-laden canopy floor, still shadowed
-  [Terrain.Water]: [rgb(0x4a7a92), rgb(0x355d72)], // colder, greyer than the summer palette
-  [Terrain.Road]: [rgb(0xa89d8f), rgb(0x867a6c)], // churned slush/mud — reads against pristine snow
-  [Terrain.Rubble]: [rgb(0x9aa1a6), rgb(0x7e858a)],
-  [Terrain.Wall]: [rgb(0xdde6ec), rgb(0xc0cdd6)],
-  [Terrain.Hedge]: [rgb(0xdde6ec), rgb(0xc0cdd6)],
-  [Terrain.Fence]: [rgb(0xdde6ec), rgb(0xc0cdd6)],
-  [Terrain.Trench]: [rgb(0x5a4a30), rgb(0x43351f)], // dug earth still shows through
-  [Terrain.Sandbag]: [rgb(0x9c8c5e), rgb(0x827145)],
+  [Terrain.Open]: [rgb(0xd4dade), rgb(0xb7c1c8)],
+  [Terrain.Grass]: [rgb(0xccd5da), rgb(0xaebbc4)],
+  [Terrain.Woods]: [rgb(0x9aa9b0), rgb(0x7d909a)], // snow-laden canopy floor, still shadowed
+  [Terrain.Water]: [rgb(0x3f6a80), rgb(0x2a4d60)], // colder, greyer than the summer palette
+  [Terrain.Road]: [rgb(0x968b7d), rgb(0x756a5c)], // churned slush/mud — reads against pristine snow, grittier
+  [Terrain.Rubble]: [rgb(0x878e93), rgb(0x6c7378)],
+  [Terrain.Wall]: [rgb(0xccd5da), rgb(0xaebbc4)],
+  [Terrain.Hedge]: [rgb(0xccd5da), rgb(0xaebbc4)],
+  [Terrain.Fence]: [rgb(0xccd5da), rgb(0xaebbc4)],
+  [Terrain.Trench]: [rgb(0x4d3f29), rgb(0x392c1a)], // dug earth still shows through
+  [Terrain.Sandbag]: [rgb(0x87794f), rgb(0x6c5f3e)],
 };
-const MEADOW_SNOW_WARM = rgb(0xeef2f5); // wind-scoured, brighter drift
-const MEADOW_SNOW_DEEP = rgb(0xb9c6cf); // settled, bluer drift
-const DRY_HIGH_SNOW = rgb(0xf2f5f7); // crest catching full light
-const DAMP_LOW_SNOW = rgb(0x9fb0ba); // hollow sitting in cold shadow
+const MEADOW_SNOW_WARM = rgb(0xdce2e6); // wind-scoured, brighter drift
+const MEADOW_SNOW_DEEP = rgb(0xa5b4bd); // settled, bluer drift
+const DRY_HIGH_SNOW = rgb(0xe0e5e8); // crest catching full light
+const DAMP_LOW_SNOW = rgb(0x8b9ca6); // hollow sitting in cold shadow
 
 export interface PaintedMap {
   canvas: HTMLCanvasElement;
@@ -171,7 +171,7 @@ export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "
       const fine = valueNoise(px * 0.18, py * 0.18, seed + 7);
       const broad = fbm(px * 0.012, py * 0.012, seed + 23, 2);
       const t = fine * 0.45 + broad * 0.55;
-      let shade = 0.88 + t * 0.34; // bright but with real contrast, so the ground has grain
+      let shade = 0.78 + t * 0.34; // darker overall, with real contrast, so the ground has grain
       shade *= 0.96 + broad * 0.08;
       // Mid-frequency clumps: light/dark dapples a couple of cells wide, so the ground
       // reads as real turf relief (hummocks, worn dips) — strong enough to see while playing.
@@ -226,7 +226,7 @@ export function paintBattlefield(grid: Grid, features: MapFeatures, era: Era = "
       // and Close Combat maps read as painted/photographic rather than vector-clean.
       let hgrain = (px * 374761393 + py * 668265263 + seed * 1103515245) >>> 0;
       hgrain = (hgrain ^ (hgrain >>> 13)) >>> 0;
-      const grain = 1 + ((hgrain & 255) / 255 - 0.5) * 0.16; // ±8%
+      const grain = 1 + ((hgrain & 255) / 255 - 0.5) * 0.24; // ±12% — coarser, grittier grit
       data[i] = clamp8(c.r * shade * grain);
       data[i + 1] = clamp8(c.g * shade * grain);
       data[i + 2] = clamp8(c.b * shade * grain);
@@ -402,6 +402,17 @@ function drawOrchards(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => numb
           ctx.beginPath();
           ctx.arc(ox, oy, r, 0, Math.PI * 2);
           ctx.fill();
+          // A few leaf-cluster flecks so even these small canopies read as foliage.
+          for (let lf = 0; lf < 5; lf++) {
+            const a = rng() * Math.PI * 2, rr = rng() * r * 0.85;
+            const sunward = Math.cos(a) * SUN.x + Math.sin(a) * SUN.y;
+            ctx.fillStyle = sunward > -0.1 && rng() < 0.6
+              ? `hsla(${hue + 8},60%,${58 + rng() * 14}%,0.6)`
+              : `hsla(${hue - 6},50%,${18 + rng() * 10}%,0.4)`;
+            ctx.beginPath();
+            ctx.arc(ox + Math.cos(a) * rr, oy + Math.sin(a) * rr, r * (0.08 + rng() * 0.08), 0, Math.PI * 2);
+            ctx.fill();
+          }
         }
       }
     }
@@ -737,7 +748,7 @@ function drawWoods(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number,
     ctx.arc(t.x, t.y, r * 0.87, -0.3, 1.85);
     ctx.stroke();
     // Canopy edge texture: bumps breaking the circle — lit on the sun side, dark below.
-    for (let b = 0; b < 5; b++) {
+    for (let b = 0; b < 7; b++) {
       const a = rng() * Math.PI * 2;
       const br = r * (0.2 + rng() * 0.25);
       const sunSide = Math.cos(a) * SUN.x + Math.sin(a) * SUN.y > 0;
@@ -746,11 +757,21 @@ function drawWoods(ctx: CanvasRenderingContext2D, grid: Grid, rng: () => number,
       ctx.arc(t.x + Math.cos(a) * r * 0.7, t.y + Math.sin(a) * r * 0.7, br, 0, Math.PI * 2);
       ctx.fill();
     }
-    // A few bright leaf-cluster dots on the crown for sparkle.
-    for (let b = 0; b < 3; b++) {
-      ctx.fillStyle = `hsla(${t.hue + 8},${sat + 10}%,${55 + rng() * 12}%,0.7)`;
+    // Leaf-cluster stipple: a dense scatter of small light/dark dots across the whole
+    // crown — lit clusters catching the sun, shaded ones tucked in the canopy's shadow —
+    // so the mass reads as individual leaves/foliage rather than a smooth gradient blob.
+    const leafCount = t.conifer ? 9 : 15;
+    for (let b = 0; b < leafCount; b++) {
+      const a = rng() * Math.PI * 2;
+      const rr = rng() * r * 0.88;
+      const lx = t.x + Math.cos(a) * rr, ly = t.y + Math.sin(a) * rr;
+      const sunward = Math.cos(a) * SUN.x + Math.sin(a) * SUN.y;
+      const lit = sunward > -0.1 && rng() < 0.65;
+      ctx.fillStyle = lit
+        ? `hsla(${t.hue + 8},${sat + 10}%,${52 + rng() * 16}%,${0.5 + rng() * 0.3})`
+        : `hsla(${t.hue - 6},${sat + 2}%,${16 + rng() * 12}%,${0.35 + rng() * 0.3})`;
       ctx.beginPath();
-      ctx.arc(t.x + SUN.x * r * 0.35 + (rng() - 0.5) * r * 0.6, t.y + SUN.y * r * 0.35 + (rng() - 0.5) * r * 0.6, r * (0.08 + rng() * 0.1), 0, Math.PI * 2);
+      ctx.arc(lx, ly, r * (0.05 + rng() * 0.07), 0, Math.PI * 2);
       ctx.fill();
     }
     // Snow-capped crown: a bright white dusting on the upper (sun-facing) half of the
@@ -1655,10 +1676,11 @@ function thatchTexture(
 }
 
 function drawVignette(ctx: CanvasRenderingContext2D, w: number, h: number): void {
-  // Barely-there edge grade — the map should stay bright and sunlit to the corners.
-  const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.45, w / 2, h / 2, Math.max(w, h) * 0.72);
+  // A deliberate edge grade — dims and grimes the corners so the field reads as a
+  // gritty, fought-over place rather than a bright, sunlit tourist map.
+  const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.4, w / 2, h / 2, Math.max(w, h) * 0.72);
   g.addColorStop(0, "rgba(0,0,0,0)");
-  g.addColorStop(1, "rgba(20,18,12,0.12)");
+  g.addColorStop(1, "rgba(12,11,8,0.24)");
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, h);
 }

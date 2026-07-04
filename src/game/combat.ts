@@ -99,10 +99,12 @@ export function resolveFire(world: World, dt: number): void {
             hit *= 1 - s.suppression * 0.6;
             hit *= 0.7 + 0.3 * s.training;
             if (Math.random() < Math.max(0.05, Math.min(0.95, hit))) {
-              // A solid strike on the hull — resolveArmorHit shows the result
-              // (bounce spark vs penetration fireball) and applies the damage.
+              // A solid strike on the hull — resolveArmorHit shows the result (bounce
+              // spark vs penetration fireball). A bazooka/Panzerfaust that actually
+              // penetrates ends the tank outright (guaranteedKill) rather than rolling
+              // for a lesser outcome — the whole point of closing in with one of these.
               world.effects.push({ kind: "flash", x0: veh.x, y0: veh.y, x1: veh.x, y1: veh.y, ttl: 0.12 });
-              resolveArmorHit(world, veh, w.penetration, s.x, s.y, d, w.rangeCells);
+              resolveArmorHit(world, veh, w.penetration, s.x, s.y, d, w.rangeCells, true);
             } else {
               bazookaMiss(world, veh.x, veh.y);
             }

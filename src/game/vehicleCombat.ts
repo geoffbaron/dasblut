@@ -7,6 +7,10 @@ import { sound } from "../render/sound.ts";
 // penetration vs that face (with range falloff), and apply the outcome — bounce,
 // crew casualty, immobilization, or a catastrophic brew-up. Flank and rear shots
 // are far deadlier than the frontal plate: the heart of armored tactics.
+// `guaranteedKill` is for infantry AT (bazooka/Panzerfaust): a hand-carried warhead that
+// actually punches through is close enough, and slow/awkward enough to line up, that a
+// penetration should end the tank outright rather than roll for a lesser outcome — unlike
+// a tank's own AP round, which keeps the probabilistic crew/immobilize/shaken spread.
 export function resolveArmorHit(
   world: World,
   target: Vehicle,
@@ -15,6 +19,7 @@ export function resolveArmorHit(
   shooterY: number,
   dist: number,
   range: number,
+  guaranteedKill = false,
 ): void {
   const def = VEHICLES[target.cls];
   const face = faceStruck(target.facing, target.x, target.y, shooterX, shooterY);
@@ -45,6 +50,10 @@ export function resolveArmorHit(
   for (let i = 0; i < 4; i++) {
     const a = Math.random() * Math.PI * 2, len = 1 + Math.random() * 1.8;
     world.effects.push({ kind: "ricochet", x0: target.x, y0: target.y, x1: target.x + Math.cos(a) * len, y1: target.y + Math.sin(a) * len, ttl: 0.18 });
+  }
+  if (guaranteedKill) {
+    knockOut(world, target);
+    return;
   }
   const r = Math.random();
   if (r < 0.3) {

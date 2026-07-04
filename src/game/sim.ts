@@ -96,7 +96,7 @@ function timeoutOutcome(world: World): "win" | "lose" {
 // Capture-and-hold. A side captures an objective by being the only one with units in
 // its zone for OBJECTIVE_CAPTURE_TIME; the attacker (US) wins by controlling EVERY
 // objective at once for world.objectiveHoldS seconds (configurable 1-10 min, default
-// 60s). Elimination still ends it.
+// 180s). Elimination still ends it.
 function updateObjective(world: World, dt: number): void {
   for (const o of world.objectives) {
     const r2 = o.radius * o.radius;

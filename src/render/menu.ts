@@ -31,7 +31,7 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
     const era = (eraVal === "acw" || eraVal === "medieval" ? eraVal : "ww2") as GameSetup["era"];
     const usTanks = tanks("usTanks"), axisTanks = tanks("axisTanks");
     const fortify = (document.getElementById("cover") as HTMLSelectElement)?.value === "1";
-    const objectiveHoldS = parseInt((document.getElementById("holdTime") as HTMLSelectElement)?.value || "60", 10);
+    const objectiveHoldS = parseInt((document.getElementById("holdTime") as HTMLSelectElement)?.value || "180", 10);
     const snow = (document.getElementById("terrain") as HTMLSelectElement)?.value === "1";
     switch (mode) {
       case "us-attacks":   return { era, player: "us",   usRole: "attack", axisRole: "defend", usTanks, axisTanks, fortify, objectiveHoldS, snow };

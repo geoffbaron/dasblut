@@ -419,7 +419,7 @@ export interface GameSetup {
   usTanks: number; // in ACW these count field guns instead of tanks
   axisTanks: number;
   fortify?: boolean; // scatter era-appropriate field cover (hedgerows/trenches/bunkers, ditches/fences…)
-  objectiveHoldS?: number; // seconds the attacker must hold every objective at once to win (default 60)
+  objectiveHoldS?: number; // seconds the attacker must hold every objective at once to win (default 180)
   snow?: boolean; // paint the battlefield in winter dress (Bulge-style snow cover)
 }
 
@@ -494,11 +494,11 @@ export class World {
   objectives: ObjState[] = [];
   objHoldTimer = 0; // seconds the current holder has held EVERY objective simultaneously
   holdFaction: Faction | null = null; // which attacker the hold timer is counting for
-  objectiveHoldS = 60; // configurable 1-10 min via the menu; set from setup in the constructor
+  objectiveHoldS = 180; // configurable 1-10 min via the menu; set from setup in the constructor
   // The clock the attacker has to take AND hold the objective before it's ruled a defensive
   // win. Scales with objectiveHoldS so a long hold setting isn't mathematically impossible to
-  // reach — the default (holdS=60) reproduces the original fixed 360s exactly.
-  battleTimeS = 360;
+  // reach — the original fixed value (with the old holdS=60 default) was 360s.
+  battleTimeS = 480;
 
   // Battle clock + enemy-AI throttle.
   aiAccum = 0;
@@ -563,7 +563,7 @@ export class World {
     this.aiFaction = other(setup.player);
     this.usRole = setup.usRole;
     this.axisRole = setup.axisRole;
-    this.objectiveHoldS = setup.objectiveHoldS ?? 60;
+    this.objectiveHoldS = setup.objectiveHoldS ?? 180;
     this.battleTimeS = this.objectiveHoldS + 300; // 5 min to fight to the objective, then hold it
     // The lone attacker takes the south edge; in a meeting (both attack) the US holds
     // the south by convention (its historical line of advance).

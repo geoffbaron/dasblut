@@ -101,10 +101,16 @@ function aimAndFire(world: World, v: Vehicle, dt: number): void {
     }
   }
 
-  // Machine gun hoses infantry independently of the main gun's reload.
+  // Machine gun hoses infantry independently of the main gun's reload — but it's coax,
+  // mounted in the turret, so it only covers wherever the barrel is currently pointed.
+  // A tank whose turret is still traversing onto a vehicle (or hasn't turned to face a
+  // man who closed in from an angle) can't hose him until it swings onto him — the same
+  // aim gate the main gun already respects.
   if (inf && v.mgAmmo > 0) {
+    const mgAng = Math.atan2(inf.y - v.y, inf.x - v.x);
+    const mgAligned = Math.abs(angleDiff(v.turret, mgAng)) < 0.16;
     const d = Math.hypot(inf.x - v.x, inf.y - v.y);
-    if (d <= def.mg.rangeCells && hasLOS(world.grid, Math.floor(v.x), Math.floor(v.y), Math.floor(inf.x), Math.floor(inf.y), world.smokeGrid)) {
+    if (mgAligned && d <= def.mg.rangeCells && hasLOS(world.grid, Math.floor(v.x), Math.floor(v.y), Math.floor(inf.x), Math.floor(inf.y), world.smokeGrid)) {
       let guard = 6;
       while (v.mgCD <= 0 && v.mgAmmo > 0 && guard-- > 0) {
         v.mgCD += 1 / def.mg.rof;

@@ -24,7 +24,7 @@ import { hasLOS } from "./los.ts";
 import { updateMorale } from "./morale.ts";
 import { findPath, smoothPath } from "./pathfinding.ts";
 import { TERRAIN } from "./terrain.ts";
-import { updateVehicles } from "./vehicleSim.ts";
+import { updateVehicles, vehicleRadius } from "./vehicleSim.ts";
 import { updateVisibility } from "./visibility.ts";
 import { Soldier, Team, unitPassable, World } from "./world.ts";
 import { sound } from "../render/sound.ts";
@@ -197,6 +197,7 @@ function moveSoldiers(world: World): void {
 
   regroupStragglers(world, centers);
   separateSoldiers(world);
+  pushInfantryOffVehicles(world);
 }
 
 // Keep men from standing on top of one another. After everyone has moved, gently push
@@ -249,6 +250,32 @@ function separateSoldiers(world: World): void {
 
 function isHeavyPiece(w: string): boolean {
   return w === "cannon" || w === "catapult";
+}
+
+// A tank is heavier still and doesn't budge for a man either (same one-way rule gun/
+// catapult crews already get above) — any soldier whose position has drifted under or
+// into a vehicle's hull gets shoved clear of it, so a man never reads as standing
+// inside/on top of a tank. A wreck is just scenery, though — no need to keep men off a
+// burnt-out hull.
+const SOLDIER_RADIUS = SEP / 2;
+function pushInfantryOffVehicles(world: World): void {
+  for (const v of world.vehicles) {
+    if (v.status === "ko") continue;
+    const sep = vehicleRadius(v) + SOLDIER_RADIUS;
+    const sep2 = sep * sep;
+    for (const s of world.soldiers) {
+      if (s.status !== "active") continue;
+      let ox = s.x - v.x, oy = s.y - v.y;
+      const d2 = ox * ox + oy * oy;
+      if (d2 >= sep2) continue;
+      let d = Math.sqrt(d2);
+      if (d < 1e-4) { // dead-on overlap: pick a stable direction so they don't jitter
+        const ang = ((s.id * 2654435761) >>> 0) / 4294967296 * Math.PI * 2;
+        ox = Math.cos(ang); oy = Math.sin(ang); d = 1;
+      }
+      moveOnto(world, s, ox / d, oy / d, sep - d);
+    }
+  }
 }
 
 interface Pt2 { x: number; y: number; }

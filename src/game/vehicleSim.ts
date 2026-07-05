@@ -73,7 +73,7 @@ function separateVehicles(world: World): void {
 // dimension) — simpler than tracking each hull's exact facing, and close enough at this
 // scale; it just means two tanks settle a hair further apart than the tightest possible
 // side-by-side squeeze.
-function vehicleRadius(v: Vehicle): number {
+export function vehicleRadius(v: Vehicle): number {
   const def = VEHICLES[v.cls];
   return Math.max(def.hullLen, def.hullWid) / 2;
 }

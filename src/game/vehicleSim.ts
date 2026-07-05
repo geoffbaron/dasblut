@@ -4,7 +4,7 @@ import { damageBuildings } from "./buildingDamage.ts";
 import { SIM_DT } from "./constants.ts";
 import { hasLOS } from "./los.ts";
 import { TERRAIN } from "./terrain.ts";
-import { vehicleCost } from "./terrain.ts";
+import { vehicleCost, vehiclePassable } from "./terrain.ts";
 import { apHitChance, resolveArmorHit } from "./vehicleCombat.ts";
 import { VEHICLES } from "./vehicleDefs.ts";
 import { Soldier, Vehicle, World } from "./world.ts";
@@ -34,6 +34,56 @@ export function updateVehicles(world: World): void {
     const moved = (v.x - v.px) ** 2 + (v.y - v.py) ** 2 > 1e-7;
     sound.setEngine(v.id, moved, v.x, v.y);
   }
+  separateVehicles(world);
+}
+
+// Keep tanks from driving into/through one another. Pathing alone doesn't stop two
+// hulls converging on the same ground (a tank isn't a grid-cell-sized obstacle to
+// another tank's pathfinder), so after everyone's moved this step, gently push apart
+// any two whose hulls have come closer than their combined half-lengths — the same
+// after-the-fact separation infantry already gets (see separateSoldiers in sim.ts).
+// O(n²) is fine: a side fields at most a handful of vehicles.
+function separateVehicles(world: World): void {
+  const vehicles = world.vehicles.filter((v) => v.status !== "ko");
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i < vehicles.length; i++) {
+      const a = vehicles[i];
+      const aR = vehicleRadius(a);
+      for (let j = i + 1; j < vehicles.length; j++) {
+        const b = vehicles[j];
+        const sep = aR + vehicleRadius(b);
+        let ox = b.x - a.x, oy = b.y - a.y;
+        let d2 = ox * ox + oy * oy;
+        if (d2 >= sep * sep) continue;
+        let d = Math.sqrt(d2);
+        if (d < 1e-4) { // dead-on overlap: pick a stable direction so they don't jitter
+          const ang = ((a.id * 2654435761) >>> 0) / 4294967296 * Math.PI * 2;
+          ox = Math.cos(ang); oy = Math.sin(ang); d = 1;
+        }
+        const ux = ox / d, uy = oy / d;
+        const overlap = sep - d;
+        pushVehicle(world, a, -ux, -uy, overlap * 0.5);
+        pushVehicle(world, b, ux, uy, overlap * 0.5);
+      }
+    }
+  }
+}
+
+// A circle guaranteed to cover the hull's rotated footprint (radius = half the longer
+// dimension) — simpler than tracking each hull's exact facing, and close enough at this
+// scale; it just means two tanks settle a hair further apart than the tightest possible
+// side-by-side squeeze.
+function vehicleRadius(v: Vehicle): number {
+  const def = VEHICLES[v.cls];
+  return Math.max(def.hullLen, def.hullWid) / 2;
+}
+
+function pushVehicle(world: World, v: Vehicle, ux: number, uy: number, d: number): void {
+  const passable = (cx: number, cy: number) => world.grid.inBounds(cx, cy) && vehiclePassable(world.grid.get(cx, cy));
+  const nx = v.x + ux * d, ny = v.y + uy * d;
+  if (passable(Math.floor(nx), Math.floor(ny))) { v.x = nx; v.y = ny; }
+  else if (passable(Math.floor(v.x + ux * d), Math.floor(v.y))) v.x += ux * d;
+  else if (passable(Math.floor(v.x), Math.floor(v.y + uy * d))) v.y += uy * d;
 }
 
 function acquire(world: World, v: Vehicle): void {

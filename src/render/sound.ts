@@ -44,7 +44,13 @@ export type SfxId =
   | "arrow_hit"
   | "blaster"
   | "heavyblaster"
-  | "rocket";
+  | "rocket"
+  | "sw_cannon"
+  | "sw_explosion"
+  | "sw_engine"
+  | "sw_walker"
+  | "sw_ambient"
+  | "sw_scream";
 
 // Maps each game event to one or more real audio files in public/sfx/ (filenames are
 // the exact drop-in names, including extension — they're URL-encoded at load time so
@@ -160,11 +166,38 @@ const SFX_DEFS: Record<SfxId, { files: string[]; vol: number }> = {
   melee_med:      { files: [MED_SWORD_SHIELD, MED_SWORD_ARMOR, MED_MELEE_STRUGGLE], vol: 0.7 }, // sword on shield/armour
   warcry:         { files: [MED_WARCRY],   vol: 0.6 },  // a mass roar as men charge home
   arrow_hit:      { files: [MED_ARROW_HIT], vol: 0.55 }, // shafts thudding into shields/flesh
-  // Star Wars — no real samples yet; the synth fallback's square-wave pew reads laser
-  // enough until files are dropped in. The rocket reuses the bazooka blast.
-  blaster:        { files: [],              vol: 0.7 },
-  heavyblaster:   { files: [],              vol: 0.8 },
-  rocket:         { files: [BAZOOKA_BLAST], vol: 1.0 },
+  // Star Wars — clips generated on ElevenLabs (sound-effects). The SW_REMAP table
+  // below reroutes every shared event id (tank guns, explosions, screams, the ambient
+  // bed, engines) to these when era === "starwars", so NO WW2 sample ever plays in a
+  // Star Wars battle.
+  blaster:        { files: ["sw_blaster.mp3", "sw_blaster2.mp3"], vol: 0.75 },
+  heavyblaster:   { files: ["sw_heavyblaster.mp3"], vol: 0.8 },
+  rocket:         { files: ["sw_rocket.mp3"],    vol: 1.0 },
+  sw_cannon:      { files: ["sw_cannon.mp3"],    vol: 1.0 },  // AT-ST / hovertank main gun
+  sw_explosion:   { files: ["sw_explosion.mp3"], vol: 1.0 },
+  sw_engine:      { files: ["sw_engine.mp3"],    vol: 0.4 },  // repulsorlift hum, looped while moving
+  sw_walker:      { files: ["sw_walker.mp3"],    vol: 0.55 }, // AT-ST servo footsteps, looped while walking
+  sw_ambient:     { files: ["sw_ambient.mp3"],   vol: 0.3 },
+  // Death cries: the classic Wilhelm scream takes its rightful place in the pool,
+  // alongside the era-neutral human screams so it stays a treat, not a loop.
+  sw_scream:      { files: ["wilhelm.mp3", SCREAM_US, SCREAM1, SCREAM2], vol: 0.95 },
+};
+
+// When a Star Wars battle is running, shared event ids reroute to the SW set so no
+// WW2 sample (MG42 coax, tank booms, aircraft ambience) ever leaks into the era.
+// Weapon-specific ids (blaster/heavyblaster/rocket) already arrive correct.
+const SW_REMAP: Partial<Record<SfxId, SfxId>> = {
+  tank_ap: "sw_cannon",
+  tank_he: "sw_cannon",
+  tank_mg: "heavyblaster",
+  tank_hit: "sw_explosion",
+  tank_destroy: "sw_explosion",
+  explosion: "sw_explosion",
+  mortar: "rocket", // proton-mortar launch reads as the same energy-launcher whoosh
+  tank_engine: "sw_engine",
+  ambient: "sw_ambient",
+  soldier_scream: "sw_scream",
+  soldier_scream_us: "sw_scream",
 };
 
 // Maximum audible sounds per frame to avoid an audio avalanche during heavy combat.
@@ -220,6 +253,7 @@ export class SoundManager {
   // `priority` events (deaths/screams) draw from a separate reserved budget so they
   // are never crowded out by routine gunfire.
   play(id: SfxId, worldX: number, worldY: number, priority = false) {
+    if (this.era === "starwars") id = SW_REMAP[id] ?? id;
     // Cull out-of-earshot sounds BEFORE spending the per-frame budget, otherwise a
     // burst of distant gunfire silently eats the budget and starves the close-up
     // shots the player is actually watching.
@@ -251,8 +285,11 @@ export class SoundManager {
 
   // Start/maintain/stop a looping engine sound for a vehicle. Call every step with
   // whether the tank is currently moving; volume and pan track the camera so the
-  // engine swells as you watch it and fades as it drives off.
-  setEngine(vehId: number, moving: boolean, worldX: number, worldY: number) {
+  // engine swells as you watch it and fades as it drives off. `engineId` lets a
+  // vehicle bring its own loop (AT-ST servo footsteps vs a repulsor hum vs the
+  // default tank engine); the Star Wars remap still applies on top.
+  setEngine(vehId: number, moving: boolean, worldX: number, worldY: number, engineId: SfxId = "tank_engine") {
+    if (this.era === "starwars") engineId = SW_REMAP[engineId] ?? engineId;
     const cur = this.engines.get(vehId);
     if (!moving) {
       if (cur) {
@@ -267,15 +304,15 @@ export class SoundManager {
     const vol = dist > FADE_CELLS ? 0 : (1 - dist / FADE_CELLS) ** 1.5;
     const pan = Math.max(-1, Math.min(1, dx / (FADE_CELLS * 0.5)));
     if (!cur) {
-      const howl = this.pickHowl("tank_engine");
+      const howl = this.pickHowl(engineId);
       if (!howl) return; // no engine files → stay silent (no synth loop)
       const sid = howl.play();
       howl.loop(true, sid);
-      howl.volume(SFX_DEFS.tank_engine.vol * vol, sid);
+      howl.volume(SFX_DEFS[engineId].vol * vol, sid);
       howl.stereo(pan, sid);
       this.engines.set(vehId, { howl, sid });
     } else {
-      cur.howl.volume(SFX_DEFS.tank_engine.vol * vol, cur.sid);
+      cur.howl.volume(SFX_DEFS[engineId].vol * vol, cur.sid);
       cur.howl.stereo(pan, cur.sid);
     }
   }
@@ -309,6 +346,18 @@ export class SoundManager {
       if (!howl) return;
       const sid = howl.play();
       howl.volume(id === "med_ambient" ? 0.24 : id === "warhorn" || id === "warcry" ? 0.22 : 0.16, sid); // distant
+      howl.stereo((Math.random() * 2 - 1) * 0.75, sid);
+      return;
+    }
+    // Star Wars: no aircraft — a distant din of blaster fire, with the odd far-off
+    // cannon report or explosion rolling across the field.
+    if (this.era === "starwars") {
+      const r = Math.random();
+      const id: SfxId = r < 0.6 ? "sw_ambient" : r < 0.85 ? "blaster" : "sw_cannon";
+      const howl = this.pickHowl(id);
+      if (!howl) return;
+      const sid = howl.play();
+      howl.volume(id === "sw_ambient" ? 0.28 : 0.14, sid); // distant
       howl.stereo((Math.random() * 2 - 1) * 0.75, sid);
       return;
     }
@@ -369,7 +418,7 @@ export class SoundManager {
 
       const { freq, dur, type } = FALLBACK_PARAMS[id] ?? { freq: 200, dur: 0.1, type: "sawtooth" as OscillatorType };
 
-      if (id === "explosion" || id === "tank_he" || id === "tank_destroy") {
+      if (id === "explosion" || id === "tank_he" || id === "tank_destroy" || id === "sw_explosion") {
         // Noise burst for explosions.
         const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
         const data = buf.getChannelData(0);
@@ -424,6 +473,9 @@ const FALLBACK_PARAMS: Partial<Record<SfxId, { freq: number; dur: number; type: 
   blaster:        { freq: 1400, dur: 0.09, type: "square"    },
   heavyblaster:   { freq: 1100, dur: 0.07, type: "square"    },
   rocket:         { freq: 300,  dur: 0.20, type: "sawtooth"  },
+  sw_cannon:      { freq: 520,  dur: 0.22, type: "square"    }, // heavier, deeper pew
+  sw_ambient:     { freq: 1300, dur: 0.18, type: "square"    }, // faint distant bolt echo
+  sw_scream:      { freq: 480,  dur: 0.25, type: "sine"      },
 };
 
 // Singleton — one manager for the whole game.

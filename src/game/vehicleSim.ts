@@ -7,7 +7,7 @@ import { TERRAIN } from "./terrain.ts";
 import { vehicleCost, vehiclePassable } from "./terrain.ts";
 import { apHitChance, resolveArmorHit } from "./vehicleCombat.ts";
 import { VEHICLES } from "./vehicleDefs.ts";
-import { Soldier, Vehicle, World } from "./world.ts";
+import { boltColor, Soldier, Vehicle, World } from "./world.ts";
 import { sound } from "../render/sound.ts";
 
 // One step of armored-vehicle behaviour: acquire targets, traverse the turret, fire
@@ -30,9 +30,12 @@ export function updateVehicles(world: World): void {
     aimAndFire(world, v, dt);
     selfPreserve(world, v, dt);
     move(world, v, dt);
-    // Run the engine loop whenever the hull actually shifted this step.
+    // Run the engine loop whenever the hull actually shifted this step. A walker
+    // clanks along on servo footsteps; a repulsor craft hums; tanks get the engine.
+    const vdef = VEHICLES[v.cls];
+    const engineId = vdef.walker ? "sw_walker" as const : vdef.hover ? "sw_engine" as const : "tank_engine" as const;
     const moved = (v.x - v.px) ** 2 + (v.y - v.py) ** 2 > 1e-7;
-    sound.setEngine(v.id, moved, v.x, v.y);
+    sound.setEngine(v.id, moved, v.x, v.y, engineId);
   }
   separateVehicles(world);
 }
@@ -174,7 +177,7 @@ function aimAndFire(world: World, v: Vehicle, dt: number): void {
 function fireAP(world: World, v: Vehicle, target: Vehicle, def: (typeof VEHICLES)[keyof typeof VEHICLES]): void {
   const muzzle = gunMuzzle(v);
   sound.play("tank_ap", muzzle.x, muzzle.y);
-  world.effects.push({ kind: "ap", x0: muzzle.x, y0: muzzle.y, x1: target.x, y1: target.y, ttl: 0.12 });
+  world.effects.push({ kind: "ap", x0: muzzle.x, y0: muzzle.y, x1: target.x, y1: target.y, ttl: 0.12, color: boltColor(world.era, v.faction) });
   world.effects.push({ kind: "flash", x0: muzzle.x, y0: muzzle.y, x1: muzzle.x, y1: muzzle.y, ttl: 0.08 });
   const d = Math.hypot(target.x - v.x, target.y - v.y);
   const p = apHitChance(def.gun.accuracy, d, def.gun.rangeCells, v.path != null, target.path != null, v.suppression);
@@ -192,7 +195,7 @@ function fireHEAtPoint(world: World, v: Vehicle, tx: number, ty: number, def: (t
   const muzzle = gunMuzzle(v);
   sound.play("tank_he", muzzle.x, muzzle.y);
   sound.play("explosion", tx, ty);
-  world.effects.push({ kind: "ap", x0: muzzle.x, y0: muzzle.y, x1: tx, y1: ty, ttl: 0.1 });
+  world.effects.push({ kind: "ap", x0: muzzle.x, y0: muzzle.y, x1: tx, y1: ty, ttl: 0.1, color: boltColor(world.era, v.faction) });
   world.effects.push({ kind: "flash", x0: muzzle.x, y0: muzzle.y, x1: muzzle.x, y1: muzzle.y, ttl: 0.08 });
   world.effects.push({ kind: "hit", x0: tx, y0: ty, x1: tx, y1: ty, ttl: 0.35 });
   world.effects.push({ kind: "smoke", x0: tx, y0: ty, x1: 0, y1: 0, ttl: 1.2, maxTtl: 1.2 });
@@ -215,7 +218,7 @@ function fireHEAtPoint(world: World, v: Vehicle, tx: number, ty: number, def: (t
 function mgShot(world: World, v: Vehicle, target: Soldier, def: (typeof VEHICLES)[keyof typeof VEHICLES], d: number): void {
   sound.play("tank_mg", v.x, v.y);
   if (Math.random() < 0.55) {
-    world.effects.push({ kind: "tracer", x0: v.x, y0: v.y, x1: target.x, y1: target.y, ttl: 0.16 });
+    world.effects.push({ kind: "tracer", x0: v.x, y0: v.y, x1: target.x, y1: target.y, ttl: 0.16, color: boltColor(world.era, v.faction) });
     spawnRicochet(world, target.x, target.y);
   }
   world.effects.push({ kind: "flash", x0: v.x, y0: v.y, x1: v.x, y1: v.y, ttl: 0.05 });

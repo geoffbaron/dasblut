@@ -750,7 +750,9 @@ async function startGame(map: GameMap, objectiveCount = 1, setup: GameSetup = DE
   updateVisibility(world, VIS_INTERVAL);
   const renderer = new Renderer();
   await renderer.init(mount, world);
-  (window as { __game?: unknown }).__game = { world, renderer };
+  // `sound` included so a debug console can inspect the app's actual instance —
+  // a dynamic import gets a different module copy under Vite HMR timestamps.
+  (window as { __game?: unknown }).__game = { world, renderer, sound };
 
   const hud = installHUD(world, renderer, { side: world.player, local: true });
 

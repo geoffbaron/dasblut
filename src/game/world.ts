@@ -122,6 +122,15 @@ export interface Effect {
   y1: number;
   ttl: number;
   maxTtl?: number; // for effects that grow/fade over their lifetime (smoke)
+  color?: number; // tracer/ap override — Star Wars blaster bolts are faction-colored
+}
+
+// Star Wars bolt colors, straight from the first corridor fight in A New Hope: Rebel
+// fleet troopers fire BLUE bolts, stormtroopers fire RED. Undefined outside that era,
+// so every other period keeps its normal amber tracers.
+export function boltColor(era: Era, f: Faction): number | undefined {
+  if (era !== "starwars") return undefined;
+  return f === "us" ? 0x4da2ff : 0xff3d30;
 }
 
 // A line for the casualty ticker and the end-of-battle report. `faction` is whoever

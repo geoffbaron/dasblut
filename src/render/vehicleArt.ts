@@ -29,7 +29,7 @@ export function makeVehicleArt(def: VehicleDef): VehicleArt {
   return {
     hull: drawHull(def, hullW, hullH, hullPx),
     turret: drawTurret(def, turretD, barrel, turretPx),
-    shadow: drawShadow(hullW, hullH, hullPx),
+    shadow: drawShadow(hullW, hullH, hullPx, def.hover),
     wreck: drawWreck(hullW, hullH, hullPx),
     scale: 1 / SS,
     hullCanvasPx: hullPx,
@@ -54,6 +54,7 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 
 function drawHull(def: VehicleDef, w: number, h: number, px: number): HTMLCanvasElement {
   if (def.walker) return drawWalkerLegs(def, w, h, px);
+  if (def.hover) return drawHoverHull(def, w, h, px);
   const { c, ctx } = ctxFor(px);
   const hex = `#${def.bodyColor.toString(16).padStart(6, "0")}`;
   // Tracks (darker bands along the sides, i.e. top/bottom when pointing east).
@@ -88,6 +89,61 @@ function drawHull(def: VehicleDef, w: number, h: number, px: number): HTMLCanvas
   ctx.lineWidth = 1;
   roundRect(ctx, -w / 2, -h / 2, w, h, 3);
   ctx.stroke();
+  return c;
+}
+
+// A repulsorlift hovertank from above: no tracks anywhere — a smooth wedge-nosed pod
+// with armored side skirts and a pair of glowing blue repulsor exhausts at the stern.
+// Deliberately nothing like the tracked WW2 silhouette.
+function drawHoverHull(def: VehicleDef, w: number, h: number, px: number): HTMLCanvasElement {
+  const { c, ctx } = ctxFor(px);
+  const hex = `#${def.bodyColor.toString(16).padStart(6, "0")}`;
+  // Main pod: a capsule tapering to a wedge prow at the front (+x).
+  const bodyH = h * 0.82;
+  ctx.beginPath();
+  ctx.moveTo(-w / 2 + 2, -bodyH / 2);
+  ctx.lineTo(w * 0.22, -bodyH / 2);
+  ctx.lineTo(w / 2, -bodyH * 0.16); // wedge nose
+  ctx.lineTo(w / 2, bodyH * 0.16);
+  ctx.lineTo(w * 0.22, bodyH / 2);
+  ctx.lineTo(-w / 2 + 2, bodyH / 2);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(0, -bodyH / 2, 0, bodyH / 2);
+  grad.addColorStop(0, lighten(hex, 22));
+  grad.addColorStop(0.5, hex);
+  grad.addColorStop(1, lighten(hex, -24));
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,0.45)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  // Armored side skirts hanging over the repulsor field, one along each flank.
+  ctx.fillStyle = lighten(hex, -16);
+  for (const side of [-1, 1]) {
+    roundRect(ctx, -w * 0.42, side * bodyH * 0.5 - (side > 0 ? 0 : h * 0.09), w * 0.66, h * 0.09, 1.5);
+    ctx.fill();
+  }
+  // Panel seams across the deck.
+  ctx.strokeStyle = "rgba(0,0,0,0.25)";
+  ctx.lineWidth = 0.8;
+  for (const x of [-w * 0.24, w * 0.05]) {
+    ctx.beginPath();
+    ctx.moveTo(x, -bodyH * 0.42);
+    ctx.lineTo(x, bodyH * 0.42);
+    ctx.stroke();
+  }
+  // Twin repulsor exhausts glowing at the stern (-x).
+  for (const side of [-1, 1]) {
+    const ey = side * bodyH * 0.22;
+    const g2 = ctx.createRadialGradient(-w / 2 + 1.5, ey, 0.4, -w / 2 + 1.5, ey, 4.5);
+    g2.addColorStop(0, "rgba(150,210,255,0.95)");
+    g2.addColorStop(0.5, "rgba(80,150,255,0.55)");
+    g2.addColorStop(1, "rgba(80,150,255,0)");
+    ctx.fillStyle = g2;
+    ctx.beginPath();
+    ctx.arc(-w / 2 + 1.5, ey, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
   return c;
 }
 
@@ -132,6 +188,7 @@ function drawWalkerLegs(def: VehicleDef, w: number, h: number, px: number): HTML
 
 function drawTurret(def: VehicleDef, d: number, barrel: number, px: number): HTMLCanvasElement {
   if (def.walker) return drawWalkerHead(def, d, barrel, px);
+  if (def.hover) return drawHoverTurret(def, d, barrel, px);
   const { c, ctx } = ctxFor(px);
   const hex = `#${def.turretColor.toString(16).padStart(6, "0")}`;
   // Gun barrel forward (+x).
@@ -157,6 +214,50 @@ function drawTurret(def: VehicleDef, d: number, barrel: number, px: number): HTM
   ctx.fillStyle = lighten(hex, -10);
   ctx.beginPath();
   ctx.arc(-d * 0.15, -d * 0.18, d * 0.14, 0, Math.PI * 2);
+  ctx.fill();
+  return c;
+}
+
+// The hovertank's gun: a low angular blister (not the WW2 round dome) with a slim
+// laser-cannon barrel ending in a flared emitter tip, plus a small blue sensor eye.
+function drawHoverTurret(def: VehicleDef, d: number, barrel: number, px: number): HTMLCanvasElement {
+  const { c, ctx } = ctxFor(px);
+  const hex = `#${def.turretColor.toString(16).padStart(6, "0")}`;
+  // Slim barrel with a flared emitter at the muzzle.
+  ctx.strokeStyle = "#1c1d17";
+  ctx.lineWidth = 2;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(d * 0.25, 0);
+  ctx.lineTo(d * 0.25 + barrel, 0);
+  ctx.stroke();
+  ctx.lineWidth = 3.4;
+  ctx.beginPath();
+  ctx.moveTo(d * 0.25 + barrel * 0.82, 0);
+  ctx.lineTo(d * 0.25 + barrel, 0);
+  ctx.stroke();
+  // Low hexagonal blister, wider than deep.
+  const tw = d * 1.0, th = d * 0.8;
+  ctx.beginPath();
+  ctx.moveTo(-tw / 2, 0);
+  ctx.lineTo(-tw * 0.28, -th / 2);
+  ctx.lineTo(tw * 0.3, -th / 2);
+  ctx.lineTo(tw / 2, 0);
+  ctx.lineTo(tw * 0.3, th / 2);
+  ctx.lineTo(-tw * 0.28, th / 2);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(-tw / 2, -th / 2, tw / 2, th / 2);
+  grad.addColorStop(0, lighten(hex, 22));
+  grad.addColorStop(1, lighten(hex, -20));
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,0.45)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  // Sensor eye.
+  ctx.fillStyle = "rgba(120,190,255,0.9)";
+  ctx.beginPath();
+  ctx.arc(tw * 0.18, -th * 0.16, 1.6, 0, Math.PI * 2);
   ctx.fill();
   return c;
 }
@@ -200,8 +301,16 @@ function drawWalkerHead(def: VehicleDef, d: number, barrel: number, px: number):
   return c;
 }
 
-function drawShadow(w: number, h: number, px: number): HTMLCanvasElement {
+function drawShadow(w: number, h: number, px: number, hover = false): HTMLCanvasElement {
   const { c, ctx } = ctxFor(px);
+  if (hover) {
+    // A repulsor craft floats: its shadow sits further offset, smaller and softer, so
+    // the hull visibly rides above the ground instead of resting on it.
+    ctx.fillStyle = "rgba(8,10,6,0.3)";
+    roundRect(ctx, -w * 0.42 + 4, -h * 0.42 + 6, w * 0.84, h * 0.84, 5);
+    ctx.fill();
+    return c;
+  }
   ctx.fillStyle = "rgba(8,10,6,0.4)";
   roundRect(ctx, -w / 2 + 2, -h / 2 + 3, w, h, 4);
   ctx.fill();

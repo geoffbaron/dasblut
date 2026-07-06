@@ -813,11 +813,15 @@ export class Renderer {
       if (e.kind === "tracer") {
         // A glowing round in flight: a hot core over a softer outer streak so it reads at
         // a glance and lingers a beat, making a stream of fire easy to follow to its source.
+        // A colored effect (Star Wars blaster bolt) glows in its faction color with a
+        // near-white core, film-style; otherwise it's the standard WW2 amber tracer.
         const a = Math.min(1, e.ttl / 0.08);
+        const glow = e.color ?? 0xffbe3a;
+        const core = e.color != null ? 0xf4f9ff : 0xfff2b0;
         g.moveTo(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE).lineTo(e.x1 * CELL_SIZE, e.y1 * CELL_SIZE);
-        g.stroke({ width: 3.0, color: 0xffbe3a, alpha: a * 0.4 });
+        g.stroke({ width: e.color != null ? 3.6 : 3.0, color: glow, alpha: a * (e.color != null ? 0.55 : 0.4) });
         g.moveTo(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE).lineTo(e.x1 * CELL_SIZE, e.y1 * CELL_SIZE);
-        g.stroke({ width: 1.5, color: 0xfff2b0, alpha: a * 0.95 });
+        g.stroke({ width: 1.5, color: core, alpha: a * 0.95 });
       } else if (e.kind === "shotline") {
         // Black-powder discharge — no tracer glow, just a quick pale flash-lit streak from
         // muzzle to aimpoint so a firing musket line is still readable through its own smoke.
@@ -846,8 +850,16 @@ export class Renderer {
         const r = 3 + (0.3 - e.ttl) * 18;
         g.circle(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE, r).fill({ color: 0x8c1d12, alpha: Math.max(0, e.ttl / 0.3) * 0.7 });
       } else if (e.kind === "ap") {
-        g.moveTo(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE).lineTo(e.x1 * CELL_SIZE, e.y1 * CELL_SIZE);
-        g.stroke({ width: 2.6, color: 0xfff2c0, alpha: 0.95 });
+        // A cannon round; colored (with a glow pass) for Star Wars vehicle bolts.
+        if (e.color != null) {
+          g.moveTo(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE).lineTo(e.x1 * CELL_SIZE, e.y1 * CELL_SIZE);
+          g.stroke({ width: 5, color: e.color, alpha: 0.5 });
+          g.moveTo(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE).lineTo(e.x1 * CELL_SIZE, e.y1 * CELL_SIZE);
+          g.stroke({ width: 2.2, color: 0xf4f9ff, alpha: 0.95 });
+        } else {
+          g.moveTo(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE).lineTo(e.x1 * CELL_SIZE, e.y1 * CELL_SIZE);
+          g.stroke({ width: 2.6, color: 0xfff2c0, alpha: 0.95 });
+        }
       } else if (e.kind === "rocket") {
         // A bazooka/Panzerfaust round in flight: deliberately NOT the tank "ap" line — a
         // warm flame-cored streak that eats into its own trail as it flies (a rocket is

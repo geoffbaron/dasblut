@@ -5,7 +5,7 @@ import { hasLOS } from "./los.ts";
 import { isBuildingInterior, isHardSurface, TERRAIN } from "./terrain.ts";
 import { knockOut, resolveArmorHit } from "./vehicleCombat.ts";
 import { WEAPONS } from "./weapons.ts";
-import { Faction, PendingGrenade, Soldier, Vehicle, World } from "./world.ts";
+import { boltColor, Faction, PendingGrenade, Soldier, Vehicle, World } from "./world.ts";
 import { sound } from "../render/sound.ts";
 import type { SfxId } from "../render/sound.ts";
 
@@ -242,7 +242,9 @@ function emitShot(world: World, s: Soldier, tx: number, ty: number): void {
     return;
   }
   if (Math.random() < w.tracerRate) {
-    world.effects.push({ kind: "tracer", x0: s.x, y0: s.y, x1: tx, y1: ty, ttl: 0.16 });
+    // Star Wars blasters fire faction-colored plasma bolts (Rebel blue / Imperial red);
+    // everywhere else `color` is undefined and the tracer stays WW2 amber.
+    world.effects.push({ kind: "tracer", x0: s.x, y0: s.y, x1: tx, y1: ty, ttl: 0.16, color: boltColor(world.era, s.faction) });
     spawnRicochet(world, tx, ty);
   }
 }

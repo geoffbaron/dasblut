@@ -15,6 +15,8 @@ export interface VehicleDef {
   hasTurret: boolean;
   /** A legged walker (AT-ST): drawn with feet instead of tracks, head instead of turret. */
   walker?: boolean;
+  /** A repulsorlift vehicle (AAC-1): smooth trackless pod, engine glow, floating shadow. */
+  hover?: boolean;
   crew: number;
   speed: number; // cells/sec on open ground
   hullTurn: number; // rad/sec
@@ -105,6 +107,7 @@ export const VEHICLES: Record<VehicleClass, VehicleDef> = {
     hullLen: 2.5,
     hullWid: 1.6,
     hasTurret: true,
+    hover: true,
     crew: 3,
     speed: 3.0,
     hullTurn: 1.3,

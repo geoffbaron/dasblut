@@ -244,10 +244,26 @@ function emitShot(world: World, s: Soldier, tx: number, ty: number): void {
   if (Math.random() < w.tracerRate) {
     // Star Wars blasters fire faction-colored plasma bolts (Rebel blue / Imperial red);
     // everywhere else `color` is undefined and the tracer stays WW2 amber.
-    world.effects.push({ kind: "tracer", x0: s.x, y0: s.y, x1: tx, y1: ty, ttl: 0.16, color: boltColor(world.era, s.faction) });
+    const color = boltColor(world.era, s.faction);
+    if (color != null) {
+      // A bolt is a short pulse that visibly FLIES to its mark (ttl = flight time at a
+      // fixed bolt speed; the renderer draws just the travelling head). Each one lands
+      // with its own scatter, so a firing squad sprays the way the films show it.
+      // No instant impact spark — the bolt hasn't arrived yet.
+      const sx = tx + (Math.random() - 0.5) * 1.6;
+      const sy = ty + (Math.random() - 0.5) * 1.6;
+      const flight = Math.max(0.12, Math.hypot(sx - s.x, sy - s.y) / BOLT_SPEED);
+      world.effects.push({ kind: "tracer", x0: s.x, y0: s.y, x1: sx, y1: sy, ttl: flight, maxTtl: flight, color });
+      return;
+    }
+    world.effects.push({ kind: "tracer", x0: s.x, y0: s.y, x1: tx, y1: ty, ttl: 0.16 });
     spawnRicochet(world, tx, ty);
   }
 }
+
+// How fast a blaster bolt crosses the field, in cells/second — slow enough to watch
+// fly (the film look), fast enough that fire still reads as instantaneous gameplay.
+const BOLT_SPEED = 55;
 
 // Suppressing fire onto a point: tracers in, suppression splashed over any enemy
 // near the aimpoint. Rattles defenders out of a window or treeline without needing

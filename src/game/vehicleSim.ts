@@ -174,10 +174,22 @@ function aimAndFire(world: World, v: Vehicle, dt: number): void {
   }
 }
 
+// Push a vehicle cannon shot effect: a colored travelling bolt in the Star Wars era
+// (flight time from a fixed bolt speed), the usual instant AP streak otherwise.
+function cannonBolt(world: World, x0: number, y0: number, x1: number, y1: number, faction: Vehicle["faction"]): void {
+  const color = boltColor(world.era, faction);
+  if (color != null) {
+    const flight = Math.max(0.1, Math.hypot(x1 - x0, y1 - y0) / 70); // cannon bolts fly faster than small arms
+    world.effects.push({ kind: "ap", x0, y0, x1, y1, ttl: flight, maxTtl: flight, color });
+  } else {
+    world.effects.push({ kind: "ap", x0, y0, x1, y1, ttl: 0.12 });
+  }
+}
+
 function fireAP(world: World, v: Vehicle, target: Vehicle, def: (typeof VEHICLES)[keyof typeof VEHICLES]): void {
   const muzzle = gunMuzzle(v);
   sound.play("tank_ap", muzzle.x, muzzle.y);
-  world.effects.push({ kind: "ap", x0: muzzle.x, y0: muzzle.y, x1: target.x, y1: target.y, ttl: 0.12, color: boltColor(world.era, v.faction) });
+  cannonBolt(world, muzzle.x, muzzle.y, target.x, target.y, v.faction);
   world.effects.push({ kind: "flash", x0: muzzle.x, y0: muzzle.y, x1: muzzle.x, y1: muzzle.y, ttl: 0.08 });
   const d = Math.hypot(target.x - v.x, target.y - v.y);
   const p = apHitChance(def.gun.accuracy, d, def.gun.rangeCells, v.path != null, target.path != null, v.suppression);
@@ -195,7 +207,7 @@ function fireHEAtPoint(world: World, v: Vehicle, tx: number, ty: number, def: (t
   const muzzle = gunMuzzle(v);
   sound.play("tank_he", muzzle.x, muzzle.y);
   sound.play("explosion", tx, ty);
-  world.effects.push({ kind: "ap", x0: muzzle.x, y0: muzzle.y, x1: tx, y1: ty, ttl: 0.1, color: boltColor(world.era, v.faction) });
+  cannonBolt(world, muzzle.x, muzzle.y, tx, ty, v.faction);
   world.effects.push({ kind: "flash", x0: muzzle.x, y0: muzzle.y, x1: muzzle.x, y1: muzzle.y, ttl: 0.08 });
   world.effects.push({ kind: "hit", x0: tx, y0: ty, x1: tx, y1: ty, ttl: 0.35 });
   world.effects.push({ kind: "smoke", x0: tx, y0: ty, x1: 0, y1: 0, ttl: 1.2, maxTtl: 1.2 });
@@ -218,8 +230,17 @@ function fireHEAtPoint(world: World, v: Vehicle, tx: number, ty: number, def: (t
 function mgShot(world: World, v: Vehicle, target: Soldier, def: (typeof VEHICLES)[keyof typeof VEHICLES], d: number): void {
   sound.play("tank_mg", v.x, v.y);
   if (Math.random() < 0.55) {
-    world.effects.push({ kind: "tracer", x0: v.x, y0: v.y, x1: target.x, y1: target.y, ttl: 0.16, color: boltColor(world.era, v.faction) });
-    spawnRicochet(world, target.x, target.y);
+    const color = boltColor(world.era, v.faction);
+    if (color != null) {
+      // Chin-gun bolts: short travelling pulses with per-shot scatter, like infantry fire.
+      const sx = target.x + (Math.random() - 0.5) * 1.6;
+      const sy = target.y + (Math.random() - 0.5) * 1.6;
+      const flight = Math.max(0.12, Math.hypot(sx - v.x, sy - v.y) / 55);
+      world.effects.push({ kind: "tracer", x0: v.x, y0: v.y, x1: sx, y1: sy, ttl: flight, maxTtl: flight, color });
+    } else {
+      world.effects.push({ kind: "tracer", x0: v.x, y0: v.y, x1: target.x, y1: target.y, ttl: 0.16 });
+      spawnRicochet(world, target.x, target.y);
+    }
   }
   world.effects.push({ kind: "flash", x0: v.x, y0: v.y, x1: v.x, y1: v.y, ttl: 0.05 });
   const tcx = Math.floor(target.x);

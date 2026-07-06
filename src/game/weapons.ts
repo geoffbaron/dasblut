@@ -92,9 +92,10 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
   // --- Star Wars ---
   // Blaster rifle (A280 / E-11): the trooper's arm on both sides. Reads like a WW2 rifle
   // with a faster cyclic rate and every bolt visible (tracerRate 1 — plasma glows).
-  blaster:      { id: "blaster",      name: "Blaster",          rangeCells: 34, rof: 1.4, accuracy: 0.18, suppression: 0.08, lethality: 0.55, ammo: 160, tracerRate: 1 },
+  // A touch LESS accurate than a rifle — blaster fire sprays the way the films show it.
+  blaster:      { id: "blaster",      name: "Blaster",          rangeCells: 34, rof: 1.4, accuracy: 0.14, suppression: 0.08, lethality: 0.55, ammo: 160, tracerRate: 1 },
   // Repeating blaster (E-Web / Z-6): the era's LMG — a stream of bolts that pins a squad.
-  heavyblaster: { id: "heavyblaster", name: "Repeater",         rangeCells: 40, rof: 8,   accuracy: 0.07, suppression: 0.08, lethality: 0.5,  ammo: 400, tracerRate: 0.8 },
+  heavyblaster: { id: "heavyblaster", name: "Repeater",         rangeCells: 40, rof: 8,   accuracy: 0.055, suppression: 0.08, lethality: 0.5,  ammo: 400, tracerRate: 0.8 },
   // Shoulder-fired rocket (HH-12 / smart rocket): the anti-walker weapon both sides carry.
   rocket:       { id: "rocket",       name: "Rocket Launcher",  rangeCells: 16, rof: 0.13, accuracy: 0.52, suppression: 0.04, lethality: 0.5, ammo: 5, tracerRate: 1, penetration: 105 },
 };

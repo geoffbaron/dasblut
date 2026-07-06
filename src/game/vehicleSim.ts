@@ -235,11 +235,14 @@ function mgShot(world: World, v: Vehicle, target: Soldier, def: (typeof VEHICLES
   if (Math.random() < 0.55) {
     const color = boltColor(world.era, v.faction);
     if (color != null) {
-      // Chin-gun bolts: short travelling pulses with per-shot scatter, like infantry fire.
+      // Chin-gun bolts: short travelling pulses with per-shot scatter, like infantry
+      // fire — and they leave the gun muzzle, not the middle of the hull. The coax
+      // only fires when the turret bears on the target, so the muzzle points true.
+      const muzzle = gunMuzzle(v);
       const sx = target.x + (Math.random() - 0.5) * 1.6;
       const sy = target.y + (Math.random() - 0.5) * 1.6;
-      const flight = Math.max(0.12, Math.hypot(sx - v.x, sy - v.y) / 55);
-      world.effects.push({ kind: "tracer", x0: v.x, y0: v.y, x1: sx, y1: sy, ttl: flight, maxTtl: flight, color });
+      const flight = Math.max(0.12, Math.hypot(sx - muzzle.x, sy - muzzle.y) / 55);
+      world.effects.push({ kind: "tracer", x0: muzzle.x, y0: muzzle.y, x1: sx, y1: sy, ttl: flight, maxTtl: flight, color });
     } else {
       world.effects.push({ kind: "tracer", x0: v.x, y0: v.y, x1: target.x, y1: target.y, ttl: 0.16 });
       spawnRicochet(world, target.x, target.y);

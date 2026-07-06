@@ -252,8 +252,13 @@ function emitShot(world: World, s: Soldier, tx: number, ty: number): void {
       // No instant impact spark — the bolt hasn't arrived yet.
       const sx = tx + (Math.random() - 0.5) * 1.6;
       const sy = ty + (Math.random() - 0.5) * 1.6;
-      const flight = Math.max(0.12, Math.hypot(sx - s.x, sy - s.y) / BOLT_SPEED);
-      world.effects.push({ kind: "tracer", x0: s.x, y0: s.y, x1: sx, y1: sy, ttl: flight, maxTtl: flight, color });
+      // Leave the muzzle, not the man's chest: start the bolt a body-length forward
+      // along the shot line so it visibly comes off the end of the levelled blaster.
+      const d = Math.hypot(sx - s.x, sy - s.y) || 1;
+      const mx = s.x + ((sx - s.x) / d) * MUZZLE_OFFSET;
+      const my = s.y + ((sy - s.y) / d) * MUZZLE_OFFSET;
+      const flight = Math.max(0.12, Math.hypot(sx - mx, sy - my) / BOLT_SPEED);
+      world.effects.push({ kind: "tracer", x0: mx, y0: my, x1: sx, y1: sy, ttl: flight, maxTtl: flight, color });
       return;
     }
     world.effects.push({ kind: "tracer", x0: s.x, y0: s.y, x1: tx, y1: ty, ttl: 0.16 });
@@ -264,6 +269,9 @@ function emitShot(world: World, s: Soldier, tx: number, ty: number): void {
 // How fast a blaster bolt crosses the field, in cells/second — slow enough to watch
 // fly (the film look), fast enough that fire still reads as instantaneous gameplay.
 const BOLT_SPEED = 55;
+// How far ahead of a soldier's centre his bolt spawns, in cells — the muzzle of the
+// levelled blaster, so bolts leave the barrel rather than his chest.
+const MUZZLE_OFFSET = 0.6;
 
 // Suppressing fire onto a point: tracers in, suppression splashed over any enemy
 // near the aimpoint. Rattles defenders out of a window or treeline without needing

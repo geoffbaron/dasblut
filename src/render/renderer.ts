@@ -951,7 +951,10 @@ export class Renderer {
     const dx = e.x1 - e.x0, dy = e.y1 - e.y0;
     const dist = Math.hypot(dx, dy) || 1;
     const ux = dx / dist, uy = dy / dist;
-    const bolt = Math.min(lenCells, dist * 0.5);
+    // The tail never reaches back past the muzzle: the bolt GROWS out of the barrel
+    // over its first fraction of flight, then detaches — otherwise a just-fired bolt's
+    // trail would stick out behind the origin, straight back through the shooter.
+    const bolt = Math.min(lenCells, dist * 0.5, dist * t);
     const hx = e.x0 + dx * t, hy = e.y0 + dy * t; // bolt head
     const tx = hx - ux * bolt, ty = hy - uy * bolt; // bolt tail
     g.moveTo(tx * CELL_SIZE, ty * CELL_SIZE).lineTo(hx * CELL_SIZE, hy * CELL_SIZE);

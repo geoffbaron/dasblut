@@ -467,11 +467,44 @@ export class Renderer {
             g.rect(px, py, s, s).fill({ color: 0x6a6258, alpha: 0.85 });
           }
         } else {
-          // Standing but battered: scorch plus a little debris.
-          g.circle(x + CELL_SIZE / 2, y + CELL_SIZE / 2, CELL_SIZE * 0.5).fill({ color: 0x14110d, alpha: Math.min(0.5, dmg * 0.5) });
-          for (let k = 0; k < 3; k++) {
-            const px = x + rnd() * CELL_SIZE, py = y + rnd() * CELL_SIZE, s = 1 + rnd() * 2;
-            g.rect(px, py, s, s).fill({ color: 0x3a342c, alpha: 0.6 });
+          // Standing but battered: an irregular scorch/crack pattern instead of one
+          // perfect circle stamped dead-center — several overlapping blobs at jittered
+          // offsets and sizes (bleeding a little past the cell edge so neighboring
+          // damaged cells read as continuous wreckage, not a grid of same-sized dots),
+          // scaling in count/size/spread with how hard the cell has actually been hit.
+          const sev = Math.min(1, dmg);
+          const blobs = 2 + Math.floor(sev * 3); // 2..5
+          for (let k = 0; k < blobs; k++) {
+            const bx = x + CELL_SIZE * (-0.1 + rnd() * 1.2);
+            const by = y + CELL_SIZE * (-0.1 + rnd() * 1.2);
+            const r = CELL_SIZE * (0.18 + rnd() * 0.24) * (0.7 + sev * 0.6);
+            const dark = 0x120f0b + (k % 2) * 0x040302; // a little tonal variation
+            g.circle(bx, by, r).fill({ color: dark, alpha: Math.min(0.55, (0.16 + rnd() * 0.16) * (0.5 + sev)) });
+          }
+          // Cracks radiating from a hit point, once damage is real enough to show them.
+          if (sev > 0.3) {
+            const hx = x + CELL_SIZE * (0.25 + rnd() * 0.5);
+            const hy = y + CELL_SIZE * (0.25 + rnd() * 0.5);
+            const cracks = 1 + Math.floor(sev * 2);
+            for (let c = 0; c < cracks; c++) {
+              const a = rnd() * Math.PI * 2;
+              const segLen = (CELL_SIZE * (0.3 + rnd() * 0.35)) / 3;
+              let px = hx, py = hy;
+              g.moveTo(px, py);
+              for (let seg = 0; seg < 3; seg++) {
+                px += Math.cos(a + (rnd() - 0.5) * 0.9) * segLen;
+                py += Math.sin(a + (rnd() - 0.5) * 0.9) * segLen;
+                g.lineTo(px, py);
+              }
+              g.stroke({ width: 0.6 + rnd() * 0.5, color: 0x0e0c09, alpha: 0.4 + rnd() * 0.25 });
+            }
+          }
+          // Scattered debris: dark char flecks and a few lighter dust/plaster chips.
+          const debris = 2 + Math.floor(sev * 4);
+          for (let k = 0; k < debris; k++) {
+            const px = x + rnd() * CELL_SIZE, py = y + rnd() * CELL_SIZE, s = 0.8 + rnd() * 2.2;
+            const light = rnd() < 0.35;
+            g.rect(px, py, s, s).fill({ color: light ? 0x8a8074 : 0x3a342c, alpha: light ? 0.45 : 0.6 });
           }
         }
       }

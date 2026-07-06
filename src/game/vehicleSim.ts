@@ -107,8 +107,11 @@ function acquire(world: World, v: Vehicle): void {
 
 function aimAndFire(world: World, v: Vehicle, dt: number): void {
   const def = VEHICLES[v.cls];
-  v.gunCD -= dt;
-  v.mgCD -= dt;
+  // Cooldowns never bank "debt" below one step of readiness — otherwise a gun that was
+  // masked or target-less for ten seconds dumps a catch-up burst the moment it bears,
+  // reading as a far higher rate of fire than the def specifies.
+  v.gunCD = Math.max(v.gunCD - dt, -dt);
+  v.mgCD = Math.max(v.mgCD - dt, -dt);
 
   // Player-directed ground bombardment takes priority over auto-acquired targets.
   if (v.fireCell) {

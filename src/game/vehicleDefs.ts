@@ -75,8 +75,10 @@ export const VEHICLES: Record<VehicleClass, VehicleDef> = {
 
   // --- Star Wars ---
   // AT-ST: a fast, agile scout walker with a small footprint and a quick-swiveling head.
-  // Murder on infantry (twin blaster cannons + grenade launcher), but lightly plated —
-  // even its front gives way to a rocket, and a flank shot is a sure kill.
+  // Deadly to infantry, but lightly plated — even its front gives way to a rocket, and a
+  // flank shot is a sure kill. Both SW vehicles fire DELIBERATELY: slow, heavy bolts
+  // (long reload, slow chin-gun cadence, high per-shot kill/suppression) rather than the
+  // WW2 tanks' chattering MG — each bolt lands like a small shell.
   atst: {
     name: "AT-ST",
     faction: "axis",
@@ -91,8 +93,8 @@ export const VEHICLES: Record<VehicleClass, VehicleDef> = {
     hullTurn: 1.6,
     turretTraverse: 1.3,
     armor: { front: 48, side: 32, rear: 26, top: 12 },
-    gun: { pen: 62, rangeCells: 36, reload: 2.4, accuracy: 0.65, heRadius: 1.9, heKill: 0.5 },
-    mg: { rangeCells: 24, rof: 11, suppression: 0.09, lethality: 0.5 },
+    gun: { pen: 62, rangeCells: 36, reload: 4.5, accuracy: 0.65, heRadius: 2.4, heKill: 0.7 },
+    mg: { rangeCells: 24, rof: 4, suppression: 0.14, lethality: 0.65 },
     apAmmo: 26,
     heAmmo: 48,
   },
@@ -113,8 +115,8 @@ export const VEHICLES: Record<VehicleClass, VehicleDef> = {
     hullTurn: 1.3,
     turretTraverse: 1.0,
     armor: { front: 60, side: 40, rear: 32, top: 16 },
-    gun: { pen: 80, rangeCells: 40, reload: 3.2, accuracy: 0.7, heRadius: 2.1, heKill: 0.55 },
-    mg: { rangeCells: 22, rof: 9, suppression: 0.08, lethality: 0.45 },
+    gun: { pen: 80, rangeCells: 40, reload: 5.5, accuracy: 0.7, heRadius: 2.6, heKill: 0.75 },
+    mg: { rangeCells: 22, rof: 3.5, suppression: 0.13, lethality: 0.6 },
     apAmmo: 30,
     heAmmo: 40,
   },

@@ -159,6 +159,32 @@ function nearestPassableCell(grid: Grid, cx: number, cy: number): { cx: number; 
 }
 
 async function fetchOverpass(s: number, w: number, n: number, e: number): Promise<OsmWay[]> {
+  // Prefer our own server's cached/raced proxy (see server/index.js: bbox-keyed cache,
+  // all mirrors queried in parallel) — this is what actually runs in production. Falls
+  // through to querying the mirrors directly only if that route doesn't exist, which is
+  // the case under a bare `vite dev` with no backend (no separate dev workflow needed;
+  // it just quietly degrades to the old behavior).
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 28_000);
+    try {
+      const res = await fetch(`/api/overpass?s=${s}&w=${w}&n=${n}&e=${e}`, { signal: ctrl.signal });
+      if (res.ok) {
+        const json = (await res.json()) as { elements: OsmWay[] };
+        return json.elements ?? [];
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch {
+    // no backend proxy reachable — fall through to direct mirror queries below
+  }
+  return fetchOverpassDirect(s, w, n, e);
+}
+
+// Fallback used when there's no server-side proxy to ask (e.g. a bare `vite dev` with
+// no Express backend running). Queries the public mirrors directly, one at a time.
+async function fetchOverpassDirect(s: number, w: number, n: number, e: number): Promise<OsmWay[]> {
   const bbox = `${s},${w},${n},${e}`;
   const q =
     `[out:json][timeout:25];(` +

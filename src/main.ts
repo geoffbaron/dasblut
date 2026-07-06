@@ -483,9 +483,11 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
 
   // --- roster ---
   const KIND_LABEL: Record<string, string> = { rifle: "RIFLE", mg: "MG", at: "AT", mortar: "MORTAR", infantry: "INFANTRY", cavalry: "CAVALRY", artillery: "ARTILLERY", archers: "ARCHERS" };
-  // Medieval units read with period names rather than the generic branch labels.
+  // Medieval and Star Wars units read with period names rather than the generic labels.
   const MED_KIND_LABEL: Record<string, string> = { infantry: "MEN-AT-ARMS", cavalry: "KNIGHTS", artillery: "CATAPULT", archers: "ARCHERS" };
-  const kindLabel = (kind: string): string => (world.era === "medieval" && MED_KIND_LABEL[kind]) || KIND_LABEL[kind] || kind.toUpperCase();
+  const SW_KIND_LABEL: Record<string, string> = { rifle: "TROOPERS", mg: "REPEATER", at: "ROCKET", mortar: "MORTAR" };
+  const kindLabel = (kind: string): string =>
+    (world.era === "medieval" && MED_KIND_LABEL[kind]) || (world.era === "starwars" && SW_KIND_LABEL[kind]) || KIND_LABEL[kind] || kind.toUpperCase();
   interface RosterCard { el: HTMLDivElement; count: HTMLSpanElement; moraleFill: HTMLDivElement; ammoFill: HTMLDivElement; strFill: HTMLDivElement; }
   const rosterCards = new Map<number, RosterCard>();
   const vehicleCards = new Map<number, RosterCard>();
@@ -702,6 +704,7 @@ function applyEraTutorial(world: World): void {
   const set = (id: string, html: string) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
   const sub = era === "medieval" ? "Close-Combat-style medieval battles. Here's how to play."
     : era === "acw" ? "Close-Combat-style US Civil War tactics. Here's how to play."
+    : era === "starwars" ? "Close-Combat-style Star Wars ground battles. Here's how to play."
     : "Close-Combat-style WW2 tactics. Here's how to play.";
   set("tutSub", sub);
   const holdS = world.objectiveHoldS;
@@ -710,6 +713,8 @@ function applyEraTutorial(world: World): void {
     ? `Take the crossroads <b>objective</b> and hold it for <b>${holdTxt}</b> before the clock runs out. Aldmere (blue) and Corvath (crimson) contest the ground.`
     : era === "acw"
     ? `Take the crossroads <b>objective</b> and hold it for <b>${holdTxt}</b> before the clock runs out. Union (blue) and Confederate (grey) fight for the ground.`
+    : era === "starwars"
+    ? `Take the crossroads <b>objective</b> and hold it for <b>${holdTxt}</b> before the clock runs out. The Rebellion (orange) and the Empire (white) fight for the ground.`
     : `Take the crossroads <b>objective</b> and hold it for <b>${holdTxt}</b> before the clock runs out. US (blue) and the Germans (red) fight for the ground.`;
   set("tutMission", mission);
   const units = era === "medieval"
@@ -721,6 +726,12 @@ function applyEraTutorial(world: World): void {
     ? "<li><b>INFANTRY</b> — big rifle-musket platoons; deadly volleys, but a slow muzzle-loading reload.</li>"
       + "<li><b>CAVALRY</b> — mounted carbines; fast skirmishers that can <b>charge</b> and ride down shaken men.</li>"
       + "<li><b>ARTILLERY</b> — a field-gun battery; shells at range, <b>canister</b> up close. Kill the crew to silence it.</li>"
+    : era === "starwars"
+    ? "<li><b>TROOPERS</b> — blaster squads; the backbone of the assault.</li>"
+      + "<li><b>REPEATER</b> — a repeating blaster; superb at <b>suppressing</b> the enemy so others can move.</li>"
+      + "<li><b>ROCKET</b> — a launcher team; kills walkers and tanks — aim for the <b>flank or rear</b>.</li>"
+      + "<li><b>MORTAR</b> — one tube, slow to reload; lobs shells or <b>smoke</b> over walls. You must call the shot.</li>"
+      + "<li><b>ARMOR</b> — the Rebels field a hovertank, the Empire an AT-ST; click to direct its fire.</li>"
     : "<li><b>RIFLE</b> — line infantry; the backbone of the assault.</li>"
       + "<li><b>MG</b> — light machine gun; superb at <b>suppressing</b> the enemy so others can move.</li>"
       + "<li><b>AT</b> — bazooka team; kills tanks — aim for the <b>flank or rear</b>.</li>"
@@ -728,7 +739,7 @@ function applyEraTutorial(world: World): void {
       + "<li><b>TANK</b> — your Sherman; click to direct its fire.</li>";
   set("tutUnits", units);
   const chargeRow = document.getElementById("tutChargeRow");
-  if (chargeRow) chargeRow.style.display = era !== "ww2" ? "" : "none";
+  if (chargeRow) chargeRow.style.display = era === "acw" || era === "medieval" ? "" : "none";
 }
 
 async function startGame(map: GameMap, objectiveCount = 1, setup: GameSetup = DEFAULT_SETUP) {

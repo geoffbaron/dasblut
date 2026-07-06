@@ -28,7 +28,7 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
   const setup = (): GameSetup => {
     const mode = (document.getElementById("gameMode") as HTMLSelectElement)?.value || "us-attacks";
     const eraVal = (document.getElementById("era") as HTMLSelectElement)?.value;
-    const era = (eraVal === "acw" || eraVal === "medieval" ? eraVal : "ww2") as GameSetup["era"];
+    const era = (eraVal === "acw" || eraVal === "medieval" || eraVal === "starwars" ? eraVal : "ww2") as GameSetup["era"];
     const usTanks = tanks("usTanks"), axisTanks = tanks("axisTanks");
     const fortify = (document.getElementById("cover") as HTMLSelectElement)?.value === "1";
     const objectiveHoldS = parseInt((document.getElementById("holdTime") as HTMLSelectElement)?.value || "180", 10);
@@ -49,10 +49,14 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
   // guns in the Civil War, US/Axis & tanks in WW2). Option values are unchanged.
   const relabel = () => {
     const era = (document.getElementById("era") as HTMLSelectElement)?.value;
-    const blue = era === "medieval" ? "Aldmere" : era === "acw" ? "Union" : "US";
-    const red = era === "medieval" ? "Corvath" : era === "acw" ? "Confederate" : "Axis";
+    const blue = era === "medieval" ? "Aldmere" : era === "acw" ? "Union" : era === "starwars" ? "Rebellion" : "US";
+    const red = era === "medieval" ? "Corvath" : era === "acw" ? "Confederate" : era === "starwars" ? "Empire" : "Axis";
+    // Each side's heavy-support noun — the same for both except Star Wars, where the
+    // Rebels field hovertanks and the Empire walks its AT-STs in.
     const noun = era === "medieval" ? "siege engine" : era === "acw" ? "gun" : "tank";
-    const unit = (n: number) => `${n} ${noun}${n > 1 ? "s" : ""}`;
+    const blueNoun = era === "starwars" ? "hovertank" : noun;
+    const redNoun = era === "starwars" ? "AT-ST" : noun;
+    const unit = (n: number, w: string) => `${n} ${w}${n > 1 ? "s" : ""}`;
     const opt = (sel: string, vals: Record<string, string>) => {
       const el = document.getElementById(sel) as HTMLSelectElement | null;
       if (el) for (const o of Array.from(el.options)) if (vals[o.value]) o.textContent = vals[o.value];
@@ -65,10 +69,11 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
       "meeting-axis": `Meeting — both attack (play ${red})`,
       "meeting-us": `Meeting — both attack (play ${blue})`,
     });
-    opt("usTanks", { "1": `${blue}: ${unit(1)}`, "2": `${blue}: ${unit(2)}`, "3": `${blue}: ${unit(3)}` });
-    opt("axisTanks", { "1": `${red}: ${unit(1)}`, "2": `${red}: ${unit(2)}`, "3": `${red}: ${unit(3)}` });
+    opt("usTanks", { "1": `${blue}: ${unit(1, blueNoun)}`, "2": `${blue}: ${unit(2, blueNoun)}`, "3": `${blue}: ${unit(3, blueNoun)}` });
+    opt("axisTanks", { "1": `${red}: ${unit(1, redNoun)}`, "2": `${red}: ${unit(2, redNoun)}`, "3": `${red}: ${unit(3, redNoun)}` });
     const coverOn = era === "medieval" ? "+ earthworks & palisades"
       : era === "acw" ? "+ ditches & fences"
+      : era === "starwars" ? "+ trenches & barricades"
       : "+ hedgerows, trenches & bunkers";
     opt("cover", { "0": "No field cover", "1": coverOn });
   };
@@ -215,7 +220,7 @@ interface Scenario {
   blurb: string;
   lat: number;
   lon: number;
-  era: "ww2" | "acw" | "medieval";
+  era: "ww2" | "acw" | "medieval" | "starwars";
   mode: string;
   obj: number;
   us: number;
@@ -258,5 +263,13 @@ const SCENARIOS: Scenario[] = [
     name: "Château Gaillard",
     blurb: "Normandy 1204 · storming the castle",
     lat: 49.2375, lon: 1.4040, era: "medieval", mode: "axis-attacks", obj: 1, us: 1, axis: 3, fortify: true,
+  },
+  // The forest moon of Endor — played on the actual California redwood grove where the
+  // Endor scenes were filmed. Rebel strike team assaults the dug-in Imperial garrison
+  // and its AT-ST screen around the shield-generator bunker.
+  {
+    name: "Endor",
+    blurb: "Star Wars · Rebels storm the shield bunker",
+    lat: 40.4864, lon: -123.9048, era: "starwars", mode: "us-attacks", obj: 1, us: 1, axis: 3, fortify: true,
   },
 ];

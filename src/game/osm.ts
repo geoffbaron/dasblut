@@ -29,7 +29,7 @@ interface OsmWay {
   geometry?: LatLon[];
 }
 
-export async function generateMap(centerLat: number, centerLon: number, label: string, era: "ww2" | "acw" | "medieval" = "ww2"): Promise<GameMap> {
+export async function generateMap(centerLat: number, centerLon: number, label: string, era: "ww2" | "acw" | "medieval" | "starwars" = "ww2"): Promise<GameMap> {
   const mLat = 111320;
   const mLon = 111320 * Math.cos((centerLat * Math.PI) / 180);
   const halfLat = BATTLEFIELD_H_M / 2 / mLat;

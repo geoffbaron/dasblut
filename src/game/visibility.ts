@@ -2,7 +2,7 @@ import { ACW_SPOT_BASE, ACW_VISION_CELLS, SPOT_BASE, SPOT_HYSTERESIS, VISION_CEL
 import { hasLOS } from "./los.ts";
 import { isBuildingInterior, TERRAIN } from "./terrain.ts";
 import { WEAPONS } from "./weapons.ts";
-import { Soldier, Vehicle, World } from "./world.ts";
+import { modernEra, Soldier, Vehicle, World } from "./world.ts";
 
 interface Spotter {
   x: number;
@@ -52,7 +52,7 @@ function markVision(world: World, x: number, y: number): void {
   const oy = Math.floor(y);
   // The Civil War is fought in the open in daylight: you can see across the field, so the
   // shroud lifts much further than the close, concealed WW2 battlefield.
-  const r = world.era === "ww2" ? VISION_CELLS : ACW_VISION_CELLS;
+  const r = modernEra(world.era) ? VISION_CELLS : ACW_VISION_CELLS;
   const r2 = r * r;
   for (let cy = oy - r; cy <= oy + r; cy++) {
     for (let cx = ox - r; cx <= ox + r; cx++) {
@@ -78,7 +78,7 @@ function spotSoldier(world: World, t: Soldier, spotters: Spotter[], dt: number):
   // Massed ranks standing upright in the open are visible at long range in the Civil War;
   // a gun and its crew (and powder smoke) are more conspicuous still. WW2 keeps the short
   // base — dispersed, prone, camouflaged men are hard to pick out.
-  const base = (world.era === "ww2" ? SPOT_BASE : ACW_SPOT_BASE) * (t.weapon === "cannon" || t.weapon === "catapult" ? 1.6 : 1);
+  const base = (modernEra(world.era) ? SPOT_BASE : ACW_SPOT_BASE) * (t.weapon === "cannon" || t.weapon === "catapult" ? 1.6 : 1);
   let range = base * (1 - conceal * 0.6);
   if (moving) range *= 1.3;
   if (t.stance === "sneak") range *= 0.45;

@@ -14,7 +14,14 @@ export type MoraleState = "steady" | "shaken" | "pinned" | "panicked" | "routing
 export type Stance = "move" | "fast" | "sneak" | "defend" | "ambush" | "charge";
 
 // The setting a battle is fought in. Each era swaps the whole armoury and unit roster.
-export type Era = "ww2" | "acw" | "medieval";
+export type Era = "ww2" | "acw" | "medieval" | "starwars";
+
+// Eras that fight like WW2 — dispersed squads moving loose from cover to cover with
+// modern (or better) small arms, short spotting ranges, and armored vehicles. The other
+// eras (ACW, medieval) fight in massed formed lines in the open.
+export function modernEra(era: Era): boolean {
+  return era === "ww2" || era === "starwars";
+}
 
 // A deliberately small, ECS-flavored world: flat arrays of entities with plain
 // component data. Enough structure to grow into a real ECS later, no ceremony now.
@@ -184,7 +191,7 @@ const FORMATION_SPACING = 0.42;
 // its piece. Offsets are returned in cells for ACW (used directly) and in blob units for
 // WW2 (scaled by FORMATION_SPACING at spawn).
 function formationSlot(era: Era, kind: SquadKind, i: number, count: number): { ox: number; oy: number } {
-  if (era === "ww2") return FORMATION[i % FORMATION.length]; // WW2: loose blob
+  if (modernEra(era)) return FORMATION[i % FORMATION.length]; // WW2/Star Wars: loose blob
   // ACW and medieval both fall in as ordered lines around a crew-served engine.
   if (kind === "artillery") {
     const crew = [{ ox: 0, oy: 0 }, { ox: -0.9, oy: 0.7 }, { ox: 0.9, oy: 0.7 }, { ox: -0.9, oy: -0.7 }, { ox: 0.9, oy: -0.7 }];
@@ -209,6 +216,7 @@ export type SquadKind =
 function squadLoadout(kind: SquadKind, count: number, faction: Faction, era: Era): WeaponId[] {
   if (era === "acw") return acwLoadout(kind, count);
   if (era === "medieval") return medievalLoadout(kind, count);
+  if (era === "starwars") return starwarsLoadout(kind, count);
   const at: WeaponId = faction === "us" ? "bazooka" : "panzerfaust";
   const tail: WeaponId[] =
     kind === "mg" ? ["lmg", "lmg", "rifle"]
@@ -217,6 +225,20 @@ function squadLoadout(kind: SquadKind, count: number, faction: Faction, era: Era
     : ["lmg", "rifle", "rifle"]; // rifle squad
   const out: WeaponId[] = ["smg"];
   for (let i = 1; i < count; i++) out.push(tail[i - 1] ?? "rifle");
+  return out;
+}
+
+// Star Wars loadouts, mirroring the WW2 squad shapes: every trooper carries a blaster;
+// support teams swap in a repeating blaster, shoulder rockets (the anti-walker arm both
+// sides field), or the same indirect mortar tube (a proton mortar in all but name).
+function starwarsLoadout(kind: SquadKind, count: number): WeaponId[] {
+  const tail: WeaponId[] =
+    kind === "mg" ? ["heavyblaster", "heavyblaster", "blaster"]
+    : kind === "at" ? ["rocket", "rocket", "blaster"]
+    : kind === "mortar" ? ["mortar", "blaster", "blaster"]
+    : ["heavyblaster", "blaster", "blaster"]; // trooper squad
+  const out: WeaponId[] = ["blaster"];
+  for (let i = 1; i < count; i++) out.push(tail[i - 1] ?? "blaster");
   return out;
 }
 
@@ -376,7 +398,9 @@ function addFortifications(
   const trenchRuns = 3 + Math.floor((W * H) / 6000);
   const lineRuns = 3 + Math.floor((W * H) / 5000);
 
-  if (era === "ww2") {
+  if (modernEra(era)) {
+    // WW2 and Star Wars dig in the same way: hedgerows/scrub lines, trenches, and
+    // sandbag/barricade strongpoints around the objectives.
     for (let i = 0; i < lineRuns; i++) scatterLine(Terrain.Hedge, rnd() < 0.7 ? 1 : 0, rnd() < 0.7 ? 0 : 1, 8 + Math.floor(rnd() * 9), true);
     for (let i = 0; i < trenchRuns; i++) scatterLine(Terrain.Trench, 1, (rnd() - 0.5) * 0.3, 6 + Math.floor(rnd() * 8));
     for (const o of objectives) {
@@ -432,11 +456,12 @@ export const DEFAULT_SETUP: GameSetup = {
 export function factionName(era: Era, f: Faction): string {
   if (era === "medieval") return f === "us" ? "Aldmere" : "Corvath";
   if (era === "acw") return f === "us" ? "Union" : "Confederate";
+  if (era === "starwars") return f === "us" ? "Rebellion" : "Empire";
   return f === "us" ? "US" : "Wehrmacht";
 }
 export function factionColor(era: Era, f: Faction): number {
-  if (f === "us") return era === "medieval" ? 0x3f68c8 : era === "acw" ? 0x3f6fc4 : 0x4f7fd1; // Aldmere / Union / US blue
-  return era === "medieval" ? 0xb03636 : era === "acw" ? 0x8d8f99 : 0xc4514a; // Corvath crimson / Confederate grey / German red
+  if (f === "us") return era === "medieval" ? 0x3f68c8 : era === "acw" ? 0x3f6fc4 : era === "starwars" ? 0xd07a35 : 0x4f7fd1; // Aldmere / Union blue, Rebel orange, US blue
+  return era === "medieval" ? 0xb03636 : era === "acw" ? 0x8d8f99 : era === "starwars" ? 0xaab2bc : 0xc4514a; // Corvath crimson / Confederate grey / stormtrooper white / German red
 }
 
 function other(f: Faction): Faction { return f === "us" ? "axis" : "us"; }
@@ -603,13 +628,14 @@ export class World {
     // same pool (no attacker edge) so a stand-up fight is decided by ground, nerve and the
     // bayonet — not a built-in advantage.
     const trainOf = (f: Faction) => {
-      const base = this.era !== "ww2" ? 0.6 : this.roleOf(f) === "attack" ? 0.64 : 0.56;
+      const base = !modernEra(this.era) ? 0.6 : this.roleOf(f) === "attack" ? 0.64 : 0.56;
       return Math.max(0.3, Math.min(0.9, base + (Math.random() - 0.5) * 0.5));
     };
-    // The maps carry a WW2 order of battle; other eras reuse the same deployment positions
-    // but field period units — ACW rifle-musket platoons, or a medieval host of men-at-arms.
+    // The maps carry a WW2 order of battle; Star Wars keeps the same squad structure
+    // (troopers/repeater/rocket/mortar teams), while ACW and medieval remap the same
+    // deployment positions into period units — rifle-musket platoons or men-at-arms.
     const orbat = (list: SquadSpawn[]) =>
-      this.era === "ww2" ? list : this.era === "medieval" ? medievalOrbat(list) : acwOrbat(list);
+      modernEra(this.era) ? list : this.era === "medieval" ? medievalOrbat(list) : acwOrbat(list);
     for (const s of orbat(map.spawns.us)) this.spawnSquad(s, this.southFaction, colorOf(this.southFaction), trainOf(this.southFaction));
     for (const s of orbat(map.spawns.axis)) this.spawnSquad(s, northFaction, colorOf(northFaction), trainOf(northFaction));
 
@@ -619,7 +645,7 @@ export class World {
     const northAnchor = map.spawns.axisVehicles[0] ?? { cx: (this.grid.width / 2) | 0, cy: 5 };
     const southCount = this.southFaction === "us" ? setup.usTanks : setup.axisTanks;
     const northCount = northFaction === "us" ? setup.usTanks : setup.axisTanks;
-    if (this.era === "ww2") {
+    if (modernEra(this.era)) {
       this.spawnTanks(this.southFaction, southCount, southAnchor.cx, southAnchor.cy, -Math.PI / 2);
       this.spawnTanks(northFaction, northCount, northAnchor.cx, northAnchor.cy, Math.PI / 2);
     } else {
@@ -644,7 +670,9 @@ export class World {
   // starts up WITH its infantry — at the leading edge of the friendly formation — rather
   // than parked off on its own at the map edge. Called after the infantry are placed.
   private spawnTanks(faction: Faction, count: number, fallbackCx: number, fallbackCy: number, facing: number): void {
-    const cls: VehicleClass = faction === "us" ? "sherman" : "panzer4";
+    const cls: VehicleClass = this.era === "starwars"
+      ? (faction === "us" ? "aac1" : "atst")
+      : (faction === "us" ? "sherman" : "panzer4");
     const n = Math.max(1, Math.min(3, count));
     // Anchor on this side's own troops: centre on their mean X, and sit at their front rank
     // (the edge nearest the enemy) so the tanks lead the advance instead of trailing it.
@@ -783,7 +811,7 @@ export class World {
       // WW2 squads use the loose-blob template scaled tight. The same per-man offset (ox,oy)
       // drives both this spawn and every later move/regroup, so a line re-forms as it advances.
       const f = formationSlot(this.era, kind, i, count);
-      const spawnScale = this.era === "ww2" ? FORMATION_SPACING : 1;
+      const spawnScale = modernEra(this.era) ? FORMATION_SPACING : 1;
       const sx = spawn.cx + f.ox * spawnScale + 0.5;
       const sy = spawn.cy + f.oy * spawnScale + 0.5;
       const isLeader = i === 0;
@@ -821,8 +849,8 @@ export class World {
         firedTimer: 0,
         setupTime: 0,
         meleeCD: 0,
-        // Riflemen and SMG men carry grenades; specialists (LMG/AT/mortar) don't.
-        grenades: weapon === "rifle" || weapon === "smg" ? 5 : 0,
+        // Riflemen, SMG men and blaster troopers carry grenades; specialists don't.
+        grenades: weapon === "rifle" || weapon === "smg" || weapon === "blaster" ? 5 : 0,
         grenadeCD: 0,
         suppression: 0,
         morale: 0.6 + training * 0.3,
@@ -883,9 +911,9 @@ export class World {
       s.fireSmoke = false;
     }
 
-    // WW2 doesn't march in formation: a squad moves as a loose gaggle and each man makes
-    // for the best bit of cover near where he's sent, Close-Combat style.
-    if (this.era === "ww2") {
+    // Modern squads (WW2, Star Wars) don't march in formation: they move as a loose
+    // gaggle and each man makes for the best bit of cover near where he's sent.
+    if (modernEra(this.era)) {
       team.march = null;
       return this.orderLooseMove(men, target, team.kind);
     }

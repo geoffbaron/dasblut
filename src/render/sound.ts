@@ -41,7 +41,10 @@ export type SfxId =
   | "med_ambient"
   | "melee_med"
   | "warcry"
-  | "arrow_hit";
+  | "arrow_hit"
+  | "blaster"
+  | "heavyblaster"
+  | "rocket";
 
 // Maps each game event to one or more real audio files in public/sfx/ (filenames are
 // the exact drop-in names, including extension — they're URL-encoded at load time so
@@ -157,6 +160,11 @@ const SFX_DEFS: Record<SfxId, { files: string[]; vol: number }> = {
   melee_med:      { files: [MED_SWORD_SHIELD, MED_SWORD_ARMOR, MED_MELEE_STRUGGLE], vol: 0.7 }, // sword on shield/armour
   warcry:         { files: [MED_WARCRY],   vol: 0.6 },  // a mass roar as men charge home
   arrow_hit:      { files: [MED_ARROW_HIT], vol: 0.55 }, // shafts thudding into shields/flesh
+  // Star Wars — no real samples yet; the synth fallback's square-wave pew reads laser
+  // enough until files are dropped in. The rocket reuses the bazooka blast.
+  blaster:        { files: [],              vol: 0.7 },
+  heavyblaster:   { files: [],              vol: 0.8 },
+  rocket:         { files: [BAZOOKA_BLAST], vol: 1.0 },
 };
 
 // Maximum audible sounds per frame to avoid an audio avalanche during heavy combat.
@@ -183,9 +191,9 @@ export class SoundManager {
   // Seconds until the next random distant-ambience cue.
   private ambientTimer = 6;
   // The era picks the ambient bed: WW2 = planes & far-off small arms; the Civil War = faint
-  // musketry and gunnery; the medieval field = a distant din of steel, horns and hooves. Set
-  // from main.ts when a battle starts.
-  era: "ww2" | "acw" | "medieval" = "ww2";
+  // musketry and gunnery; the medieval field = a distant din of steel, horns and hooves;
+  // Star Wars reuses the WW2 battle-din bed. Set from main.ts when a battle starts.
+  era: "ww2" | "acw" | "medieval" | "starwars" = "ww2";
 
   constructor() {
     Howler.volume(this.masterVol);
@@ -412,6 +420,10 @@ const FALLBACK_PARAMS: Partial<Record<SfxId, { freq: number; dur: number; type: 
   tank_engine:    { freq: 80,   dur: 0.20, type: "sawtooth"  },
   mortar:         { freq: 150,  dur: 0.30, type: "sawtooth"  },
   horse:          { freq: 260,  dur: 0.30, type: "sawtooth"  },
+  // Laser pews: a high square wave with the standard downward sweep.
+  blaster:        { freq: 1400, dur: 0.09, type: "square"    },
+  heavyblaster:   { freq: 1100, dur: 0.07, type: "square"    },
+  rocket:         { freq: 300,  dur: 0.20, type: "sawtooth"  },
 };
 
 // Singleton — one manager for the whole game.

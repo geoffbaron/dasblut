@@ -9,12 +9,45 @@ import { makeCannonBody, makeCasualtyCanvas, makeCatapultBody, makeCavalryBody, 
 import { makeVehicleArt, VehicleArt } from "./vehicleArt.ts";
 import { sound } from "./sound.ts";
 
+// A lumpy jittered polygon in place of a circle — vertex count and per-vertex radius both
+// vary, so the outline has no consistent curvature a viewer's eye can pick out as "a circle".
+function blobPoints(cx: number, cy: number, r: number, rnd: () => number, sides = 7): number[] {
+  // More vertices with tighter per-vertex jitter reads as a ragged, worn edge; too few (or
+  // too much radius swing) instead reads as a cut gem — hard straight facets meeting at
+  // sharp corners, which is its own kind of "unnatural" just like the circle it replaced.
+  const n = Math.max(10, sides + 4);
+  const pts: number[] = [];
+  const rot = rnd() * Math.PI * 2;
+  for (let k = 0; k < n; k++) {
+    const a = rot + (k / n) * Math.PI * 2;
+    const rr = r * (0.78 + rnd() * 0.34);
+    pts.push(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+  }
+  return pts;
+}
+
+// A small tilted quadrilateral (not an axis-aligned square) for debris chips.
+function chipPoints(cx: number, cy: number, s: number, rot: number, rnd: () => number): number[] {
+  const pts: number[] = [];
+  for (let k = 0; k < 4; k++) {
+    const a = rot + (k / 4) * Math.PI * 2;
+    const rr = s * (0.6 + rnd() * 0.7);
+    pts.push(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+  }
+  return pts;
+}
+
 // Top-down 2D renderer. Layers (back→front): painted battlefield, fog shroud,
 // orders/selection overlay, unit shadows, unit bodies, combat effects. Enemy units
 // are only shown while spotted; positions are interpolated for smooth motion.
 export class Renderer {
   app = new Application();
   private camera = new Container();
+  // Dark scorch/crack marks, multiply-blended so overlapping blobs darken the roof
+  // continuously instead of stacking as visible alpha-circle seams — sits directly
+  // under damageLayer's debris, which stays normal-blend since it's added material,
+  // not a stain.
+  private scorchLayer = new Graphics();
   private damageLayer = new Graphics();
   // Permanent blood decals — sits on the ground under vehicles/shadows/bodies, so a
   // corpse reads as lying in the pool it left rather than floating over it.
@@ -98,7 +131,8 @@ export class Renderer {
     // damage, and the order overlay (waypoints, objectives, fire lines) sit ABOVE the
     // roofs so fog still hides un-scouted buildings and your planned routes stay visible
     // where they cross rooftops.
-    this.camera.addChild(bg, this.waterFx, this.floorLayer, this.bloodLayer, this.vehicleLayer, this.shadowLayer, this.bodyLayer, this.roofLayer, this.damageLayer, this.shroud, this.overlay, this.smokeScreen, this.fx);
+    this.scorchLayer.blendMode = "multiply";
+    this.camera.addChild(bg, this.waterFx, this.floorLayer, this.bloodLayer, this.vehicleLayer, this.shadowLayer, this.bodyLayer, this.roofLayer, this.scorchLayer, this.damageLayer, this.shroud, this.overlay, this.smokeScreen, this.fx);
 
     // Seed the water glints: a sparkle point on roughly half the water cells, each with
     // its own phase/speed so the shimmer never looks synchronized. Capped for huge maps.
@@ -445,7 +479,9 @@ export class Renderer {
   private drawDamage(world: World): void {
     if (world.buildDmgVersion === this.damageVersion) return;
     this.damageVersion = world.buildDmgVersion;
+    const sg = this.scorchLayer;
     const g = this.damageLayer;
+    sg.clear();
     g.clear();
     const grid = world.grid;
     for (let cy = 0; cy < grid.height; cy++) {
@@ -467,19 +503,28 @@ export class Renderer {
             g.rect(px, py, s, s).fill({ color: 0x6a6258, alpha: 0.85 });
           }
         } else {
-          // Standing but battered: an irregular scorch/crack pattern instead of one
-          // perfect circle stamped dead-center — several overlapping blobs at jittered
-          // offsets and sizes (bleeding a little past the cell edge so neighboring
-          // damaged cells read as continuous wreckage, not a grid of same-sized dots),
-          // scaling in count/size/spread with how hard the cell has actually been hit.
+          // Standing but battered. Stacking plain alpha circles read as a tiled grid of
+          // same-sized dots (every damaged cell drawing its own near-identical stipple) and
+          // each overlap left a visible ring seam where one flat-shaded disc crossed another.
+          // Fix: (1) blobs are lumpy jittered polygons, not circles, so no shape here has a
+          // smooth circular silhouette; (2) they're drawn multiply-blended onto scorchLayer,
+          // so overlaps darken continuously into one stain instead of stacking hard edges;
+          // (3) one big soft wash unifies the cell first, with a couple of smaller lumps for
+          // texture — not a scatter of many similarly-sized blobs, which is what read as a
+          // repeating dot pattern before.
           const sev = Math.min(1, dmg);
-          const blobs = 2 + Math.floor(sev * 3); // 2..5
-          for (let k = 0; k < blobs; k++) {
-            const bx = x + CELL_SIZE * (-0.1 + rnd() * 1.2);
-            const by = y + CELL_SIZE * (-0.1 + rnd() * 1.2);
-            const r = CELL_SIZE * (0.18 + rnd() * 0.24) * (0.7 + sev * 0.6);
-            const dark = 0x120f0b + (k % 2) * 0x040302; // a little tonal variation
-            g.circle(bx, by, r).fill({ color: dark, alpha: Math.min(0.55, (0.16 + rnd() * 0.16) * (0.5 + sev)) });
+          const wx = x + CELL_SIZE * (0.3 + rnd() * 0.4);
+          const wy = y + CELL_SIZE * (0.3 + rnd() * 0.4);
+          const washR = CELL_SIZE * (0.55 + rnd() * 0.25) * (0.75 + sev * 0.5);
+          sg.poly(blobPoints(wx, wy, washR, rnd, 6))
+            .fill({ color: 0x171310, alpha: Math.min(0.5, (0.22 + sev * 0.28)) });
+          const lumps = 1 + Math.floor(sev * 2); // 1..3, fewer/bigger instead of many/same-size
+          for (let k = 0; k < lumps; k++) {
+            const bx = x + CELL_SIZE * (rnd() * 1.1 - 0.05);
+            const by = y + CELL_SIZE * (rnd() * 1.1 - 0.05);
+            const r = CELL_SIZE * (0.22 + rnd() * 0.34) * (0.7 + sev * 0.6);
+            sg.poly(blobPoints(bx, by, r, rnd, 7 + (k % 3)))
+              .fill({ color: 0x0e0b08, alpha: Math.min(0.6, (0.2 + rnd() * 0.2) * (0.6 + sev)) });
           }
           // Cracks radiating from a hit point, once damage is real enough to show them.
           if (sev > 0.3) {
@@ -490,21 +535,24 @@ export class Renderer {
               const a = rnd() * Math.PI * 2;
               const segLen = (CELL_SIZE * (0.3 + rnd() * 0.35)) / 3;
               let px = hx, py = hy;
-              g.moveTo(px, py);
+              sg.moveTo(px, py);
               for (let seg = 0; seg < 3; seg++) {
                 px += Math.cos(a + (rnd() - 0.5) * 0.9) * segLen;
                 py += Math.sin(a + (rnd() - 0.5) * 0.9) * segLen;
-                g.lineTo(px, py);
+                sg.lineTo(px, py);
               }
-              g.stroke({ width: 0.6 + rnd() * 0.5, color: 0x0e0c09, alpha: 0.4 + rnd() * 0.25 });
+              sg.stroke({ width: 0.6 + rnd() * 0.5, color: 0x0e0c09, alpha: 0.5 + rnd() * 0.3 });
             }
           }
-          // Scattered debris: dark char flecks and a few lighter dust/plaster chips.
+          // Scattered debris: dark char flecks and a few lighter dust/plaster chips, drawn
+          // as small tilted polygons rather than axis-aligned squares. Normal-blend (not
+          // scorchLayer) since this is material sitting on top, not a stain darkening it.
           const debris = 2 + Math.floor(sev * 4);
           for (let k = 0; k < debris; k++) {
             const px = x + rnd() * CELL_SIZE, py = y + rnd() * CELL_SIZE, s = 0.8 + rnd() * 2.2;
+            const rot = rnd() * Math.PI;
             const light = rnd() < 0.35;
-            g.rect(px, py, s, s).fill({ color: light ? 0x8a8074 : 0x3a342c, alpha: light ? 0.45 : 0.6 });
+            g.poly(chipPoints(px, py, s, rot, rnd)).fill({ color: light ? 0x8a8074 : 0x3a342c, alpha: light ? 0.45 : 0.6 });
           }
         }
       }

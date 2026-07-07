@@ -298,8 +298,14 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
 
     if (!canCommand) { statusEl.innerHTML = `<span class="dim">spectating</span>`; return; }
 
-    if (world.selectedVehicleId != null) {
-      const v = world.vehicle(world.selectedVehicleId)!;
+    if (world.selectedVehicleIds.size > 0) {
+      if (world.selectedVehicleIds.size > 1) {
+        let live = 0;
+        for (const vid of world.selectedVehicleIds) if (world.vehicle(vid)?.status !== "ko") live++;
+        statusEl.innerHTML = `<div class="name">${world.selectedVehicleIds.size} vehicles selected</div><div class="dim">${live} operational · ${world.selectedVehicleIds.size - live} knocked out</div>`;
+        return;
+      }
+      const v = world.vehicle(world.selectedVehicleId!)!;
       const tags: string[] = [];
       if (v.status === "ko") tags.push(`<span class="tag s-routing">knocked out</span>`);
       else if (v.immobilized) tags.push(`<span class="tag s-pinned">immobilized</span>`);
@@ -361,15 +367,15 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
   let armed: ArmedOrder = "move";
   const updateOrdersBar = () => {
     if (!canCommand) return;
-    const show = (world.selectedTeamIds.size > 0 || world.selectedVehicleId != null) && !world.outcome;
+    const show = (world.selectedTeamIds.size > 0 || world.selectedVehicleIds.size > 0) && !world.outcome;
     ordersBar.style.display = show ? "flex" : "none";
     const deployPhase = world.phase === "deploy";
-    const hasMortar = world.selectedVehicleId == null && [...world.selectedTeamIds].some((id) => world.team(id)?.kind === "mortar");
+    const hasMortar = world.selectedVehicleIds.size === 0 && [...world.selectedTeamIds].some((id) => world.team(id)?.kind === "mortar");
     const primaryTeam = world.selectedTeamId != null ? world.team(world.selectedTeamId) : null;
     const mortarFiring = hasMortar && primaryTeam?.kind === "mortar" && world.teamIsFiring(world.selectedTeamId!);
     // In the Civil War and the medieval age any foot or horse unit can be sent in with cold
     // steel; in WW2 only cavalry charge (none on the WW2 roster, so the button stays hidden).
-    const canCharge = world.selectedVehicleId == null && [...world.selectedTeamIds].some((id) => {
+    const canCharge = world.selectedVehicleIds.size === 0 && [...world.selectedTeamIds].some((id) => {
       const k = world.team(id)?.kind;
       return k === "cavalry" || (world.era !== "ww2" && k === "infantry");
     });
@@ -402,10 +408,14 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
     if (!canCommand) return;
     const cell = { cx: Math.floor(x), cy: Math.floor(y) };
 
-    if (world.selectedVehicleId != null) {
-      const vid = world.selectedVehicleId;
-      if (armed === "fire") issuer.vehFire(vid, x, y);
-      else if (!issuer.vehMove(vid, cell, armed === "fast")) flagBlocked(x, y);
+    if (world.selectedVehicleIds.size > 0) {
+      if (armed === "fire") {
+        for (const vid of world.selectedVehicleIds) issuer.vehFire(vid, x, y);
+      } else {
+        let anyOk = false;
+        for (const vid of world.selectedVehicleIds) if (issuer.vehMove(vid, cell, armed === "fast")) anyOk = true;
+        if (!anyOk) flagBlocked(x, y);
+      }
       refreshStatus();
       return;
     }
@@ -466,11 +476,11 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
   const pickOrder = (order: string) => {
     if (!canCommand) return;
     if (order === "smoke") {
-      const hasMortar = world.selectedVehicleId == null && [...world.selectedTeamIds].some((id) => world.team(id)?.kind === "mortar");
+      const hasMortar = world.selectedVehicleIds.size === 0 && [...world.selectedTeamIds].some((id) => world.team(id)?.kind === "mortar");
       if (!hasMortar) return;
     }
-    if (world.selectedVehicleId != null) {
-      if (order === "defend" || order === "ambush") issuer.vehPosture(world.selectedVehicleId);
+    if (world.selectedVehicleIds.size > 0) {
+      if (order === "defend" || order === "ambush") for (const vid of world.selectedVehicleIds) issuer.vehPosture(vid);
       else if (order !== "smoke") armed = (order === "sneak" ? "move" : order) as ArmedOrder;
       updateOrdersBar(); refreshStatus(); return;
     }
@@ -510,7 +520,7 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
         `<div class="rbar"><span class="rlabel">M</span><div class="rtrack"><div class="rfill" data-k="mor"></div></div></div>` +
         `<div class="rbar"><span class="rlabel">A</span><div class="rtrack"><div class="rfill" data-k="ammo"></div></div></div></div>`;
       el.addEventListener("click", (e) => {
-        if (e.shiftKey && world.selectedVehicleId == null) {
+        if (e.shiftKey && world.selectedVehicleIds.size === 0) {
           // Shift-click a card to add/remove that squad from the current group.
           if (world.selectedTeamIds.has(team.id)) world.selectedTeamIds.delete(team.id);
           else world.selectedTeamIds.add(team.id);
@@ -519,6 +529,7 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
           world.selectedTeamId = team.id; world.selectedTeamIds = new Set([team.id]); renderer.centerOnTeam(world, team.id);
         }
         world.selectedVehicleId = null;
+        world.selectedVehicleIds.clear();
         armed = "move"; sound.playUI("ui_select");
         updateOrdersBar(); refreshStatus(); refreshRoster();
       });
@@ -534,9 +545,17 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
         `<div class="rbars"><div class="rbar"><span class="rlabel">C</span><div class="rtrack"><div class="rfill" data-k="str"></div></div></div>` +
         `<div class="rbar"><span class="rlabel">R</span><div class="rtrack"><div class="rfill" data-k="mor"></div></div></div>` +
         `<div class="rbar"><span class="rlabel">A</span><div class="rtrack"><div class="rfill" data-k="ammo"></div></div></div></div>`;
-      el.addEventListener("click", () => {
-        world.selectedVehicleId = v.id; world.selectedTeamId = null; world.selectedTeamIds.clear();
-        armed = "move"; sound.playUI("ui_select"); renderer.centerOnVehicle(world, v.id);
+      el.addEventListener("click", (e) => {
+        if (e.shiftKey && world.selectedTeamIds.size === 0) {
+          // Shift-click a card to add/remove that vehicle from the current group.
+          if (world.selectedVehicleIds.has(v.id)) world.selectedVehicleIds.delete(v.id);
+          else world.selectedVehicleIds.add(v.id);
+          world.selectedVehicleId = world.selectedVehicleIds.size ? [...world.selectedVehicleIds][world.selectedVehicleIds.size - 1] : null;
+        } else {
+          world.selectedVehicleId = v.id; world.selectedVehicleIds = new Set([v.id]); renderer.centerOnVehicle(world, v.id);
+        }
+        world.selectedTeamId = null; world.selectedTeamIds.clear();
+        armed = "move"; sound.playUI("ui_select");
         updateOrdersBar(); refreshStatus(); refreshRoster();
       });
       rosterEl.appendChild(el);
@@ -586,7 +605,7 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
       card.moraleFill.style.background = "#8fbf6f";
       card.ammoFill.style.width = `${ammoMax ? Math.round((ammo / ammoMax) * 100) : 0}%`;
       card.ammoFill.style.background = "#c7a23f";
-      card.el.classList.toggle("sel", world.selectedVehicleId === v.id);
+      card.el.classList.toggle("sel", world.selectedVehicleIds.has(v.id));
       card.el.classList.toggle("dead", ko);
     }
   };
@@ -600,7 +619,7 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
     armed = "move";
     // Only click when the user actually selected a unit — not when deselecting
     // (right-click) or dragging an empty selection box.
-    const hasSel = world.selectedTeamId != null || world.selectedVehicleId != null || world.selectedTeamIds.size > 0;
+    const hasSel = world.selectedTeamId != null || world.selectedVehicleId != null || world.selectedTeamIds.size > 0 || world.selectedVehicleIds.size > 0;
     if (canCommand && hasSel) sound.playUI("ui_select");
     updateOrdersBar(); refreshStatus(); refreshRoster();
   };
@@ -608,41 +627,62 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
     if (!canCommand) return;
     const a = renderer.screenToWorld(Math.min(sx0, sx1), Math.min(sy0, sy1));
     const b = renderer.screenToWorld(Math.max(sx0, sx1), Math.max(sy0, sy1));
+    const inBox = (x: number, y: number) => x >= a.x && x <= b.x && y >= a.y && y <= b.y;
+    // Vehicles take priority over squads when a box catches both, matching the existing
+    // single-click precedent ("select a vehicle, then a squad").
+    const vids = additive ? new Set(world.selectedVehicleIds) : new Set<number>();
+    for (const v of world.vehicles) {
+      if (v.faction === side && v.status !== "ko" && inBox(v.x, v.y)) vids.add(v.id);
+    }
+    if (vids.size > 0) {
+      world.selectedVehicleIds = vids; world.selectedVehicleId = [...vids][vids.size - 1];
+      world.selectedTeamId = null; world.selectedTeamIds.clear();
+      onSel();
+      return;
+    }
     const ids = additive ? new Set(world.selectedTeamIds) : new Set<number>();
     for (const team of world.teams) {
       if (team.faction !== side) continue;
       for (const sid of team.soldierIds) {
         const s = world.soldier(sid);
-        if (s && s.status === "active" && s.x >= a.x && s.x <= b.x && s.y >= a.y && s.y <= b.y) { ids.add(team.id); break; }
+        if (s && s.status === "active" && inBox(s.x, s.y)) { ids.add(team.id); break; }
       }
     }
     if (ids.size === 0) return;
-    world.selectedTeamIds = ids; world.selectedTeamId = [...ids][ids.size - 1]; world.selectedVehicleId = null;
+    world.selectedTeamIds = ids; world.selectedTeamId = [...ids][ids.size - 1];
+    world.selectedVehicleId = null; world.selectedVehicleIds.clear();
     onSel();
   };
   const input = new Input(renderer, world, onSel, handleOrder, onBox, inputSide);
 
   if (canCommand) {
     const ORDER_KEYS: Record<string, string> = { q: "move", w: "fast", e: "sneak", r: "defend", t: "ambush", f: "fire", g: "smoke", c: "charge" };
-    // Control groups: Ctrl/Cmd+1‥9 stores the current squad selection; 1‥9 recalls it
-    // (RTS-style), so you can keep, say, your firing line on 1 and your flanking force on 2.
-    const groups = new Map<number, number[]>();
+    // Control groups: Ctrl/Cmd+1‥9 stores the current squad OR vehicle selection; 1‥9
+    // recalls it (RTS-style), so you can keep, say, your firing line on 1, your flanking
+    // force on 2, and your tank group on 3. Squad selection and vehicle selection remain
+    // mutually exclusive (see World.selectedVehicleIds), so a stored group only ever has
+    // one of the two non-empty — this just lets either kind use a hotkey slot.
+    const groups = new Map<number, { teams: number[]; vehicles: number[] }>();
     window.addEventListener("keydown", (e) => {
       if (e.key.toLowerCase() === "o") { renderer.centerOnObjective(world); return; }
       if (/^[1-9]$/.test(e.key)) {
         const g = parseInt(e.key, 10);
         if (e.ctrlKey || e.metaKey) {
           e.preventDefault();
-          groups.set(g, [...world.selectedTeamIds]);
+          groups.set(g, { teams: [...world.selectedTeamIds], vehicles: [...world.selectedVehicleIds] });
           sound.playUI("ui_select");
         } else {
-          const live = (groups.get(g) ?? []).filter((id) => world.team(id)?.soldierIds.some((sid) => world.soldier(sid)?.status === "active"));
-          if (live.length) {
-            world.selectedTeamIds = new Set(live);
-            world.selectedTeamId = live[live.length - 1];
-            world.selectedVehicleId = null;
+          const stored = groups.get(g);
+          const liveTeams = (stored?.teams ?? []).filter((id) => world.team(id)?.soldierIds.some((sid) => world.soldier(sid)?.status === "active"));
+          const liveVehicles = (stored?.vehicles ?? []).filter((id) => { const v = world.vehicle(id); return v != null && v.status !== "ko"; });
+          if (liveTeams.length || liveVehicles.length) {
+            world.selectedTeamIds = new Set(liveTeams);
+            world.selectedTeamId = liveTeams.length ? liveTeams[liveTeams.length - 1] : null;
+            world.selectedVehicleIds = new Set(liveVehicles);
+            world.selectedVehicleId = liveVehicles.length ? liveVehicles[liveVehicles.length - 1] : null;
             onSel();
-            renderer.centerOnTeam(world, live[0]);
+            if (liveTeams.length) renderer.centerOnTeam(world, liveTeams[0]);
+            else renderer.centerOnVehicle(world, liveVehicles[0]);
           }
         }
         return;

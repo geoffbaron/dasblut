@@ -551,7 +551,13 @@ export class World {
   deployNorthY1 = 0;
   selectedTeamId: number | null = null;
   selectedTeamIds: Set<number> = new Set();
+  // `selectedVehicleId` is the "primary" vehicle (mirrors selectedTeamId), the one shown
+  // in detail and used for single-vehicle order shorthand; `selectedVehicleIds` is the
+  // actual multi-vehicle group orders apply to (mirrors selectedTeamIds). Vehicle
+  // selection and squad selection remain mutually exclusive — selecting one clears the
+  // other — but multiple vehicles can now be grouped together the same way squads can.
   selectedVehicleId: number | null = null;
+  selectedVehicleIds: Set<number> = new Set();
   // A human opponent (multiplayer) commands the AI side → suppress the AI.
   aiHuman = false;
   outcome: "win" | "lose" | null = null;

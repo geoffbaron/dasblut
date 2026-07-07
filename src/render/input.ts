@@ -107,6 +107,7 @@ export class Input {
         this.world.selectedTeamId = null;
         this.world.selectedTeamIds.clear();
         this.world.selectedVehicleId = null;
+        this.world.selectedVehicleIds.clear();
         this.onSelectionChange();
       }
       return;
@@ -130,7 +131,17 @@ export class Input {
     const { x, y } = this.renderer.screenToWorld(sx, sy);
     const vid = this.world.pickVehicleAt(x, y, 1.8, this.side);
     if (vid != null) {
-      this.world.selectedVehicleId = vid;
+      // Shift-click toggles a vehicle in/out of the current vehicle group (build a group
+      // by clicking each one, same as squads); a plain click selects just that vehicle.
+      if (e.shiftKey && this.world.selectedTeamIds.size === 0) {
+        const sel = this.world.selectedVehicleIds;
+        if (sel.has(vid)) sel.delete(vid);
+        else sel.add(vid);
+        this.world.selectedVehicleId = sel.size ? [...sel][sel.size - 1] : null;
+      } else {
+        this.world.selectedVehicleId = vid;
+        this.world.selectedVehicleIds = new Set([vid]);
+      }
       this.world.selectedTeamId = null;
       this.world.selectedTeamIds.clear();
       this.onSelectionChange();
@@ -140,7 +151,7 @@ export class Input {
     if (teamId != null) {
       // Shift-click toggles a squad in/out of the current group (build a group by
       // clicking each one); a plain click selects just that squad.
-      if (e.shiftKey && this.world.selectedVehicleId == null) {
+      if (e.shiftKey && this.world.selectedVehicleIds.size === 0) {
         const sel = this.world.selectedTeamIds;
         if (sel.has(teamId)) sel.delete(teamId);
         else sel.add(teamId);
@@ -150,6 +161,7 @@ export class Input {
         this.world.selectedTeamIds = new Set([teamId]);
       }
       this.world.selectedVehicleId = null;
+      this.world.selectedVehicleIds.clear();
       this.onSelectionChange();
       return;
     }

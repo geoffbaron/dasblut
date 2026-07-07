@@ -645,9 +645,9 @@ export class Renderer {
     // what each squad/tank is shooting at without selecting it).
     this.drawFireDirections(world);
 
-    // Selected vehicle: highlight ring + planned route.
-    if (world.selectedVehicleId != null) {
-      const v = world.vehicle(world.selectedVehicleId);
+    // Selected vehicle(s): highlight ring + planned route for every vehicle in the group.
+    for (const vid of world.selectedVehicleIds) {
+      const v = world.vehicle(vid);
       if (v && v.status !== "ko") {
         g.circle(v.x * CELL_SIZE, v.y * CELL_SIZE, 18).stroke({ width: 2, color: 0xffe27a, alpha: 0.6 });
         if (v.path) {
@@ -769,7 +769,7 @@ export class Renderer {
   private drawFireDirections(world: World): void {
     const g = this.overlay;
     const sel = world.selectedTeamId;
-    const selV = world.selectedVehicleId;
+    const selV = world.selectedVehicleIds;
 
     const marker = (sx: number, sy: number, tx: number, ty: number, bright: boolean) => {
       const a = bright ? 0.9 : 0.5;
@@ -802,7 +802,7 @@ export class Renderer {
 
     for (const v of world.vehicles) {
       if (v.faction !== world.player || v.status === "ko") continue;
-      const bright = v.id === selV;
+      const bright = selV.has(v.id);
       const tv = v.manualVeh != null ? world.vehicle(v.manualVeh) : null;
       const ti = v.manualInf != null ? world.soldier(v.manualInf) : null;
       if (tv && tv.status !== "ko" && tv.seen) marker(v.x, v.y, tv.x, tv.y, bright);

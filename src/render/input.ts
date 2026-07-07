@@ -128,12 +128,13 @@ export class Input {
     }
 
     // Plain click: select a vehicle, then a squad, otherwise issue the armed order.
+    // Shift-click always builds/trims a combined-arms group (squads and vehicles can
+    // coexist in the selection); a plain click replaces the whole selection with just
+    // the one thing clicked.
     const { x, y } = this.renderer.screenToWorld(sx, sy);
     const vid = this.world.pickVehicleAt(x, y, 1.8, this.side);
     if (vid != null) {
-      // Shift-click toggles a vehicle in/out of the current vehicle group (build a group
-      // by clicking each one, same as squads); a plain click selects just that vehicle.
-      if (e.shiftKey && this.world.selectedTeamIds.size === 0) {
+      if (e.shiftKey) {
         const sel = this.world.selectedVehicleIds;
         if (sel.has(vid)) sel.delete(vid);
         else sel.add(vid);
@@ -141,17 +142,15 @@ export class Input {
       } else {
         this.world.selectedVehicleId = vid;
         this.world.selectedVehicleIds = new Set([vid]);
+        this.world.selectedTeamId = null;
+        this.world.selectedTeamIds.clear();
       }
-      this.world.selectedTeamId = null;
-      this.world.selectedTeamIds.clear();
       this.onSelectionChange();
       return;
     }
     const teamId = this.world.pickTeamAt(x, y, 1.2, this.side);
     if (teamId != null) {
-      // Shift-click toggles a squad in/out of the current group (build a group by
-      // clicking each one); a plain click selects just that squad.
-      if (e.shiftKey && this.world.selectedVehicleIds.size === 0) {
+      if (e.shiftKey) {
         const sel = this.world.selectedTeamIds;
         if (sel.has(teamId)) sel.delete(teamId);
         else sel.add(teamId);
@@ -159,9 +158,9 @@ export class Input {
       } else {
         this.world.selectedTeamId = teamId;
         this.world.selectedTeamIds = new Set([teamId]);
+        this.world.selectedVehicleId = null;
+        this.world.selectedVehicleIds.clear();
       }
-      this.world.selectedVehicleId = null;
-      this.world.selectedVehicleIds.clear();
       this.onSelectionChange();
       return;
     }

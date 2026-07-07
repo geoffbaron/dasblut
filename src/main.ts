@@ -3,7 +3,7 @@ import { SPEED_STEPS, VIS_INTERVAL } from "./game/constants.ts";
 import { GameMap } from "./game/gamemap.ts";
 import { step } from "./game/sim.ts";
 import { Cell } from "./game/pathfinding.ts";
-import { DEFAULT_SETUP, factionColor, factionName, Faction, GameSetup, Stance, World } from "./game/world.ts";
+import { DEFAULT_SETUP, factionColor, factionName, Faction, GameSetup, Stance, Vehicle, World } from "./game/world.ts";
 import { WEAPONS } from "./game/weapons.ts";
 import { VEHICLES } from "./game/vehicleDefs.ts";
 import { isBuildingInterior } from "./game/terrain.ts";
@@ -298,13 +298,31 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
 
     if (!canCommand) { statusEl.innerHTML = `<span class="dim">spectating</span>`; return; }
 
-    if (world.selectedVehicleIds.size > 0) {
-      if (world.selectedVehicleIds.size > 1) {
-        let live = 0;
-        for (const vid of world.selectedVehicleIds) if (world.vehicle(vid)?.status !== "ko") live++;
-        statusEl.innerHTML = `<div class="name">${world.selectedVehicleIds.size} vehicles selected</div><div class="dim">${live} operational · ${world.selectedVehicleIds.size - live} knocked out</div>`;
-        return;
+    const vehCount = world.selectedVehicleIds.size;
+    const teamCount = world.selectedTeamIds.size;
+    if (vehCount === 0 && teamCount === 0) { statusEl.innerHTML = `<span class="dim">No team selected</span>`; return; }
+
+    // A mixed or multi-unit group (any combination of squads and vehicles): a compact
+    // combined summary rather than one unit's full detail.
+    if (vehCount + teamCount > 1) {
+      let live = 0, total = 0, liveVeh = 0;
+      for (const tid of world.selectedTeamIds) {
+        const t = world.team(tid); if (!t) continue;
+        total += t.soldierIds.length;
+        for (const sid of t.soldierIds) if (world.soldier(sid)?.status === "active") live++;
       }
+      for (const vid of world.selectedVehicleIds) if (world.vehicle(vid)?.status !== "ko") liveVeh++;
+      const parts: string[] = [];
+      if (teamCount) parts.push(`${teamCount} squad${teamCount > 1 ? "s" : ""}`);
+      if (vehCount) parts.push(`${vehCount} vehicle${vehCount > 1 ? "s" : ""}`);
+      const detail: string[] = [];
+      if (teamCount) detail.push(`${live} effective · ${total - live} down`);
+      if (vehCount) detail.push(`${liveVeh} operational · ${vehCount - liveVeh} knocked out`);
+      statusEl.innerHTML = `<div class="name">${parts.join(" + ")} selected</div><div class="dim">${detail.join(" · ")}</div>`;
+      return;
+    }
+
+    if (vehCount === 1) {
       const v = world.vehicle(world.selectedVehicleId!)!;
       const tags: string[] = [];
       if (v.status === "ko") tags.push(`<span class="tag s-routing">knocked out</span>`);
@@ -313,17 +331,6 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
         `<div class="name">${v.name} <span class="dim">· ${v.status === "ko" ? "wreck" : v.stance}</span></div>` +
         `<div class="dim">crew ${v.crew} · AP ${v.apAmmo} · HE ${v.heAmmo}</div>` +
         (tags.length ? `<div class="row">${tags.join("")}</div>` : "");
-      return;
-    }
-    if (world.selectedTeamIds.size === 0) { statusEl.innerHTML = `<span class="dim">No team selected</span>`; return; }
-    if (world.selectedTeamIds.size > 1) {
-      let live = 0, total = 0;
-      for (const tid of world.selectedTeamIds) {
-        const t = world.team(tid); if (!t) continue;
-        total += t.soldierIds.length;
-        for (const sid of t.soldierIds) if (world.soldier(sid)?.status === "active") live++;
-      }
-      statusEl.innerHTML = `<div class="name">${world.selectedTeamIds.size} squads selected</div><div class="dim">${live} effective · ${total - live} down</div>`;
       return;
     }
     const team = world.team(world.selectedTeamId!);
@@ -370,12 +377,12 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
     const show = (world.selectedTeamIds.size > 0 || world.selectedVehicleIds.size > 0) && !world.outcome;
     ordersBar.style.display = show ? "flex" : "none";
     const deployPhase = world.phase === "deploy";
-    const hasMortar = world.selectedVehicleIds.size === 0 && [...world.selectedTeamIds].some((id) => world.team(id)?.kind === "mortar");
+    const hasMortar = [...world.selectedTeamIds].some((id) => world.team(id)?.kind === "mortar");
     const primaryTeam = world.selectedTeamId != null ? world.team(world.selectedTeamId) : null;
     const mortarFiring = hasMortar && primaryTeam?.kind === "mortar" && world.teamIsFiring(world.selectedTeamId!);
     // In the Civil War and the medieval age any foot or horse unit can be sent in with cold
     // steel; in WW2 only cavalry charge (none on the WW2 roster, so the button stays hidden).
-    const canCharge = world.selectedVehicleIds.size === 0 && [...world.selectedTeamIds].some((id) => {
+    const canCharge = [...world.selectedTeamIds].some((id) => {
       const k = world.team(id)?.kind;
       return k === "cavalry" || (world.era !== "ww2" && k === "infantry");
     });
@@ -407,65 +414,72 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
   const handleOrder = (x: number, y: number) => {
     if (!canCommand) return;
     const cell = { cx: Math.floor(x), cy: Math.floor(y) };
-
-    if (world.selectedVehicleIds.size > 0) {
-      if (armed === "fire") {
-        for (const vid of world.selectedVehicleIds) issuer.vehFire(vid, x, y);
-      } else {
-        let anyOk = false;
-        for (const vid of world.selectedVehicleIds) if (issuer.vehMove(vid, cell, armed === "fast")) anyOk = true;
-        if (!anyOk) flagBlocked(x, y);
-      }
-      refreshStatus();
-      return;
-    }
     const teamIds = [...world.selectedTeamIds];
-    if (teamIds.length === 0) return;
+    const vehicleIds = [...world.selectedVehicleIds];
+    if (teamIds.length === 0 && vehicleIds.length === 0) return;
 
     if (armed === "smoke") {
       let anyTube = false;
       for (const tid of teamIds) if (issuer.smoke(tid, cell)) anyTube = true;
       if (!anyTube) { flagBlocked(x, y); refreshStatus(); return; }
     } else if (armed === "fire") {
-      const primary = world.selectedTeamId!;
-      const primaryTeam = world.team(primary);
-      // Mortar teams sustain fire until toggled off. If the mortar is already firing,
-      // a second fire order is a cease-fire (toggle). For direct-fire squads the order
-      // re-aims to a new target without needing a toggle.
-      if (primaryTeam?.kind === "mortar") {
-        if (world.teamIsFiring(primary)) {
-          for (const tid of teamIds) issuer.ceaseFire(tid);
-          armed = "move";
-          sound.playUI("ui_select");
-          updateOrdersBar(); refreshStatus();
-          return;
+      // Every selected vehicle engages independently; squads (if any are also selected)
+      // use their own primary-team fire logic below — the two don't conflict.
+      for (const vid of vehicleIds) issuer.vehFire(vid, x, y);
+      if (teamIds.length > 0) {
+        const primary = world.selectedTeamId!;
+        const primaryTeam = world.team(primary);
+        // Mortar teams sustain fire until toggled off. If the mortar is already firing,
+        // a second fire order is a cease-fire (toggle). For direct-fire squads the order
+        // re-aims to a new target without needing a toggle.
+        if (primaryTeam?.kind === "mortar") {
+          if (world.teamIsFiring(primary)) {
+            for (const tid of teamIds) issuer.ceaseFire(tid);
+            armed = "move";
+            sound.playUI("ui_select");
+            updateOrdersBar(); refreshStatus();
+            return;
+          }
+          issuer.areaFire(primary, cell);
+        } else {
+          // Clicking an enemy tank sends the squad's AT men after it (real armor
+          // engagement); clicking an enemy soldier focus-fires him; otherwise it's
+          // suppressing area fire on the ground.
+          const tank = world.vehicles.find((v) => v.faction === enemy && v.status !== "ko" && v.seen && Math.hypot(v.x - x, v.y - y) < 2);
+          const foe = world.soldiers.find((s) => s.faction === enemy && s.status === "active" && s.seen && Math.hypot(s.x - x, s.y - y) < 1.4);
+          if (tank && issuer.fireVehicle(primary, tank.id)) {
+            // AT men locked on — done.
+          } else if (foe) issuer.fireUnit(primary, foe.id);
+          else issuer.areaFire(primary, cell);
         }
-        issuer.areaFire(primary, cell);
-      } else {
-        // Clicking an enemy tank sends the squad's AT men after it (real armor
-        // engagement); clicking an enemy soldier focus-fires him; otherwise it's
-        // suppressing area fire on the ground.
-        const tank = world.vehicles.find((v) => v.faction === enemy && v.status !== "ko" && v.seen && Math.hypot(v.x - x, v.y - y) < 2);
-        const foe = world.soldiers.find((s) => s.faction === enemy && s.status === "active" && s.seen && Math.hypot(s.x - x, s.y - y) < 1.4);
-        if (tank && issuer.fireVehicle(primary, tank.id)) {
-          // AT men locked on — done.
-        } else if (foe) issuer.fireUnit(primary, foe.id);
-        else issuer.areaFire(primary, cell);
       }
-    } else if (teamIds.length === 1) {
-      if (!issuer.move(teamIds[0], cell, armed as Stance)) { flagBlocked(x, y); refreshStatus(); return; }
+    } else if (teamIds.length + vehicleIds.length === 1) {
+      if (teamIds.length === 1) {
+        if (!issuer.move(teamIds[0], cell, armed as Stance)) { flagBlocked(x, y); refreshStatus(); return; }
+      } else if (!issuer.vehMove(vehicleIds[0], cell, armed === "fast")) { flagBlocked(x, y); refreshStatus(); return; }
     } else {
-      // Move the group as a body: keep each squad's position relative to the group's
-      // centre, so the formation advances intact instead of collapsing onto one point.
-      const centers = teamIds.map((tid) => teamCenter(world, tid)).filter((c): c is { x: number; y: number } => c != null);
-      const gx = centers.reduce((s, c) => s + c.x, 0) / (centers.length || 1);
-      const gy = centers.reduce((s, c) => s + c.y, 0) / (centers.length || 1);
+      // Move the whole selected force — squads and vehicles alike — as one body: keep
+      // each unit's position relative to the group's centre, so a mixed combined-arms
+      // group (or several tanks, or several squads) advances intact instead of every
+      // unit converging on the exact same waypoint.
+      const teamCenters = teamIds
+        .map((tid) => ({ tid, c: teamCenter(world, tid) }))
+        .filter((t): t is { tid: number; c: { x: number; y: number } } => t.c != null);
+      const vehCenters = vehicleIds
+        .map((vid) => world.vehicle(vid))
+        .filter((v): v is Vehicle => v != null && v.status !== "ko")
+        .map((v) => ({ vid: v.id, c: { x: v.x, y: v.y } }));
+      const pts = [...teamCenters.map((t) => t.c), ...vehCenters.map((v) => v.c)];
+      const gx = pts.reduce((s, p) => s + p.x, 0) / (pts.length || 1);
+      const gy = pts.reduce((s, p) => s + p.y, 0) / (pts.length || 1);
       let anyOk = false;
-      for (const tid of teamIds) {
-        const c = teamCenter(world, tid);
-        if (!c) continue;
+      for (const { tid, c } of teamCenters) {
         const goal = { cx: Math.round(cell.cx + (c.x - gx)), cy: Math.round(cell.cy + (c.y - gy)) };
         if (issuer.move(tid, goal, armed as Stance)) anyOk = true;
+      }
+      for (const { vid, c } of vehCenters) {
+        const goal = { cx: Math.round(cell.cx + (c.x - gx)), cy: Math.round(cell.cy + (c.y - gy)) };
+        if (issuer.vehMove(vid, goal, armed === "fast")) anyOk = true;
       }
       if (!anyOk) { flagBlocked(x, y); refreshStatus(); return; }
     }
@@ -476,17 +490,14 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
   const pickOrder = (order: string) => {
     if (!canCommand) return;
     if (order === "smoke") {
-      const hasMortar = world.selectedVehicleIds.size === 0 && [...world.selectedTeamIds].some((id) => world.team(id)?.kind === "mortar");
+      const hasMortar = [...world.selectedTeamIds].some((id) => world.team(id)?.kind === "mortar");
       if (!hasMortar) return;
     }
-    if (world.selectedVehicleIds.size > 0) {
-      if (order === "defend" || order === "ambush") for (const vid of world.selectedVehicleIds) issuer.vehPosture(vid);
-      else if (order !== "smoke") armed = (order === "sneak" ? "move" : order) as ArmedOrder;
-      updateOrdersBar(); refreshStatus(); return;
-    }
-    if (world.selectedTeamIds.size === 0) return;
-    if (order === "defend" || order === "ambush") for (const tid of world.selectedTeamIds) issuer.posture(tid, order as Stance);
-    else armed = order as ArmedOrder;
+    if (world.selectedTeamIds.size === 0 && world.selectedVehicleIds.size === 0) return;
+    if (order === "defend" || order === "ambush") {
+      for (const tid of world.selectedTeamIds) issuer.posture(tid, order as Stance);
+      for (const vid of world.selectedVehicleIds) issuer.vehPosture(vid);
+    } else armed = order as ArmedOrder;
     updateOrdersBar(); refreshStatus();
   };
   for (const b of orderBtns) b.addEventListener("click", () => pickOrder(b.dataset.order!));
@@ -520,16 +531,17 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
         `<div class="rbar"><span class="rlabel">M</span><div class="rtrack"><div class="rfill" data-k="mor"></div></div></div>` +
         `<div class="rbar"><span class="rlabel">A</span><div class="rtrack"><div class="rfill" data-k="ammo"></div></div></div></div>`;
       el.addEventListener("click", (e) => {
-        if (e.shiftKey && world.selectedVehicleIds.size === 0) {
-          // Shift-click a card to add/remove that squad from the current group.
+        if (e.shiftKey) {
+          // Shift-click a card to add/remove that squad from the current combined-arms
+          // group without touching any vehicles already selected.
           if (world.selectedTeamIds.has(team.id)) world.selectedTeamIds.delete(team.id);
           else world.selectedTeamIds.add(team.id);
           world.selectedTeamId = world.selectedTeamIds.size ? [...world.selectedTeamIds][world.selectedTeamIds.size - 1] : null;
         } else {
           world.selectedTeamId = team.id; world.selectedTeamIds = new Set([team.id]); renderer.centerOnTeam(world, team.id);
+          world.selectedVehicleId = null;
+          world.selectedVehicleIds.clear();
         }
-        world.selectedVehicleId = null;
-        world.selectedVehicleIds.clear();
         armed = "move"; sound.playUI("ui_select");
         updateOrdersBar(); refreshStatus(); refreshRoster();
       });
@@ -546,15 +558,16 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
         `<div class="rbar"><span class="rlabel">R</span><div class="rtrack"><div class="rfill" data-k="mor"></div></div></div>` +
         `<div class="rbar"><span class="rlabel">A</span><div class="rtrack"><div class="rfill" data-k="ammo"></div></div></div></div>`;
       el.addEventListener("click", (e) => {
-        if (e.shiftKey && world.selectedTeamIds.size === 0) {
-          // Shift-click a card to add/remove that vehicle from the current group.
+        if (e.shiftKey) {
+          // Shift-click a card to add/remove that vehicle from the current combined-arms
+          // group without touching any squads already selected.
           if (world.selectedVehicleIds.has(v.id)) world.selectedVehicleIds.delete(v.id);
           else world.selectedVehicleIds.add(v.id);
           world.selectedVehicleId = world.selectedVehicleIds.size ? [...world.selectedVehicleIds][world.selectedVehicleIds.size - 1] : null;
         } else {
           world.selectedVehicleId = v.id; world.selectedVehicleIds = new Set([v.id]); renderer.centerOnVehicle(world, v.id);
+          world.selectedTeamId = null; world.selectedTeamIds.clear();
         }
-        world.selectedTeamId = null; world.selectedTeamIds.clear();
         armed = "move"; sound.playUI("ui_select");
         updateOrdersBar(); refreshStatus(); refreshRoster();
       });
@@ -628,17 +641,12 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
     const a = renderer.screenToWorld(Math.min(sx0, sx1), Math.min(sy0, sy1));
     const b = renderer.screenToWorld(Math.max(sx0, sx1), Math.max(sy0, sy1));
     const inBox = (x: number, y: number) => x >= a.x && x <= b.x && y >= a.y && y <= b.y;
-    // Vehicles take priority over squads when a box catches both, matching the existing
-    // single-click precedent ("select a vehicle, then a squad").
+    // A box selects every friendly squad AND vehicle it catches together — a combined-
+    // arms group, not one type or the other. A non-additive drag replaces the whole
+    // selection with exactly what's in the box; shift-drag adds to the current group.
     const vids = additive ? new Set(world.selectedVehicleIds) : new Set<number>();
     for (const v of world.vehicles) {
       if (v.faction === side && v.status !== "ko" && inBox(v.x, v.y)) vids.add(v.id);
-    }
-    if (vids.size > 0) {
-      world.selectedVehicleIds = vids; world.selectedVehicleId = [...vids][vids.size - 1];
-      world.selectedTeamId = null; world.selectedTeamIds.clear();
-      onSel();
-      return;
     }
     const ids = additive ? new Set(world.selectedTeamIds) : new Set<number>();
     for (const team of world.teams) {
@@ -648,23 +656,34 @@ function installHUD(world: World, renderer: Renderer, opts: HudOpts): { frame: (
         if (s && s.status === "active" && inBox(s.x, s.y)) { ids.add(team.id); break; }
       }
     }
-    if (ids.size === 0) return;
-    world.selectedTeamIds = ids; world.selectedTeamId = [...ids][ids.size - 1];
-    world.selectedVehicleId = null; world.selectedVehicleIds.clear();
+    if (ids.size === 0 && vids.size === 0) return;
+    world.selectedTeamIds = ids; world.selectedTeamId = ids.size ? [...ids][ids.size - 1] : null;
+    world.selectedVehicleIds = vids; world.selectedVehicleId = vids.size ? [...vids][vids.size - 1] : null;
     onSel();
   };
   const input = new Input(renderer, world, onSel, handleOrder, onBox, inputSide);
 
   if (canCommand) {
     const ORDER_KEYS: Record<string, string> = { q: "move", w: "fast", e: "sneak", r: "defend", t: "ambush", f: "fire", g: "smoke", c: "charge" };
-    // Control groups: Ctrl/Cmd+1‥9 stores the current squad OR vehicle selection; 1‥9
-    // recalls it (RTS-style), so you can keep, say, your firing line on 1, your flanking
-    // force on 2, and your tank group on 3. Squad selection and vehicle selection remain
-    // mutually exclusive (see World.selectedVehicleIds), so a stored group only ever has
-    // one of the two non-empty — this just lets either kind use a hotkey slot.
+    // Control groups: Ctrl/Cmd+1‥9 stores the current combined-arms selection (any mix of
+    // squads and vehicles); 1‥9 recalls it (RTS-style), so you can keep, say, your firing
+    // line on 1, your flanking force on 2, and your whole attack (infantry + tanks) on 3.
     const groups = new Map<number, { teams: number[]; vehicles: number[] }>();
     window.addEventListener("keydown", (e) => {
       if (e.key.toLowerCase() === "o") { renderer.centerOnObjective(world); return; }
+      // Select All: every living friendly squad and vehicle, as one combined-arms group.
+      if (e.key.toLowerCase() === "a" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        const allTeams = world.teams.filter((t) => t.faction === side && t.soldierIds.some((sid) => world.soldier(sid)?.status === "active")).map((t) => t.id);
+        const allVehicles = world.vehicles.filter((v) => v.faction === side && v.status !== "ko").map((v) => v.id);
+        if (allTeams.length === 0 && allVehicles.length === 0) return;
+        world.selectedTeamIds = new Set(allTeams);
+        world.selectedTeamId = allTeams.length ? allTeams[allTeams.length - 1] : null;
+        world.selectedVehicleIds = new Set(allVehicles);
+        world.selectedVehicleId = allVehicles.length ? allVehicles[allVehicles.length - 1] : null;
+        onSel();
+        return;
+      }
       if (/^[1-9]$/.test(e.key)) {
         const g = parseInt(e.key, 10);
         if (e.ctrlKey || e.metaKey) {

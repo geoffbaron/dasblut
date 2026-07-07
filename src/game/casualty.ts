@@ -14,8 +14,23 @@ export function addSuppression(s: Soldier, amt: number): void {
 // catapult stone, grenade) is violent enough to warrant the wider splatter + gib decal.
 export type DeathCause = "gun" | "blast" | "melee";
 
+// A Hero shrugs off what would otherwise be a killing/wounding hit — a glancing blow a
+// line soldier wouldn't survive, consuming one of his extra lives instead. Once those
+// run out he's exactly as mortal as anyone else. Centralized here (rather than at each
+// of fireShot/mortarShot/canisterBlast/meleeStrike/grenadeBurst/etc.) so every damage
+// source gets it automatically.
+function shrugsOffHit(world: World, t: Soldier): boolean {
+  if (!t.heroHP || t.heroHP <= 0) return false;
+  t.heroHP--;
+  addSuppression(t, 0.35);
+  t.morale = Math.max(0, t.morale - 0.1);
+  world.effects.push({ kind: "hit", x0: t.x, y0: t.y, x1: t.x, y1: t.y, ttl: 0.2 });
+  return true;
+}
+
 export function killSoldier(world: World, t: Soldier, shockMul = 1, cause: DeathCause = "gun"): void {
   if (t.status === "dead") return;
+  if (shrugsOffHit(world, t)) return;
   t.status = "dead";
   t.path = null;
   t.targetId = null;
@@ -38,6 +53,7 @@ export function killSoldier(world: World, t: Soldier, shockMul = 1, cause: Death
 
 export function woundSoldier(world: World, t: Soldier): void {
   if (t.status !== "active") return;
+  if (shrugsOffHit(world, t)) return;
   t.status = "wounded";
   t.path = null;
   t.targetId = null;

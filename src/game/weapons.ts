@@ -3,10 +3,10 @@
 // the exception, not the rule. rof = rounds/sec of effective aimed fire.
 
 export type WeaponId =
-  | "rifle" | "smg" | "lmg" | "bazooka" | "panzerfaust" | "mortar" // WW2
-  | "riflemusket" | "carbine" | "cannon" // American Civil War
-  | "sword" | "spear" | "bow" | "lance" | "catapult" // Medieval
-  | "blaster" | "heavyblaster" | "rocket"; // Star Wars (mortar is reused as-is)
+  | "rifle" | "smg" | "lmg" | "bazooka" | "panzerfaust" | "mortar" | "tommygun" // WW2
+  | "riflemusket" | "carbine" | "cannon" | "henry" // American Civil War
+  | "sword" | "spear" | "bow" | "lance" | "catapult" | "champion" // Medieval
+  | "blaster" | "heavyblaster" | "rocket" | "lightsaber"; // Star Wars (mortar is reused as-is)
 
 export interface Weapon {
   id: WeaponId;
@@ -58,6 +58,9 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
   // heavy on suppression with a real casualty radius. Slow, finite bombs, and blind
   // up close — it needs the player to call the shot.
   mortar:      { id: "mortar",      name: "Mortar",      rangeCells: 70, rof: 0.25, accuracy: 0.5, suppression: 0.5, lethality: 0.6, ammo: 20, tracerRate: 0, indirect: true, minRangeCells: 8, blastCells: 3 },
+  // Hero weapon: a Thompson carried by a one-man-army NCO (Audie Murphy territory) —
+  // sharper and hotter than the standard-issue SMG in every stat, not just tougher.
+  tommygun:    { id: "tommygun",    name: "Tommy Gun",   rangeCells: 18, rof: 8,   accuracy: 0.15, suppression: 0.07, lethality: 0.62, ammo: 300, tracerRate: 0.6 },
 
   // --- American Civil War ---
   // Rifled musket (Springfield/Enfield): the war's main arm. A muzzleloader — deadly and
@@ -73,6 +76,11 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
   // round / 16s). At range it throws a shell that bursts in the enemy ranks; inside canister
   // range the muzzle vomits a giant shotgun blast that scythes down massed infantry.
   cannon:      { id: "cannon",      name: "Field Gun",   rangeCells: 58, rof: 0.0625, accuracy: 0.6, suppression: 0.45, lethality: 0.7, ammo: 60, tracerRate: 0, artillery: true, crewServed: true, blastCells: 3, canisterCells: 24 },
+  // Hero weapon: a Henry repeater — "that damn Yankee rifle you loaded on Sunday and
+  // shot all week." Lever-action gave a handful of veterans/officers a rate of fire
+  // decades ahead of the standard muzzleloader, and it was a real, if scarce, battlefield
+  // arm — period-accurate rather than invented.
+  henry:       { id: "henry",       name: "Henry Rifle", rangeCells: 22, rof: 0.5, accuracy: 0.3, suppression: 0.08, lethality: 0.65, ammo: 60, tracerRate: 0 },
 
   // --- Medieval ---
   // Melee arms carry no fire stats worth aiming — they close and settle it with cold steel,
@@ -88,6 +96,10 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
   // crushes anyone in the fall. Ponderous to re-cock, a handful of stones, and dead without
   // its crew. Modeled as direct-fire artillery (no canister).
   catapult:    { id: "catapult",    name: "Catapult",    rangeCells: 56, rof: 0.045, accuracy: 0.5, suppression: 0.4, lethality: 0.7, ammo: 24, tracerRate: 0, artillery: true, crewServed: true, blastCells: 3 },
+  // Hero weapon: a champion's greatsword — a named, armored duelist. Melee-only like
+  // every other medieval arm; his edge comes from heroMelee (see Soldier) rather than
+  // any stat here.
+  champion:    { id: "champion",    name: "Champion",    rangeCells: 1.5, rof: 0, accuracy: 0, suppression: 0, lethality: 0, ammo: 999, tracerRate: 0, meleeOnly: true },
 
   // --- Star Wars ---
   // Blaster rifle (A280 / E-11): the trooper's arm on both sides. Reads like a WW2 rifle
@@ -98,6 +110,10 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
   heavyblaster: { id: "heavyblaster", name: "Repeater",         rangeCells: 40, rof: 8,   accuracy: 0.055, suppression: 0.08, lethality: 0.5,  ammo: 400, tracerRate: 0.8 },
   // Shoulder-fired rocket (HH-12 / smart rocket): the anti-walker weapon both sides carry.
   rocket:       { id: "rocket",       name: "Rocket Launcher",  rangeCells: 16, rof: 0.13, accuracy: 0.52, suppression: 0.04, lethality: 0.5, ammo: 5, tracerRate: 1, penetration: 105 },
+  // Hero weapon: a Jedi/Sith's lightsaber. Melee-only — its power is Soldier.heroMelee
+  // (a devastating blade) and Soldier.deflect (blocks incoming blaster bolts), not
+  // anything modeled here.
+  lightsaber:   { id: "lightsaber",   name: "Lightsaber",       rangeCells: 1.8, rof: 0, accuracy: 0, suppression: 0, lethality: 0, ammo: 999, tracerRate: 0, meleeOnly: true },
 };
 
 export function isAntiTank(id: WeaponId): boolean {

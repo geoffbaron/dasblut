@@ -5,7 +5,7 @@ import { factionColor, MoraleState, Team, World } from "../game/world.ts";
 import { Terrain, TERRAIN } from "../game/terrain.ts";
 import { Weapon, WeaponId, WEAPONS } from "../game/weapons.ts";
 import { BuildingArt, paintBattlefield } from "./paint.ts";
-import { makeCannonBody, makeCasualtyCanvas, makeCatapultBody, makeCavalryBody, makeSoldierArt } from "./soldierArt.ts";
+import { Hold, makeCannonBody, makeCasualtyCanvas, makeCatapultBody, makeCavalryBody, makeSoldierArt } from "./soldierArt.ts";
 import { makeVehicleArt, VehicleArt } from "./vehicleArt.ts";
 import { sound } from "./sound.ts";
 
@@ -244,7 +244,7 @@ export class Renderer {
     const shadow = new Sprite(this.shadowTex);
     shadow.anchor.set(0.5);
     shadow.scale.set(Renderer.UNIT_SCALE);
-    const body = new Sprite(this.bodyTexture(color, s.weapon));
+    const body = new Sprite(this.bodyTexture(color, s.weapon, s.faction));
     body.anchor.set(0.5);
     body.scale.set(Renderer.UNIT_SCALE);
     this.shadowLayer.addChild(shadow);
@@ -265,11 +265,19 @@ export class Renderer {
   }
 
   // What a foot soldier visibly carries — medieval men fight with steel, not firearms.
-  private holdOf(weapon: string): "rifle" | "sword" | "spear" | "bow" {
-    return weapon === "sword" ? "sword" : weapon === "spear" ? "spear" : weapon === "bow" ? "bow" : "rifle";
+  // The Hero's melee weapons get their own carry: a champion's greatsword reuses the
+  // sword pose, a lightsaber gets a dedicated glowing-blade hold.
+  private holdOf(weapon: string): Hold {
+    if (weapon === "sword" || weapon === "champion") return "sword";
+    if (weapon === "spear") return "spear";
+    if (weapon === "bow") return "bow";
+    if (weapon === "lightsaber") return "saber";
+    return "rifle";
   }
 
-  private bodyTexture(color: number, weapon: string): Texture {
+  private static readonly HERO_WEAPONS = new Set(["tommygun", "henry", "champion", "lightsaber"]);
+
+  private bodyTexture(color: number, weapon: string, faction: string): Texture {
     const kind = this.artKind(weapon);
     const hold = this.holdOf(weapon);
     // Keyed by the actual weapon so variants of one kind (knight vs carbine trooper)
@@ -277,10 +285,15 @@ export class Renderer {
     const key = `${kind}:${weapon}:${color}`;
     let tex = this.bodyTexByColor.get(key);
     if (!tex) {
+      const hero = Renderer.HERO_WEAPONS.has(weapon);
+      // A lightsaber's blade color follows the Rebel-blue/Imperial-red split used for
+      // Star Wars blaster bolts (see boltColor in world.ts) — the hero's weapon is a
+      // lightsaber ONLY in that era, so no era check needed here.
+      const bladeColor = weapon === "lightsaber" ? (faction === "us" ? 0x4da2ff : 0xff3d30) : undefined;
       const art = kind === "cannon" ? makeCannonBody(color)
         : kind === "catapult" ? makeCatapultBody(color)
         : kind === "cavalry" ? makeCavalryBody(color, weapon === "lance")
-        : makeSoldierArt(color, hold).body;
+        : makeSoldierArt(color, hold, hero, bladeColor).body;
       tex = Texture.from(art);
       this.bodyTexByColor.set(key, tex);
     }
@@ -875,7 +888,7 @@ export class Renderer {
         // just dimmed — it reads as a wrecked, abandoned piece, not a fallen man.
         const col = world.team(s.teamId)?.color ?? (s.faction === "us" ? 0x4f7fd1 : 0xc4514a);
         const isGun = s.weapon === "cannon" || s.weapon === "catapult";
-        sp.body.texture = down && !isGun ? this.casualtyTex : this.bodyTexture(col, s.weapon);
+        sp.body.texture = down && !isGun ? this.casualtyTex : this.bodyTexture(col, s.weapon, s.faction);
         sp.body.alpha = down ? (isGun ? 0.4 : s.status === "dead" ? 0.85 : 0.95) : 1;
         sp.alive = !down;
       }
@@ -971,6 +984,13 @@ export class Renderer {
         g.moveTo(cx - d, cy - d).lineTo(cx + d, cy + d)
          .moveTo(cx + d, cy - d).lineTo(cx - d, cy + d)
          .stroke({ width: 2, color: 0xe0463a, alpha: a });
+      } else if (e.kind === "deflect") {
+        // A lightsaber knocking a blaster bolt aside: a bright white-hot burst at the
+        // blade with a spark line kicked off in the deflection direction.
+        const a = Math.max(0, e.ttl / 0.22);
+        g.moveTo(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE).lineTo(e.x1 * CELL_SIZE, e.y1 * CELL_SIZE);
+        g.stroke({ width: 1.4, color: 0xeaffff, alpha: a });
+        g.circle(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE, 4.5 * a + 1.5).fill({ color: 0xffffff, alpha: a * 0.9 });
       } else if (e.kind === "spark") {
         g.circle(e.x0 * CELL_SIZE, e.y0 * CELL_SIZE, 4).fill({ color: 0xffd24a, alpha: Math.max(0, e.ttl / 0.18) });
       } else if (e.kind === "blood") {

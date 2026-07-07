@@ -24,24 +24,26 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
   const reticle = document.getElementById("reticleBox") as HTMLElement;
   const objCount = () => parseInt((document.getElementById("objCount") as HTMLSelectElement)?.value || "1", 10);
   const tanks = (id: string) => parseInt((document.getElementById(id) as HTMLSelectElement)?.value || "1", 10);
+  const flag = (id: string) => (document.getElementById(id) as HTMLSelectElement)?.value === "1";
   // The mode dropdown encodes both who the human plays and each side's role.
   const setup = (): GameSetup => {
     const mode = (document.getElementById("gameMode") as HTMLSelectElement)?.value || "us-attacks";
     const eraVal = (document.getElementById("era") as HTMLSelectElement)?.value;
     const era = (eraVal === "acw" || eraVal === "medieval" || eraVal === "starwars" ? eraVal : "ww2") as GameSetup["era"];
     const usTanks = tanks("usTanks"), axisTanks = tanks("axisTanks");
+    const usHero = flag("usHero"), axisHero = flag("axisHero");
     const fortify = (document.getElementById("cover") as HTMLSelectElement)?.value === "1";
     const objectiveHoldS = parseInt((document.getElementById("holdTime") as HTMLSelectElement)?.value || "180", 10);
     const snow = (document.getElementById("terrain") as HTMLSelectElement)?.value === "1";
     switch (mode) {
-      case "us-attacks":   return { era, player: "us",   usRole: "attack", axisRole: "defend", usTanks, axisTanks, fortify, objectiveHoldS, snow };
+      case "us-attacks":   return { era, player: "us",   usRole: "attack", axisRole: "defend", usTanks, axisTanks, usHero, axisHero, fortify, objectiveHoldS, snow };
       // Play the defender while the AI attacks — e.g. commanding the Union line at
       // Gettysburg while the Confederates make the charge.
-      case "us-defends":   return { era, player: "us",   usRole: "defend", axisRole: "attack", usTanks, axisTanks, fortify, objectiveHoldS, snow };
-      case "axis-defends": return { era, player: "axis", usRole: "attack", axisRole: "defend", usTanks, axisTanks, fortify, objectiveHoldS, snow };
-      case "meeting-axis": return { era, player: "axis", usRole: "attack", axisRole: "attack", usTanks, axisTanks, fortify, objectiveHoldS, snow };
-      case "meeting-us":   return { era, player: "us",   usRole: "attack", axisRole: "attack", usTanks, axisTanks, fortify, objectiveHoldS, snow };
-      default:             return { era, player: "axis", usRole: "defend", axisRole: "attack", usTanks, axisTanks, fortify, objectiveHoldS, snow }; // "axis-attacks"
+      case "us-defends":   return { era, player: "us",   usRole: "defend", axisRole: "attack", usTanks, axisTanks, usHero, axisHero, fortify, objectiveHoldS, snow };
+      case "axis-defends": return { era, player: "axis", usRole: "attack", axisRole: "defend", usTanks, axisTanks, usHero, axisHero, fortify, objectiveHoldS, snow };
+      case "meeting-axis": return { era, player: "axis", usRole: "attack", axisRole: "attack", usTanks, axisTanks, usHero, axisHero, fortify, objectiveHoldS, snow };
+      case "meeting-us":   return { era, player: "us",   usRole: "attack", axisRole: "attack", usTanks, axisTanks, usHero, axisHero, fortify, objectiveHoldS, snow };
+      default:             return { era, player: "axis", usRole: "defend", axisRole: "attack", usTanks, axisTanks, usHero, axisHero, fortify, objectiveHoldS, snow }; // "axis-attacks"
     }
   };
 
@@ -71,6 +73,12 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
     });
     opt("usTanks", { "1": `${blue}: ${unit(1, blueNoun)}`, "2": `${blue}: ${unit(2, blueNoun)}`, "3": `${blue}: ${unit(3, blueNoun)}` });
     opt("axisTanks", { "1": `${red}: ${unit(1, redNoun)}`, "2": `${red}: ${unit(2, redNoun)}`, "3": `${red}: ${unit(3, redNoun)}` });
+    // Each side's named Hero — a Jedi vs a Sith in Star Wars, otherwise the same noun
+    // for both sides.
+    const blueHero = era === "starwars" ? "Jedi" : era === "medieval" ? "Champion" : "Hero";
+    const redHero = era === "starwars" ? "Sith" : era === "medieval" ? "Champion" : "Hero";
+    opt("usHero", { "0": `${blue}: No Hero`, "1": `${blue}: Add a ${blueHero}` });
+    opt("axisHero", { "0": `${red}: No Hero`, "1": `${red}: Add a ${redHero}` });
     const coverOn = era === "medieval" ? "+ earthworks & palisades"
       : era === "acw" ? "+ ditches & fences"
       : era === "starwars" ? "+ trenches & barricades"
@@ -153,6 +161,8 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
     setSel("axisTanks", String(s.axis));
     setSel("cover", s.fortify ? "1" : "0");
     setSel("terrain", s.snow ? "1" : "0");
+    setSel("usHero", "0");
+    setSel("axisHero", "0");
     relabel();
     map.setView([s.lat, s.lon], 16);
     deploy(s.lat, s.lon, s.name);

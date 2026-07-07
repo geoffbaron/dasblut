@@ -11,13 +11,17 @@ export interface SoldierArt {
   shadow: HTMLCanvasElement;
 }
 
-// What a foot soldier carries, drawn top-down: a firearm, a short sword, a spear, or a bow.
-export type Hold = "rifle" | "sword" | "spear" | "bow";
+// What a foot soldier carries, drawn top-down: a firearm, a short sword, a spear, a bow,
+// or (Hero only) a glowing lightsaber blade.
+export type Hold = "rifle" | "sword" | "spear" | "bow" | "saber";
 
-export function makeSoldierArt(teamColor: number, hold: Hold = "rifle"): SoldierArt {
+// `hero` rings the whole figure in gold — a Hero reads as a cut above the line at a
+// glance, whatever he's holding. `bladeColor` is the lightsaber's glow (blue/green for a
+// Jedi, red for a Sith); ignored for every other hold.
+export function makeSoldierArt(teamColor: number, hold: Hold = "rifle", hero = false, bladeColor?: number): SoldierArt {
   return {
     size: LS,
-    body: drawBody(teamColor, hold),
+    body: drawBody(teamColor, hold, hero, bladeColor),
     shadow: drawShadow(),
   };
 }
@@ -253,14 +257,24 @@ function drawShadow(): HTMLCanvasElement {
   return c;
 }
 
-function drawBody(teamColor: number, hold: Hold): HTMLCanvasElement {
+function drawBody(teamColor: number, hold: Hold, hero = false, bladeColor?: number): HTMLCanvasElement {
   const { c, ctx } = newCanvas();
   const hex = `#${teamColor.toString(16).padStart(6, "0")}`;
   const medieval = hold === "sword" || hold === "spear" || hold === "bow";
 
   // The held weapon, drawn first so the torso sits over the grip. Pointing east (+x).
   ctx.lineCap = "round";
-  if (hold === "sword") {
+  if (hold === "saber") {
+    // A lightsaber: a short dark hilt and a glowing blade — a bright core over a soft
+    // wider glow, in the wielder's blade color (blue/green Jedi, red Sith).
+    const blade = `#${(bladeColor ?? 0x7cf7ff).toString(16).padStart(6, "0")}`;
+    ctx.strokeStyle = "#26241f"; ctx.lineWidth = 1.3; // hilt
+    ctx.beginPath(); ctx.moveTo(0.5, 1.2); ctx.lineTo(3, 0.9); ctx.stroke();
+    ctx.strokeStyle = blade; ctx.globalAlpha = 0.35; ctx.lineWidth = 3.4; // outer glow
+    ctx.beginPath(); ctx.moveTo(3, 0.85); ctx.lineTo(9.5, 0.35); ctx.stroke();
+    ctx.globalAlpha = 1; ctx.lineWidth = 1.2; // bright core
+    ctx.beginPath(); ctx.moveTo(3, 0.85); ctx.lineTo(9.5, 0.35); ctx.stroke();
+  } else if (hold === "sword") {
     // A short arming sword — bright steel blade with a dark crossguard.
     ctx.strokeStyle = "#dfe3e8"; ctx.lineWidth = 1.7;
     ctx.beginPath(); ctx.moveTo(3, 1.6); ctx.lineTo(8.5, 0.8); ctx.stroke();
@@ -292,7 +306,8 @@ function drawBody(teamColor: number, hold: Hold): HTMLCanvasElement {
   // for firearm troops, a leather jerkin for medieval foot, a drab tunic for archers.
   // A crisp dark outline keeps every man readable against any ground (the AoE trick).
   const torsoCols: [string, string] =
-    hold === "bow" ? ["#7d7742", "#565232"]
+    hold === "saber" ? ["#5a5245", "#332e26"] // a Jedi/Sith's traveling cloak
+    : hold === "bow" ? ["#7d7742", "#565232"]
     : medieval ? ["#8a6a42", "#5e4628"]
     : ["#5b6038", "#3f4427"];
   const torso = ctx.createLinearGradient(0, -6, 0, 6);
@@ -347,7 +362,8 @@ function drawBody(teamColor: number, hold: Hold): HTMLCanvasElement {
   // Headgear — a steel kettle-helm with a bright crown for medieval men, an olive
   // helmet for firearm troops, a leather cap for archers.
   const helmCols: [string, string] =
-    hold === "bow" ? ["#8a6a42", "#4e3a20"]
+    hold === "saber" ? ["#4a443a", "#221f1a"] // a deep hood, not a helmet
+    : hold === "bow" ? ["#8a6a42", "#4e3a20"]
     : medieval ? ["#c9ced6", "#6d747e"]
     : ["#5a6038", "#2f3420"];
   const helm = ctx.createRadialGradient(-0.2, -1.2, 0.5, 0.8, 0, 4.2);
@@ -360,6 +376,16 @@ function drawBody(teamColor: number, hold: Hold): HTMLCanvasElement {
   ctx.strokeStyle = "rgba(0,0,0,0.45)";
   ctx.lineWidth = 0.7;
   ctx.stroke();
+
+  // A Hero reads as a cut above the line at a glance: a thin gold rim around the whole
+  // figure, whatever he's holding.
+  if (hero) {
+    ctx.strokeStyle = "#ffd76a";
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 6.6, 7.8, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
 
   return c;
 }

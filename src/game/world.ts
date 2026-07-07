@@ -70,6 +70,12 @@ export interface Soldier {
   seen: boolean; // currently spotted by the opposing faction
   seenTimer: number;
   fleeGoal: Cell | null;
+  // Hero unit (optional "Support" pick, one per side): a named, period-accurate elite
+  // fighter — tougher and deadlier than a line soldier, not a different kind of unit.
+  hero?: boolean;
+  heroHP?: number; // extra lives: a would-be kill/wound is shrugged off until this hits 0 (see casualty.ts)
+  heroMelee?: number; // melee kill-chance multiplier (champion's greatsword, Jedi/Sith's blade)
+  deflect?: number; // 0..1 chance to deflect an incoming blaster bolt outright (lightsaber only)
 }
 
 export interface Team {
@@ -88,7 +94,7 @@ export interface Team {
   march: { guide: Cell[]; idx: number; x: number; y: number; hx: number; hy: number } | null;
 }
 
-export type EffectKind = "tracer" | "shotline" | "arrow" | "flash" | "hit" | "ap" | "rocket" | "spark" | "smoke" | "fire" | "lob" | "ricochet" | "blocked" | "blood";
+export type EffectKind = "tracer" | "shotline" | "arrow" | "flash" | "hit" | "ap" | "rocket" | "spark" | "smoke" | "fire" | "lob" | "ricochet" | "blocked" | "blood" | "deflect";
 
 // A burning smoke canister that emits into the smoke grid over its lifetime.
 export interface SmokeSource { cx: number; cy: number; t: number; }
@@ -220,7 +226,8 @@ function formationSlot(era: Era, kind: SquadKind, i: number, count: number): { o
 export type SquadKind =
   | "rifle" | "mg" | "at" | "mortar" // WW2
   | "infantry" | "cavalry" | "artillery" // ACW (also medieval foot/horse/siege)
-  | "archers"; // medieval
+  | "archers" // medieval
+  | "hero"; // a one-man elite unit, any era
 
 function squadLoadout(kind: SquadKind, count: number, faction: Faction, era: Era): WeaponId[] {
   if (era === "acw") return acwLoadout(kind, count);
@@ -277,6 +284,30 @@ function medievalLoadout(kind: SquadKind, count: number): WeaponId[] {
   }
   // Men-at-arms: mostly swords, roughly every third man a spearman to anchor the line.
   return Array.from({ length: count }, (_, i) => (i % 3 === 1 ? "spear" : "sword") as WeaponId);
+}
+
+// The Hero: a single named, period-accurate elite fighter, fielded like the
+// tank/gun "Support" pick — a Jedi/Sith duelist in Star Wars, a Thompson-toting
+// one-man-army NCO in WW2, a Henry-repeater-armed officer in the Civil War, an
+// armored champion in melee. Tougher (heroHP) and deadlier (its own weapon stats,
+// or heroMelee for the two melee heroes) than a line soldier, not a new kind of unit.
+function heroWeapon(era: Era): WeaponId {
+  if (era === "acw") return "henry";
+  if (era === "medieval") return "champion";
+  if (era === "starwars") return "lightsaber";
+  return "tommygun";
+}
+function heroLabel(era: Era, f: Faction): string {
+  if (era === "acw") return f === "us" ? "Union Hero" : "Confederate Hero";
+  if (era === "medieval") return "Champion";
+  if (era === "starwars") return f === "us" ? "Jedi Knight" : "Sith Lord";
+  return "War Hero";
+}
+// Extra lives before a hero can actually be killed/wounded like anyone else — see
+// killSoldier/woundSoldier in casualty.ts. The Jedi/Sith leans on deflection instead,
+// so needs fewer.
+function heroLives(era: Era): number {
+  return era === "starwars" ? 3 : era === "medieval" ? 4 : 3;
 }
 
 // Remap a WW2 spawn list to a Civil War order of battle, keeping the deployment
@@ -454,6 +485,8 @@ export interface GameSetup {
   fortify?: boolean; // scatter era-appropriate field cover (hedgerows/trenches/bunkers, ditches/fences…)
   objectiveHoldS?: number; // seconds the attacker must hold every objective at once to win (default 180)
   snow?: boolean; // paint the battlefield in winter dress (Bulge-style snow cover)
+  usHero?: boolean; // field a one-man elite Hero unit (period-accurate per era; a Jedi/Sith in Star Wars)
+  axisHero?: boolean;
 }
 
 export const DEFAULT_SETUP: GameSetup = {
@@ -661,6 +694,12 @@ export class World {
       this.spawnGuns(this.southFaction, southCount, southAnchor.cx, southAnchor.cy, trainOf(this.southFaction));
       this.spawnGuns(northFaction, northCount, northAnchor.cx, northAnchor.cy, trainOf(northFaction));
     }
+
+    // Hero: an optional one-man elite unit per side, fielded like a tank/gun pick.
+    const southHero = this.southFaction === "us" ? setup.usHero : setup.axisHero;
+    const northHero = northFaction === "us" ? setup.usHero : setup.axisHero;
+    if (southHero) this.spawnHero(this.southFaction, southAnchor.cx, southAnchor.cy, trainOf(this.southFaction));
+    if (northHero) this.spawnHero(northFaction, northAnchor.cx, northAnchor.cy, trainOf(northFaction));
   }
 
   roleOf(f: Faction): Role { return f === "us" ? this.usRole : this.axisRole; }
@@ -791,7 +830,7 @@ export class World {
     return this.byVid.get(id);
   }
 
-  private spawnSquad(spawn: SquadSpawn, faction: Faction, color: number, training: number): void {
+  private spawnSquad(spawn: SquadSpawn, faction: Faction, color: number, training: number): Team {
     const kind: SquadKind = spawn.kind ?? "rifle";
     // The assaulting side fields heavier rifle squads: CC always hands the attacker a
     // material edge to pay for crossing open ground into a dug-in defender. Support
@@ -873,6 +912,44 @@ export class World {
       team.soldierIds.push(s.id);
       if (isLeader) team.leaderId = s.id;
     }
+    return team;
+  }
+
+  // Field a single Hero soldier — the "Support" pick's third slot alongside tanks/guns.
+  // Built through the normal squad machinery (a one-man team) so selection, orders, AI
+  // targeting and morale all treat him like any other soldier; only his weapon and the
+  // heroHP/heroMelee/deflect stats set below make him play differently.
+  private spawnHero(faction: Faction, fallbackCx: number, fallbackCy: number, training: number): void {
+    const homeDir = faction === this.southFaction ? 1 : -1;
+    let sumX = 0, m = 0, frontY = homeDir > 0 ? Infinity : -Infinity;
+    for (const s of this.soldiers) {
+      if (s.faction !== faction) continue;
+      sumX += s.x; m++;
+      if (homeDir > 0 ? s.y < frontY : s.y > frontY) frontY = s.y;
+    }
+    const baseX = m ? Math.round(sumX / m) : fallbackCx;
+    const baseY = m && isFinite(frontY)
+      ? Math.max(0, Math.min(this.grid.height - 1, Math.round(frontY - homeDir * 1.5)))
+      : fallbackCy;
+    const pass = unitPassable(this.grid, "rifle");
+    const cell = this.nearestPassable(baseX, baseY, { cx: baseX, cy: baseY }, pass);
+    const team = this.spawnSquad(
+      { name: heroLabel(this.era, faction), cx: cell.cx, cy: cell.cy, count: 1, kind: "hero" },
+      faction, factionColor(this.era, faction), Math.max(training, 0.85),
+    );
+    const s = this.soldier(team.soldierIds[0]);
+    if (!s) return;
+    const weapon = heroWeapon(this.era);
+    s.weapon = weapon;
+    s.ammo = WEAPONS[weapon].ammo;
+    s.hero = true;
+    s.heroHP = heroLives(this.era);
+    s.heroMelee = weapon === "champion" || weapon === "lightsaber" ? 2.4 : 1;
+    s.deflect = weapon === "lightsaber" ? 0.55 : 0;
+    // More weapons, not just more health: WW2's Thompson-armed hero carries extra
+    // grenades, matching the era's own convention (only rifle/SMG/blaster carriers do —
+    // grenades weren't a Civil War infantryman's kit, so the Henry-armed hero skips them).
+    s.grenades = weapon === "tommygun" ? 8 : 0;
   }
 
   team(id: number): Team | undefined {

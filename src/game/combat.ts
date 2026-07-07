@@ -694,7 +694,8 @@ function meleeStrike(world: World, s: Soldier, foe: Soldier): void {
   kill *= 0.65 + 0.7 * odds;
   kill *= 1 - cover * 0.4;
   kill *= 0.7 + 0.3 * s.training;
-  kill = Math.max(0.015, Math.min(0.45, kill));
+  kill *= s.heroMelee ?? 1; // a champion's greatsword or a Jedi/Sith's blade cuts far deeper
+  kill = Math.max(0.015, Math.min(s.heroMelee ? 0.75 : 0.45, kill));
   if (Math.random() < kill) {
     if (Math.random() < 0.6) killSoldier(world, foe, 1.4, "melee"); // a man cut down in the melee shakes his fellows hard
     else woundSoldier(world, foe);
@@ -824,6 +825,14 @@ function fireShot(world: World, s: Soldier, target: Soldier, dist: number): void
     world.effects.push({ kind: "smoke", x0: s.x + Math.cos(a) * 0.6, y0: s.y + Math.sin(a) * 0.6, x1: 0, y1: 0, ttl: 0.9 + Math.random() * 0.5, maxTtl: 1.4 });
   }
 
+  // A lightsaber-armed Hero can deflect a blaster bolt outright — no suppression, no
+  // casualty roll, just a bright spark where the blade meets the bolt. Rockets (a
+  // thermal-detonator-grade explosive, not a bolt) are never deflectable.
+  if (hit && target.deflect && (s.weapon === "blaster" || s.weapon === "heavyblaster") && Math.random() < target.deflect) {
+    deflectBolt(world, target);
+    return;
+  }
+
   // Incoming fire always rattles the target (and splashes onto neighbours).
   addSuppression(target, w.suppression * bonus);
   splashSuppression(world, target, w.suppression * 0.4);
@@ -836,6 +845,18 @@ function fireShot(world: World, s: Soldier, target: Soldier, dist: number): void
     else if (r < lethal) woundSoldier(world, target);
     else addSuppression(target, 0.3); // a graze / near-miss hammers morale
   }
+}
+
+// A blaster bolt knocked aside by a lightsaber: a bright flash at the blade with a
+// spark spitting off in a random deflection direction.
+function deflectBolt(world: World, target: Soldier): void {
+  const a = Math.random() * Math.PI * 2;
+  const len = 2.2 + Math.random() * 2.4;
+  world.effects.push({
+    kind: "deflect", x0: target.x, y0: target.y,
+    x1: target.x + Math.cos(a) * len, y1: target.y + Math.sin(a) * len, ttl: 0.22,
+  });
+  sound.play("ricochet", target.x, target.y);
 }
 
 // The launch and flight of a bazooka/Panzerfaust rocket: a hard muzzle flash, a

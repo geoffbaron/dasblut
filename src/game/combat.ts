@@ -5,7 +5,7 @@ import { hasLOS } from "./los.ts";
 import { isBuildingInterior, isHardSurface, TERRAIN } from "./terrain.ts";
 import { knockOut, resolveArmorHit } from "./vehicleCombat.ts";
 import { WEAPONS } from "./weapons.ts";
-import { boltColor, Faction, PendingGrenade, Soldier, Vehicle, World } from "./world.ts";
+import { boltColor, Faction, modernEra, PendingGrenade, Soldier, Vehicle, World } from "./world.ts";
 import { sound } from "../render/sound.ts";
 import type { SfxId } from "../render/sound.ts";
 
@@ -38,6 +38,14 @@ export function resolveFire(world: World, dt: number): void {
     if (s.status !== "active") continue;
     if (s.state === "panicked" || s.state === "routing" || s.stance === "sneak") continue;
 
+    // Civil War and medieval units fight in massed, dressed ranks — a column halts and
+    // forms line before it opens fire; it doesn't loose volleys (or even snap shots)
+    // while still tramping toward its objective (or charging home). Skipping fire here
+    // means a marching rank can never shoot through the friendlies marching ahead of it
+    // either, since it simply isn't shooting. WW2/Star Wars keep their loose skirmish
+    // behavior (fire while adjusting position is normal there) — see modernEra().
+    if (!modernEra(world.era) && (s.path != null || world.team(s.teamId)?.march != null)) continue;
+
     // Melee arms never shoot — they close and settle it hand-to-hand (updateMelee).
     if (WEAPONS[s.weapon].meleeOnly) continue;
 
@@ -67,7 +75,10 @@ export function resolveFire(world: World, dt: number): void {
       }
       if (ok) {
         const d = Math.hypot(ax - s.x, ay - s.y);
-        if (d <= w.rangeCells && hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), Math.floor(ax), Math.floor(ay), world.smokeGrid)) {
+        // A gun crew holds fire rather than shoot through its own men — friendly
+        // infantry standing between the muzzle and the target aren't a wall the
+        // shell/canister just passes through.
+        if (d <= w.rangeCells && hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), Math.floor(ax), Math.floor(ay), world.smokeGrid) && !friendlyBlocksLine(world, s, ax, ay)) {
           s.fireCD -= dt * rateMul;
           if (s.fireCD <= 0 && s.ammo > 0) {
             s.fireCD = 1 / w.rof;
@@ -203,6 +214,30 @@ export function resolveFire(world: World, dt: number): void {
     const t = world.team(id);
     if (t) t.volleyCD = reload * (0.85 + Math.random() * 0.4);
   }
+}
+
+// A gun's field of fire, in cells, that a standing friendly body actually blocks —
+// roughly a man's width either side of the shot line.
+const FRIENDLY_BLOCK_RADIUS = 0.45;
+
+// True if a living friendly soldier stands roughly between the shooter and the
+// aimpoint — used to hold a cannon's fire rather than shoot through its own men. Only
+// counts men meaningfully ahead of the muzzle and short of the target, so the gun's own
+// crew (clustered right at the piece) and the target itself never spuriously block.
+function friendlyBlocksLine(world: World, shooter: Soldier, tx: number, ty: number): boolean {
+  const dx = tx - shooter.x, dy = ty - shooter.y;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq < 1e-6) return false;
+  for (const o of world.soldiers) {
+    if (o === shooter || o.faction !== shooter.faction || o.status !== "active") continue;
+    const ox = o.x - shooter.x, oy = o.y - shooter.y;
+    const t = (ox * dx + oy * dy) / lenSq;
+    if (t < 0.12 || t > 0.92) continue; // ahead of the muzzle, short of the aimpoint
+    const px = shooter.x + dx * t, py = shooter.y + dy * t;
+    const distSq = (o.x - px) ** 2 + (o.y - py) ** 2;
+    if (distSq < FRIENDLY_BLOCK_RADIUS * FRIENDLY_BLOCK_RADIUS) return true;
+  }
+  return false;
 }
 
 // Gate (and aim) an MG's fire. A non-MG always passes. A machine gun fires only when

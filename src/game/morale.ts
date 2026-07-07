@@ -27,8 +27,11 @@ export function updateMorale(world: World, dt: number): void {
     // Under fire, resolve erodes (faster the heavier the fire, slower for veterans,
     // men beside their leader, and men holding a prepared position).
     if (s.suppression > 0.05) {
+      // Training's effect on erosion was too flat to read as "green vs veteran" (a
+      // recruit at 0.3 training and an elite at 0.9 eroded at nearly the same rate) —
+      // widened so a veteran squad visibly shrugs off fire a green one would break under.
       const erode =
-        MORALE_UNDERFIRE * s.suppression * (1.1 - s.training * 0.4) * (leaderNear ? 0.7 : 1) * (dugIn ? 0.8 : 1);
+        MORALE_UNDERFIRE * s.suppression * (1.3 - s.training * 0.85) * (leaderNear ? 0.7 : 1) * (dugIn ? 0.8 : 1);
       s.morale = Math.max(0, s.morale - erode * dt);
     } else {
       // Quiet: recover toward a veterancy-based ceiling.

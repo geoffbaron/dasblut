@@ -71,7 +71,17 @@ function commandSupport(world: World, team: Team, men: Soldier[], o: Objective, 
     }
     return;
   }
-  if (!moving(men)) world.orderMove(team.id, supportPost(world, o, range), "move");
+  if (!moving(men)) {
+    // Only re-path when actually meaningfully out of position. Without this, a team
+    // that's arrived close to the ideal post but doesn't quite satisfy the LOS/range
+    // check above (fractional position, a building revealed since, whatever) got a
+    // fresh "corrective" order every AI tick forever — for an MG that's just wasted
+    // pathing, but for a cannon/catapult (which also route through here) each of those
+    // orders re-zeros its setupTime (combat.ts), so it could end up perpetually
+    // re-arming its stillness gate and never actually finish laying the gun.
+    const goal = supportPost(world, o, range);
+    if (Math.hypot(a.x - goal.cx, a.y - goal.cy) > 1.5) world.orderMove(team.id, goal, "move");
+  }
 }
 
 // Mortar = indirect support. Drop HE on the densest spotted enemy cluster in range that's
@@ -214,7 +224,13 @@ function commandCavalry(
       const d = Math.sqrt(bestD);
       const wavering = tgt.state !== "steady";
       if (d <= 6 || (wavering && d <= 12)) {
-        world.orderMove(team.id, { cx: Math.floor(tgt.x), cy: Math.floor(tgt.y) }, "charge");
+        const goal = { cx: Math.floor(tgt.x), cy: Math.floor(tgt.y) };
+        // Dedup like every other command function here: re-aim the charge only when the
+        // target has actually drifted from where the troop is already riding, instead of
+        // re-issuing the order (and re-arming the marching-fire gate) every AI tick — a
+        // troop still genuinely charging shouldn't be firing carbines anyway, but it
+        // also shouldn't be handed a brand-new order group each 1.5s for no reason.
+        if (!moving(men) || !headedTo(men, goal)) world.orderMove(team.id, goal, "charge");
         return;
       }
     }
@@ -234,10 +250,17 @@ function firstFireCell(men: Soldier[]): Cell | null { for (const s of men) if (s
 function sameCell(a: Cell | null, b: Cell | null): boolean { return !!a && !!b && a.cx === b.cx && a.cy === b.cy; }
 
 // Half the team pinned or broken → it's been mauled and should fall back to recover.
+// Also breaks on a flat casualty count (MAULED_ABS), not just the fraction: a 5-man WW2
+// squad and an 18-man Civil War line have the same per-man morale model, but scaling
+// purely by fraction meant the AI fed a massed line into canister/volley fire until 9+
+// men were down before reacting — far more absolute punishment than a small squad ever
+// takes before the same AI pulls it back. The absolute floor makes large formations
+// react at a casualty count in the same ballpark as a small one, not a fixed fraction.
+const MAULED_ABS = 4;
 function isMauled(men: Soldier[]): boolean {
   let down = 0;
   for (const s of men) if (s.state === "pinned" || s.state === "panicked" || s.state === "routing") down++;
-  return down * 2 >= men.length;
+  return down * 2 >= men.length || down >= MAULED_ABS;
 }
 
 function headedTo(men: Soldier[], goal: Cell): boolean {

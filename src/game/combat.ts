@@ -180,6 +180,11 @@ export function resolveFire(world: World, dt: number): void {
     if (!hasLOS(world.grid, Math.floor(s.x), Math.floor(s.y), Math.floor(target.x), Math.floor(target.y), world.smokeGrid))
       continue;
     if (!mgGate(s, target.x, target.y, dt)) continue;
+    // A crowded firing line doesn't shoot through its own front rank (or anyone who's
+    // simply drifted into the shot line) — hold this one man's shot, the same rule
+    // artillery already gets. Individual, not squad-wide: in a two-rank line only the
+    // rear-rank men actually masked by someone ahead of them hold fire this tick.
+    if (friendlyBlocksLine(world, s, target.x, target.y)) continue;
 
     // Civil War line infantry fire by VOLLEY at a distance: every man holds through the
     // squad's long reload, then on the volley window each one with a clear shot looses
@@ -501,7 +506,13 @@ function canisterBlast(world: World, s: Soldier, tx: number, ty: number): void {
     const rangeFall = 1 - d / range;
     const coneFall = 1 - off / SPREAD;
     addSuppression(e, 0.55 * rangeFall);
-    const p = 0.9 * rangeFall * (0.5 + 0.5 * coneFall); // brutal near the muzzle, on-axis
+    // Case-shot sprays low and flat, so a rank standing behind a rail fence or hedge
+    // still catches most of it — cover blunts it far less than it does aimed rifle fire
+    // (which halves at full cover, fireShot below), but a man dug into a proper trench
+    // or behind a stone wall isn't just as exposed as one standing in the open either.
+    const tcx = Math.floor(e.x), tcy = Math.floor(e.y);
+    const cover = world.grid.inBounds(tcx, tcy) ? TERRAIN[world.grid.get(tcx, tcy)].cover : 0;
+    const p = 0.9 * rangeFall * (0.5 + 0.5 * coneFall) * (1 - cover * 0.35); // brutal near the muzzle, on-axis
     if (Math.random() < p) {
       if (Math.random() < 0.7) killSoldier(world, e, 1, "blast");
       else woundSoldier(world, e);

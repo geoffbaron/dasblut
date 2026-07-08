@@ -474,7 +474,7 @@ function addFortifications(
 export type Role = "attack" | "defend";
 
 // How a battle is configured: who the human commands, each side's role (attack the
-// objectives or defend them), and how many tanks each side fields (1-3).
+// objectives or defend them), and how many tanks each side fields (1-10).
 export interface GameSetup {
   era: Era;
   player: Faction;
@@ -688,7 +688,7 @@ export class World {
     for (const s of orbat(map.spawns.axis)) this.spawnSquad(s, northFaction, colorOf(northFaction), trainOf(northFaction));
 
     // Heavy support, clustered at each side's band anchor. WW2 fields tanks; the Civil War
-    // fields field-gun batteries. The 1-3 selector counts whichever the era uses.
+    // fields field-gun batteries. The 1-10 selector counts whichever the era uses.
     const southAnchor = map.spawns.usVehicles[0] ?? { cx: (this.grid.width / 2) | 0, cy: this.grid.height - 5 };
     const northAnchor = map.spawns.axisVehicles[0] ?? { cx: (this.grid.width / 2) | 0, cy: 5 };
     const southCount = this.southFaction === "us" ? setup.usTanks : setup.axisTanks;
@@ -727,7 +727,7 @@ export class World {
     const cls: VehicleClass = this.era === "starwars"
       ? (faction === "us" ? "aac1" : "atst")
       : (faction === "us" ? "sherman" : "panzer4");
-    const n = Math.max(1, Math.min(3, count));
+    const n = Math.max(1, Math.min(10, count));
     // Anchor on this side's own troops: centre on their mean X, and sit at their front rank
     // (the edge nearest the enemy) so the tanks lead the advance instead of trailing it.
     const homeDir = faction === this.southFaction ? 1 : -1; // home edge is +y (south) / -y (north)
@@ -752,7 +752,7 @@ export class World {
   // infantry, toward the home edge, so the guns fire over their troops' heads instead of
   // standing out in front. Called after the infantry are placed.
   private spawnGuns(faction: Faction, count: number, cx: number, cy: number, training: number): void {
-    const n = Math.max(1, Math.min(3, count));
+    const n = Math.max(1, Math.min(10, count));
     // Find the rear rank of this side's already-spawned foot/horse and post the guns just
     // behind it, centred on the line.
     const homeDir = faction === this.southFaction ? 1 : -1; // home edge is +y (south) / -y (north)

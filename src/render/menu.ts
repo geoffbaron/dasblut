@@ -63,6 +63,15 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
       const el = document.getElementById(sel) as HTMLSelectElement | null;
       if (el) for (const o of Array.from(el.options)) if (vals[o.value]) o.textContent = vals[o.value];
     };
+    // Every count from 1 up to the select's own option count (10, for tanks/guns) gets
+    // a label — built from the options actually present rather than a fixed list, so
+    // this doesn't need touching again if that count ever changes.
+    const countLabels = (sel: string, name: string, noun: string): Record<string, string> => {
+      const el = document.getElementById(sel) as HTMLSelectElement | null;
+      const vals: Record<string, string> = {};
+      if (el) for (const o of Array.from(el.options)) vals[o.value] = `${name}: ${unit(parseInt(o.value, 10), noun)}`;
+      return vals;
+    };
     opt("gameMode", {
       "axis-attacks": `${red} attacks · ${blue} defends`,
       "us-attacks": `${blue} attacks · ${red} defends`,
@@ -71,8 +80,8 @@ export function runMenu(onStart: (map: GameMap, objectiveCount: number, setup: G
       "meeting-axis": `Meeting — both attack (play ${red})`,
       "meeting-us": `Meeting — both attack (play ${blue})`,
     });
-    opt("usTanks", { "1": `${blue}: ${unit(1, blueNoun)}`, "2": `${blue}: ${unit(2, blueNoun)}`, "3": `${blue}: ${unit(3, blueNoun)}` });
-    opt("axisTanks", { "1": `${red}: ${unit(1, redNoun)}`, "2": `${red}: ${unit(2, redNoun)}`, "3": `${red}: ${unit(3, redNoun)}` });
+    opt("usTanks", countLabels("usTanks", blue, blueNoun));
+    opt("axisTanks", countLabels("axisTanks", red, redNoun));
     // Each side's named Hero — a Jedi vs a Sith in Star Wars, otherwise the same noun
     // for both sides.
     const blueHero = era === "starwars" ? "Jedi" : era === "medieval" ? "Champion" : "Hero";
